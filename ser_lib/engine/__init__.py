@@ -11,7 +11,9 @@ from ser_lib.engine.config import (
 from ser_lib.engine.evaluator import (
     ClassMetrics,
     EvaluationResult,
+    JsonlPredictionSink,
     PredictionRecord,
+    PredictionSink,
     evaluate,
     write_evaluation_report,
 )
@@ -51,6 +53,7 @@ __all__ = [
     "parse_scheduler_config", "build_scheduler",
     "LossConfig", "SamplingConfig", "ClassificationLoss", "build_weighted_sampler",
     "Trainer", "EpochResult", "TrainingResult", "TrainingStatus", "seed_everything",
-    "ClassMetrics", "PredictionRecord", "EvaluationResult",
-    "evaluate", "write_evaluation_report", "save_checkpoint", "load_checkpoint",
+    "ClassMetrics", "PredictionRecord", "PredictionSink", "JsonlPredictionSink",
+    "EvaluationResult", "evaluate", "write_evaluation_report",
+    "save_checkpoint", "load_checkpoint",
 ]
