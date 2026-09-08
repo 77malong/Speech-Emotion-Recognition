@@ -7,6 +7,7 @@ import time
 from collections.abc import Iterable, Mapping, Sized
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Protocol, TextIO
 
 import torch
 import torch.nn.functional as F
@@ -62,6 +63,56 @@ class PredictionRecord:
             "confidence": self.confidence,
             "probabilities": list(self.probabilities),
         }
+
+
+class PredictionSink(Protocol):
+    """评估逐样本结果的增量消费者协议。"""
+
+    def write(self, record: PredictionRecord) -> None:
+        """消费一条已经完成 softmax/argmax 的预测记录。"""
+        ...
+
+
+class JsonlPredictionSink:
+    """把评估预测增量写入 JSONL，避免完整预测常驻内存。
+
+    Sink 生命周期由调用方管理；推荐使用 ``with``。评估器只调用 ``write()``，
+    不会擅自关闭外部资源。
+    """
+
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        append: bool = False,
+        flush_each: bool = False,
+    ) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._flush_each = flush_each
+        mode = "a" if append else "w"
+        self._stream: TextIO = self.path.open(mode, encoding="utf-8", newline="\n")
+
+    def write(self, record: PredictionRecord) -> None:
+        if self._stream.closed:
+            raise ValueError("JsonlPredictionSink 已关闭")
+        self._stream.write(json.dumps(record.to_dict(), ensure_ascii=False) + "\n")
+        if self._flush_each:
+            self._stream.flush()
+
+    def flush(self) -> None:
+        if not self._stream.closed:
+            self._stream.flush()
+
+    def close(self) -> None:
+        if not self._stream.closed:
+            self._stream.close()
+
+    def __enter__(self) -> "JsonlPredictionSink":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,8 +238,14 @@ def evaluate(
     loss_fn: torch.nn.Module | None = None,
     event_context: EventContext | None = None,
     split: str | None = None,
+    prediction_sink: PredictionSink | None = None,
+    retain_predictions: bool = True,
 ) -> EvaluationResult:
-    """评估分类模型，并保留每个 batch 行对应的样本预测。
+    """评估分类模型，并可增量输出每个样本的预测。
+
+    ``prediction_sink`` 会在每条预测生成后同步接收 ``PredictionRecord``；设置
+    ``retain_predictions=False`` 后，``EvaluationResult.predictions`` 保持为空，
+    可将百万级评估的预测内存从 O(N) 降为 O(1)。默认值完全保持旧行为。
 
     ``event_context`` 是与 Web/传输无关的运行上下文，可原生携带 ``run_id``、
     ``epoch``、``total_epochs``、``global_step`` 等字段；``split`` 用于 standalone
@@ -238,6 +295,8 @@ def evaluate(
                 "num_classes": num_classes,
                 "total_batches": base_context.total_batches,
                 "device": str(target_device),
+                "prediction_sink": prediction_sink is not None,
+                "retain_predictions": retain_predictions,
             },
             context=base_context,
         )
@@ -276,17 +335,19 @@ def evaluate(
             total_loss += batch_loss * count
             total_samples += count
             for index, uid in enumerate(batch.uids):
-                records.append(
-                    PredictionRecord(
-                        uid=uid,
-                        target=int(labels_tensor[index]),
-                        predicted=int(predictions[index]),
-                        confidence=float(confidence[index]),
-                        probabilities=tuple(
-                            float(value) for value in probabilities[index].cpu()
-                        ),
-                    )
+                record = PredictionRecord(
+                    uid=uid,
+                    target=int(labels_tensor[index]),
+                    predicted=int(predictions[index]),
+                    confidence=float(confidence[index]),
+                    probabilities=tuple(
+                        float(value) for value in probabilities[index].cpu()
+                    ),
                 )
+                if prediction_sink is not None:
+                    prediction_sink.write(record)
+                if retain_predictions:
+                    records.append(record)
 
             elapsed = max(time.perf_counter() - started, 0.0)
             emit(
@@ -392,6 +453,7 @@ def evaluate(
                 details={
                     **_result_event_details(result),
                     "duration_seconds": max(time.perf_counter() - started, 0.0),
+                    "predictions_retained": len(records),
                 },
                 context=base_context,
             )
@@ -452,6 +514,8 @@ def write_evaluation_report(directory: Path | str, result: EvaluationResult) -> 
 __all__ = [
     "ClassMetrics",
     "PredictionRecord",
+    "PredictionSink",
+    "JsonlPredictionSink",
     "EvaluationResult",
     "evaluate",
     "write_evaluation_report",
