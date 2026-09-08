@@ -64,7 +64,8 @@ def query_records(
     """过滤标准 manifest 并返回稳定分页结果。
 
     结果顺序始终保持 manifest 原始顺序。``keyword`` 为大小写不敏感的包含查询，
-    覆盖 uid、音频路径、speaker_id 与 metadata，适合作为数据浏览器的通用搜索框。
+    覆盖 uid、音频路径、speaker_id 与 metadata。扫描时间为 O(N)，额外分页内存
+    仅为 O(limit)，不会为所有命中记录提前构建 DTO。
     """
     if offset < 0:
         raise ValueError(f"offset 必须 >= 0，实际: {offset}")
@@ -84,7 +85,8 @@ def query_records(
     if normalized_keyword == "":
         normalized_keyword = None
 
-    matched: list[RecordView] = []
+    items: list[RecordView] = []
+    total = 0
     for record in dataset.records:
         record_split = dataset.record_splits.get(record.uid, "unassigned")
         if split is not None and record_split != split:
@@ -97,11 +99,13 @@ def query_records(
             record, normalized_keyword
         ):
             continue
-        matched.append(_to_view(record, record_split))
 
-    total = len(matched)
+        if total >= offset and len(items) < limit:
+            items.append(_to_view(record, record_split))
+        total += 1
+
     return RecordPage(
-        items=tuple(matched[offset : offset + limit]),
+        items=tuple(items),
         total=total,
         offset=offset,
         limit=limit,
