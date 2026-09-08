@@ -39,10 +39,12 @@ from ser_lib.engine.trainer import (
     TrainingStatus,
     seed_everything,
 )
+from ser_lib.engine.validation import ExperimentValidationResult, validate_experiment
 
 __all__ = [
     "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
     "ExperimentComponents", "load_experiment_config", "build_experiment_components",
+    "ExperimentValidationResult", "validate_experiment",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",

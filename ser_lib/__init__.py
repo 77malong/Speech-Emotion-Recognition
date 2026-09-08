@@ -20,6 +20,7 @@ from ser_lib.artifacts import (
 )
 from ser_lib.engine import (
     ExperimentConfig,
+    ExperimentValidationResult,
     ModelConfig,
     ObservabilityConfig,
     Trainer,
@@ -28,6 +29,7 @@ from ser_lib.engine import (
     TrainingStatus,
     build_experiment_components,
     evaluate,
+    validate_experiment,
     write_evaluation_report,
 )
 from ser_lib.inference import (
@@ -61,7 +63,8 @@ __all__ = [
     "TransformerBaseline", "HFAudioClassifier",
     "Trainer", "TrainerConfig", "ObservabilityConfig", "TrainingResult", "TrainingStatus",
     "evaluate", "write_evaluation_report",
-    "ExperimentConfig", "ModelConfig", "build_experiment_components",
+    "ExperimentConfig", "ExperimentValidationResult", "validate_experiment",
+    "ModelConfig", "build_experiment_components",
     "EmotionPredictor", "PredictionResult",
     "PredictionFailure", "BatchPredictionResult", "BatchEmotionPredictor",
     "write_batch_predictions",

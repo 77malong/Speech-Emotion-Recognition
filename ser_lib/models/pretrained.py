@@ -119,14 +119,7 @@ class HFAudioClassifier(SERModel):
 
     @property
     def model_spec(self) -> ModelSpec:
-        return ModelSpec(
-            model_id="hf_audio_classifier",
-            required_inputs={"waveform": TensorSpec(layout="T")},
-            supports_masks=True,
-            supports_variable_length=True,
-            num_classes=self.num_classes,
-            expected_sample_rate=self.expected_sample_rate,
-        )
+        return _model_spec_from_config(self.model_config)
 
     @property
     def model_config(self) -> dict[str, Any]:
@@ -203,6 +196,17 @@ class HFAudioClassifier(SERModel):
         )
 
 
+def _model_spec_from_config(params: dict[str, Any]) -> ModelSpec:
+    return ModelSpec(
+        model_id="hf_audio_classifier",
+        required_inputs={"waveform": TensorSpec(layout="T")},
+        supports_masks=True,
+        supports_variable_length=True,
+        num_classes=int(params["num_classes"]),
+        expected_sample_rate=int(params["expected_sample_rate"]),
+    )
+
+
 model_registry.register(
     "hf_audio_classifier",
     HFAudioClassifier,
@@ -215,6 +219,7 @@ model_registry.register(
         input_layouts={"waveform": "T"},
         status="optional",
     ),
+    spec_factory=_model_spec_from_config,
 )
 
 

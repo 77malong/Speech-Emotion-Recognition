@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from torch import nn
 from pydantic import Field
@@ -11,6 +13,7 @@ from ser_lib.data.types import SERBatch, TensorSpec
 from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
+
 
 class CNNBaselineConfig(StrictConfig):
     feature_dim: int = Field(ge=1)
@@ -54,15 +57,7 @@ class CNNBaseline(SERModel):
 
     @property
     def model_spec(self) -> ModelSpec:
-        return ModelSpec(
-            model_id="cnn_baseline",
-            required_inputs={
-                "features": TensorSpec(layout="FT", feature_dim=self.feature_dim)
-            },
-            supports_masks=True,
-            supports_variable_length=True,
-            num_classes=self.num_classes,
-        )
+        return _model_spec_from_config(self.model_config)
 
     @property
     def model_config(self) -> dict[str, int | float]:
@@ -103,6 +98,18 @@ class CNNBaseline(SERModel):
         return ModelOutput(logits=self.classifier(embeddings), embeddings=embeddings)
 
 
+def _model_spec_from_config(params: dict[str, Any]) -> ModelSpec:
+    return ModelSpec(
+        model_id="cnn_baseline",
+        required_inputs={
+            "features": TensorSpec(layout="FT", feature_dim=int(params["feature_dim"]))
+        },
+        supports_masks=True,
+        supports_variable_length=True,
+        num_classes=int(params["num_classes"]),
+    )
+
+
 model_registry.register(
     "cnn_baseline", CNNBaseline, config_model=CNNBaselineConfig,
     descriptor=ModelDescriptor(
@@ -111,6 +118,7 @@ model_registry.register(
         config_schema=CNNBaselineConfig.model_json_schema(),
         input_layouts={"features": "FT"},
     ),
+    spec_factory=_model_spec_from_config,
 )
 
 
