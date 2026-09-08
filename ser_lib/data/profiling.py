@@ -6,9 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import torchaudio
-
 from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.data.audio import probe_audio
 from ser_lib.data.manifest import DatasetManifest
 
 
@@ -59,16 +58,16 @@ def profile_manifest_audio(
             cancellation.raise_if_cancelled()
         path = dataset.resolve_audio_path(record)
         try:
-            info = torchaudio.info(str(path))
-            rate = int(info.sample_rate)
-            channel_count = int(info.num_channels)
-            if rate <= 0 or int(info.num_frames) <= 0 or channel_count <= 0:
+            info = probe_audio(path)
+            rate = info.sample_rate
+            channel_count = info.num_channels
+            if rate <= 0 or info.num_frames <= 0 or channel_count <= 0:
                 raise ValueError("音频 header 包含非正采样率、帧数或声道数")
             start = (record.start_ms or 0) / 1000.0
             end = record.end_ms / 1000.0 if record.end_ms is not None else (
-                int(info.num_frames) / rate
+                info.num_frames / rate
             )
-            duration = max(0.0, min(end, int(info.num_frames) / rate) - start)
+            duration = max(0.0, min(end, info.num_frames / rate) - start)
             if duration <= 0:
                 raise ValueError("记录片段没有有效时长")
             durations.append(duration)
