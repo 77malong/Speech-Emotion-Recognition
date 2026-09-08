@@ -37,6 +37,7 @@ from ser_lib.data.errors import (
     SERDataError,
     TransformError,
 )
+from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
 from ser_lib.data.importers import (
     CasiaImporter,
     CsvImporter,
@@ -165,4 +166,7 @@ __all__ = [
     "RecordView",
     "RecordPage",
     "query_records",
+    # Dataset fingerprint
+    "DatasetFingerprint",
+    "fingerprint_manifest",
 ]
