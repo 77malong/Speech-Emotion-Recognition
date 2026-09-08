@@ -75,7 +75,12 @@ from ser_lib.data.types import (
     TensorSpec,
     validate_sample_contract,
 )
-from ser_lib.data.validation import ModelSpec, validate_compatibility
+from ser_lib.data.validation import (
+    CompatibilityReport,
+    ModelSpec,
+    inspect_compatibility,
+    validate_compatibility,
+)
 
 # 注册全部内置组件（import 即可用，代价为常数时间字典操作）
 register_importers()
@@ -144,6 +149,8 @@ __all__ = [
     "load_data_config",
     # Validation
     "ModelSpec",
+    "CompatibilityReport",
+    "inspect_compatibility",
     "validate_compatibility",
     "AudioProbeFailure", "DatasetAudioProfile", "profile_manifest_audio",
 ]
