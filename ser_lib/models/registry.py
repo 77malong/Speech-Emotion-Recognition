@@ -92,11 +92,7 @@ class ModelRegistry:
             raise RegistryError(f"模型 {name!r} 配置校验失败: {exc}") from exc
 
     def inspect_spec(self, name: str, params: dict[str, Any]) -> "ModelSpec":
-        """仅根据配置生成 ModelSpec，不实例化模型、不加载权重。
-
-        该接口用于 Experiment dry-run 和 Web 配置预检。第三方模型若希望支持
-        dry-run，应在注册时提供 ``spec_factory``。
-        """
+        """仅根据配置生成 ModelSpec，不实例化模型、不加载权重。"""
         if name not in self._entries:
             raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
         entry = self._entries[name]
@@ -117,8 +113,13 @@ class ModelRegistry:
             )
         return spec
 
+    def supports_static_spec(self, name: str) -> bool:
+        """模型是否支持不实例化模型的静态 ModelSpec 查询。"""
+        if name not in self._entries:
+            raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
+        return self._entries[name].spec_factory is not None
+
     def descriptor(self, name: str) -> dict[str, Any]:
-        """按名称返回单个模型 descriptor。"""
         if name not in self._entries:
             raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
         return self._entries[name].descriptor.to_json_safe()
