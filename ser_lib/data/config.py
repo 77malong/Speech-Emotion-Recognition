@@ -21,6 +21,7 @@ BatchingType = Literal["dynamic", "fixed", "sliding"]
 class _StrictModel(StrictConfig):
     """全库配置模型基类：禁止未知字段。"""
 
+
 class ComponentConfig(_StrictModel):
     """通用组件引用：``{type, params, probability}``。
 
@@ -41,7 +42,9 @@ class AudioSettings(_StrictModel):
     target_sample_rate: int = Field(default=16000, ge=1000, le=192000)
     mono: bool = True
     normalize_peak: bool = False
-    backend: Literal["torchaudio"] = "torchaudio"
+    # SoundFile wheel 自带 libsndfile，跨 Linux/macOS/Windows 的 CI 和部署更稳定。
+    # torchaudio 保留用于旧配置；AudioLoader 会在其 I/O backend 不可用时回退。
+    backend: Literal["soundfile", "torchaudio"] = "soundfile"
 
 
 class CacheSettings(_StrictModel):
