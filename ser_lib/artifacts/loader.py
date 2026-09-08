@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,14 @@ from safetensors.torch import load_file
 
 from ser_lib import __version__
 from ser_lib.artifacts.manifest import ModelArtifactManifest
+from ser_lib.core.events import (
+    CancellationCheck,
+    EventCallback,
+    EventContext,
+    LifecycleEvent,
+    ProgressEvent,
+)
+from ser_lib.core.exceptions import OperationCancelled
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator, build_collator
 from ser_lib.data.config import DataConfig
@@ -31,10 +40,34 @@ class LoadedArtifact:
 
 
 def _sha256(path: Path) -> str:
+    """兼容旧内部测试/调用的无观察 SHA256 helper。"""
     digest = hashlib.sha256()
     with path.open("rb") as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _sha256_with_progress(
+    path: Path,
+    *,
+    cancellation: CancellationCheck | None = None,
+    on_chunk: Callable[[int], None] | None = None,
+) -> str:
+    """按 1 MiB chunk 计算 SHA256，并允许在 chunk 边界取消/上报进度。"""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while True:
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            chunk = source.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            if on_chunk is not None:
+                on_chunk(len(chunk))
+    if cancellation is not None:
+        cancellation.raise_if_cancelled()
     return digest.hexdigest()
 
 
@@ -127,24 +160,153 @@ def inspect_model_artifact(directory: Path | str) -> ModelArtifactManifest:
     return manifest
 
 
-def verify_model_artifact(directory: Path | str) -> ModelArtifactManifest:
-    """在快速 inspect 基础上计算并校验全部 SHA256，不加载模型。"""
-    source = Path(directory)
-    manifest = inspect_model_artifact(source)
-    weights = _safe_component_path(source, manifest.weights_file)
-    weights_digest = _sha256(weights)
-    if weights_digest != manifest.weights_sha256:
-        raise ValueError("模型权重 SHA-256 校验失败，文件可能损坏或被修改")
+def verify_model_artifact(
+    directory: Path | str,
+    *,
+    event_callback: EventCallback | None = None,
+    cancellation: CancellationCheck | None = None,
+    event_context: EventContext | None = None,
+) -> ModelArtifactManifest:
+    """完整校验全部 SHA256，并以读取字节数暴露进度。
 
-    if manifest.schema_version >= 2:
-        for name, expected in manifest.files_sha256.items():
-            if name == manifest.weights_file:
-                actual = weights_digest
-            else:
-                actual = _sha256(_safe_component_path(source, name))
+    ``inspect_model_artifact()`` 仍保持轻量；只有该函数会读取完整组成文件。
+    当可获取文件大小时 ``ProgressEvent.total`` 为待 hash 的总字节数，Web 可以
+    直接展示真实百分比。取消在每个 1 MiB chunk 边界检查。
+    """
+    source = Path(directory)
+    context = event_context or EventContext()
+
+    def emit(event: LifecycleEvent | ProgressEvent) -> None:
+        if event_callback is not None:
+            event_callback(event)
+
+    emit(
+        LifecycleEvent(
+            "artifact_verify",
+            "started",
+            details={"directory": source},
+            context=context,
+        )
+    )
+
+    completed_bytes = 0
+    files_completed = 0
+    try:
+        if cancellation is not None:
+            cancellation.raise_if_cancelled()
+        manifest = inspect_model_artifact(source)
+
+        if manifest.schema_version >= 2:
+            file_entries = [(manifest.weights_file, manifest.weights_sha256)]
+            file_entries.extend(
+                (name, expected)
+                for name, expected in manifest.files_sha256.items()
+                if name != manifest.weights_file
+            )
+        else:
+            file_entries = [(manifest.weights_file, manifest.weights_sha256)]
+
+        resolved = [
+            (name, expected, _safe_component_path(source, name))
+            for name, expected in file_entries
+        ]
+        total_bytes = sum(path.stat().st_size for _, _, path in resolved)
+        emit(
+            ProgressEvent(
+                stage="artifact_verify",
+                completed=0,
+                total=total_bytes,
+                message="ready",
+                details={
+                    "files_completed": 0,
+                    "files_total": len(resolved),
+                    "bytes_total": total_bytes,
+                },
+                context=context,
+            )
+        )
+
+        for name, expected, path in resolved:
+            file_completed = 0
+            file_total = path.stat().st_size
+
+            def on_chunk(size: int) -> None:
+                nonlocal completed_bytes, file_completed
+                completed_bytes += size
+                file_completed += size
+                emit(
+                    ProgressEvent(
+                        stage="artifact_verify",
+                        completed=completed_bytes,
+                        total=total_bytes,
+                        message=f"hashing {name}",
+                        details={
+                            "file": name,
+                            "file_bytes_completed": file_completed,
+                            "file_bytes_total": file_total,
+                            "files_completed": files_completed,
+                            "files_total": len(resolved),
+                        },
+                        context=context,
+                    )
+                )
+
+            actual = _sha256_with_progress(
+                path,
+                cancellation=cancellation,
+                on_chunk=on_chunk,
+            )
             if actual != expected:
+                if name == manifest.weights_file:
+                    raise ValueError(
+                        "模型权重 SHA-256 校验失败，文件可能损坏或被修改"
+                    )
                 raise ValueError(f"artifact 文件 SHA-256 校验失败: {name}")
-    return manifest
+            files_completed += 1
+
+        emit(
+            LifecycleEvent(
+                "artifact_verify",
+                "completed",
+                details={
+                    "directory": source,
+                    "bytes_verified": completed_bytes,
+                    "files_verified": files_completed,
+                },
+                context=context,
+            )
+        )
+        return manifest
+    except OperationCancelled:
+        emit(
+            LifecycleEvent(
+                "artifact_verify",
+                "cancelled",
+                details={
+                    "directory": source,
+                    "bytes_verified": completed_bytes,
+                    "files_verified": files_completed,
+                },
+                context=context,
+            )
+        )
+        raise
+    except Exception as exc:
+        emit(
+            LifecycleEvent(
+                "artifact_verify",
+                "failed",
+                message=str(exc),
+                details={
+                    "directory": source,
+                    "error_type": type(exc).__name__,
+                    "bytes_verified": completed_bytes,
+                    "files_verified": files_completed,
+                },
+                context=context,
+            )
+        )
+        raise
 
 
 def load_model_artifact(
