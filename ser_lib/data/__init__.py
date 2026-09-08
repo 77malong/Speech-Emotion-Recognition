@@ -61,6 +61,7 @@ from ser_lib.data.profiling import (
     profile_manifest_audio,
     summarize_manifest,
 )
+from ser_lib.data.query import RecordPage, RecordView, query_records
 from ser_lib.data.registry import (
     ComponentDescriptor,
     Registry,
@@ -160,4 +161,8 @@ __all__ = [
     "DatasetSummary",
     "profile_manifest_audio",
     "summarize_manifest",
+    # Dataset query
+    "RecordView",
+    "RecordPage",
+    "query_records",
 ]
