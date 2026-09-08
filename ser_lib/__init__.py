@@ -2,6 +2,7 @@
 
 __version__ = "0.2.0"
 
+from ser_lib.core import Diagnostic, DiagnosticSeverity
 from ser_lib.data import SERBatch, SERDataset, SERSample, TensorSpec
 from ser_lib.artifacts import (
     ModelArtifactManifest,
@@ -44,6 +45,7 @@ from ser_lib.models import (
 )
 
 __all__ = [
+    "Diagnostic", "DiagnosticSeverity",
     "SERDataset", "SERSample", "SERBatch", "TensorSpec",
     "ModelCard", "ModelArtifactManifest", "export_model_artifact",
     "verify_model_artifact", "load_model_artifact",

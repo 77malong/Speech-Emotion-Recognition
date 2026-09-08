@@ -7,6 +7,7 @@ from ser_lib.core.config import (
     require_schema_version,
     resolve_config_path,
 )
+from ser_lib.core.diagnostics import Diagnostic, DiagnosticSeverity
 from ser_lib.core.events import (
     EVENT_SCHEMA_VERSION,
     CancellationCheck,
@@ -25,6 +26,7 @@ from ser_lib.core.logging import configure_library_logging, get_logger
 
 __all__ = [
     "SERError", "ConfigurationError", "OperationCancelled",
+    "Diagnostic", "DiagnosticSeverity",
     "StrictConfig", "load_yaml_mapping", "load_versioned_config",
     "require_schema_version", "resolve_config_path",
     "EVENT_SCHEMA_VERSION", "EventContext", "ProgressEvent", "MetricEvent",

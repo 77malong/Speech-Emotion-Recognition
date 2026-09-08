@@ -12,7 +12,8 @@
     └── CompatibilityError
 
 异常消息必须包含 ``uid`` 与解析后的音频路径（如适用）；底层异常保留为
-``__cause__``，保证错误可定位。
+``__cause__``，保证错误可定位。每个公开领域异常拥有稳定机器可读 ``code``，
+Web/CLI 不需要通过异常类名或消息字符串推断错误类型。
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from ser_lib.core.exceptions import SERError
 
 class SERDataError(SERError):
     """数据模块所有业务异常的基类。"""
+
+    default_code = "data_error"
 
     def __init__(self, message: str, *, uid: str | None = None,
                  path: Path | str | None = None,
@@ -52,7 +55,7 @@ class SERDataError(SERError):
             message = f"{message} [{'; '.join(parts)}]"
         super().__init__(
             message,
-            code="data_error",
+            code=self.default_code,
             details={
                 key: value for key, value in {
                     "uid": uid,
@@ -71,37 +74,55 @@ class SERDataError(SERError):
 class ManifestError(SERDataError):
     """Manifest 读取、校验或路径解析失败。"""
 
+    default_code = "manifest_error"
+
 
 class AudioNotFoundError(SERDataError):
     """音频文件不存在。"""
+
+    default_code = "audio_not_found"
 
 
 class AudioDecodeError(SERDataError):
     """音频解码失败或内容损坏。"""
 
+    default_code = "audio_decode_error"
+
 
 class InvalidAudioSegmentError(SERDataError):
     """音频片段定义非法（越界、零长度或解码结果为空）。"""
+
+    default_code = "audio_invalid_segment"
 
 
 class RepresentationError(SERDataError):
     """表示（Representation）计算失败或输出违反契约。"""
 
+    default_code = "representation_error"
+
 
 class TransformError(SERDataError):
     """Transform 构建或执行失败。"""
+
+    default_code = "transform_error"
 
 
 class CollationError(SERDataError):
     """批处理（collate）失败：key 不一致、layout 不匹配、部分样本缺标签等。"""
 
+    default_code = "collation_error"
+
 
 class CompatibilityError(SERDataError):
     """表示、批处理与模型输入要求之间的兼容性校验失败。"""
 
+    default_code = "compatibility_error"
+
 
 class RegistryError(SERDataError):
     """注册表操作失败：重复注册、未知组件、schema 校验失败等。"""
+
+    default_code = "registry_error"
 
 
 def wrap_error(

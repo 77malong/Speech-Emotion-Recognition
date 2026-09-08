@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, Protocol
 
+from ser_lib.core.diagnostics import Diagnostic, DiagnosticSeverity
 from ser_lib.core.events import (
     CancellationCheck,
     EventCallback,
@@ -29,19 +30,51 @@ ImportOperation = Literal["scan", "convert"]
 
 @dataclass(frozen=True)
 class ImportIssue:
-    """单条导入错误或告警，保留原因以便调用方汇总展示。"""
+    """旧 importer issue 结构；保留兼容并可转换为统一 Diagnostic。"""
 
     entry_index: int | None
     path: Path | None
     stage: str
     message: str
     detail: str | None = None
+    severity: DiagnosticSeverity = "error"
+    code: str = "import_issue"
+    suggestion: str | None = None
 
     def __str__(self) -> str:  # pragma: no cover - 展示用途
         location = f" [{self.path}]" if self.path is not None else ""
         index = f" #{self.entry_index}" if self.entry_index is not None else ""
         detail = f" ({self.detail})" if self.detail else ""
         return f"{self.stage}{index}{location}: {self.message}{detail}"
+
+    def to_diagnostic(self) -> Diagnostic:
+        details: dict[str, Any] = {}
+        if self.entry_index is not None:
+            details["entry_index"] = self.entry_index
+        if self.detail is not None:
+            details["detail"] = self.detail
+        return Diagnostic(
+            severity=self.severity,
+            code=self.code,
+            message=self.message,
+            stage=self.stage,
+            path=self.path,
+            suggestion=self.suggestion,
+            details=details,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """保留旧 issue 字段，同时增加稳定 severity/code。"""
+        return {
+            "entry_index": self.entry_index,
+            "path": str(self.path) if self.path else None,
+            "stage": self.stage,
+            "message": self.message,
+            "detail": self.detail,
+            "severity": self.severity,
+            "code": self.code,
+            "suggestion": self.suggestion,
+        }
 
 
 @dataclass
@@ -53,30 +86,39 @@ class ImportPreview:
     label_mapping: dict[str, int] = field(default_factory=dict)
     issues: list[ImportIssue] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    structured_diagnostics: list[Diagnostic] = field(default_factory=list)
+
+    @property
+    def diagnostics(self) -> tuple[Diagnostic, ...]:
+        """统一视图；自动桥接旧 ``issues``/``warnings``，供新调用方消费。"""
+        legacy_issues = [issue.to_diagnostic() for issue in self.issues]
+        legacy_warnings = [
+            Diagnostic(
+                severity="warning",
+                code="import_warning",
+                message=warning,
+                stage="scan",
+            )
+            for warning in self.warnings
+        ]
+        return tuple([*legacy_issues, *legacy_warnings, *self.structured_diagnostics])
 
     @property
     def ok(self) -> bool:
-        """是否没有错误级 issue。"""
-        return not self.issues
+        """是否不存在 error severity 的诊断。"""
+        return not any(item.severity == "error" for item in self.diagnostics)
 
     def summary(self) -> dict[str, Any]:
-        """返回可序列化的预览摘要。"""
+        """返回可序列化的预览摘要，兼容旧字段并增加统一 diagnostics。"""
         return {
             "importer": self.importer_id,
             "num_records": len(self.records),
             "label_mapping": dict(self.label_mapping),
             "num_issues": len(self.issues),
-            "issues": [
-                {
-                    "entry_index": issue.entry_index,
-                    "path": str(issue.path) if issue.path else None,
-                    "stage": issue.stage,
-                    "message": issue.message,
-                    "detail": issue.detail,
-                }
-                for issue in self.issues
-            ],
+            "issues": [issue.to_dict() for issue in self.issues],
             "warnings": list(self.warnings),
+            "num_diagnostics": len(self.diagnostics),
+            "diagnostics": [diagnostic.to_dict() for diagnostic in self.diagnostics],
         }
 
 
