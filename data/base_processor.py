@@ -5,10 +5,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-import torchaudio
 import yaml
 from tqdm import tqdm
 
+from ser_lib.data.audio import probe_audio
 from ser_lib.data.config import (
     AudioSettings,
     BatchingConfig,
@@ -61,7 +61,7 @@ class DatasetProcessor(ABC):
         for item in tqdm(raw_samples, desc="音频校验", unit="file"):
             path = Path(item["audio_path"]).resolve()
             try:
-                info = torchaudio.info(str(path))
+                info = probe_audio(path)
                 if info.num_frames <= 0 or info.sample_rate <= 0:
                     raise ValueError("空音频或非法采样率")
             except Exception as exc:
