@@ -15,6 +15,7 @@ from ser_lib.artifacts import (
     ModelArtifactManifest,
     ModelCard,
     export_model_artifact,
+    inspect_model_artifact,
     load_model_artifact,
     verify_model_artifact,
 )
@@ -69,7 +70,7 @@ __all__ = [
     "get_component_catalog", "list_component_descriptors",
     "SERDataset", "SERSample", "SERBatch", "TensorSpec",
     "ModelCard", "ModelArtifactManifest", "export_model_artifact",
-    "verify_model_artifact", "load_model_artifact",
+    "inspect_model_artifact", "verify_model_artifact", "load_model_artifact",
     "SERModel", "ModelOutput", "CNNBaseline", "GRUBaseline",
     "TransformerBaseline", "HFAudioClassifier",
     "Trainer", "TrainerConfig", "ObservabilityConfig", "TrainingResult", "TrainingStatus",
