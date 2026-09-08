@@ -4,6 +4,9 @@
 
     SERDataError
     ├── ManifestError
+    ├── DatasetEditError
+    │   ├── DatasetEditConflictError
+    │   └── DatasetTransactionError
     ├── AudioNotFoundError
     ├── AudioDecodeError
     ├── InvalidAudioSegmentError
@@ -75,6 +78,24 @@ class ManifestError(SERDataError):
     """Manifest 读取、校验或路径解析失败。"""
 
     default_code = "manifest_error"
+
+
+class DatasetEditError(SERDataError):
+    """DatasetEditor 参数、目标记录或编辑操作非法。"""
+
+    default_code = "dataset_edit_error"
+
+
+class DatasetEditConflictError(DatasetEditError):
+    """编辑期间源 Dataset 已被外部修改，拒绝覆盖新版本。"""
+
+    default_code = "dataset_edit_conflict"
+
+
+class DatasetTransactionError(DatasetEditError):
+    """Dataset staging、验证、提交或自动恢复失败。"""
+
+    default_code = "dataset_transaction_error"
 
 
 class AudioNotFoundError(SERDataError):
