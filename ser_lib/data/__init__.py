@@ -25,11 +25,15 @@ from ser_lib.data.config import (
     load_data_config,
 )
 from ser_lib.data.dataset import SERDataset
+from ser_lib.data.editor import DatasetEditor
 from ser_lib.data.errors import (
     AudioDecodeError,
     AudioNotFoundError,
     CollationError,
     CompatibilityError,
+    DatasetEditConflictError,
+    DatasetEditError,
+    DatasetTransactionError,
     InvalidAudioSegmentError,
     ManifestError,
     RegistryError,
@@ -103,6 +107,9 @@ __all__ = [
     # 异常
     "SERDataError",
     "ManifestError",
+    "DatasetEditError",
+    "DatasetEditConflictError",
+    "DatasetTransactionError",
     "AudioNotFoundError",
     "AudioDecodeError",
     "InvalidAudioSegmentError",
@@ -116,6 +123,8 @@ __all__ = [
     "ManifestMeta",
     "read_jsonl",
     "write_jsonl",
+    # Dataset editor
+    "DatasetEditor",
     # Audio
     "AudioLoader",
     "AudioLoaderConfig",
