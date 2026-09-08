@@ -67,7 +67,13 @@ from ser_lib.catalog import (
     get_component_catalog,
     list_component_descriptors,
 )
-from ser_lib.runtime import RuntimeCapabilities, RuntimeDevice, get_runtime_capabilities
+from ser_lib.runtime import (
+    RuntimeCapabilities,
+    RuntimeDevice,
+    RuntimeMetrics,
+    get_runtime_capabilities,
+    get_runtime_metrics,
+)
 
 __all__ = [
     "Diagnostic", "DiagnosticSeverity",
@@ -75,7 +81,8 @@ __all__ = [
     "CATALOG_SCHEMA_VERSION", "CATALOG_CATEGORIES",
     "ComponentDescriptor", "ComponentCatalog",
     "get_component_catalog", "list_component_descriptors",
-    "RuntimeDevice", "RuntimeCapabilities", "get_runtime_capabilities",
+    "RuntimeDevice", "RuntimeCapabilities", "RuntimeMetrics",
+    "get_runtime_capabilities", "get_runtime_metrics",
     "SERDataset", "SERSample", "SERBatch", "TensorSpec",
     "ModelCard", "ModelArtifactManifest", "ArtifactInfo", "ArtifactScanFailure",
     "ArtifactCatalog", "scan_model_artifacts", "export_model_artifact",
