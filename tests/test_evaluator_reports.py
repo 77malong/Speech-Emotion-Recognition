@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 import torch
 
-from ser_lib.core import CancellationToken, OperationCancelled, ProgressEvent
+from ser_lib.core import (
+    CancellationToken,
+    LifecycleEvent,
+    OperationCancelled,
+    ProgressEvent,
+)
 from ser_lib.data import SERBatch, TensorSpec
 from ser_lib.data.validation import ModelSpec
 from ser_lib.engine import evaluate, write_evaluation_report
@@ -73,7 +78,16 @@ def test_evaluate_returns_known_ser_metrics_and_predictions():
     assert len(result.predictions) == 4
     assert result.predictions[1].predicted == 0
     assert sum(result.predictions[0].probabilities) == pytest.approx(1.0)
-    assert len(events) == 1 and isinstance(events[0], ProgressEvent)
+
+    lifecycle = [event for event in events if isinstance(event, LifecycleEvent)]
+    assert [(event.stage, event.status) for event in lifecycle] == [
+        ("evaluation", "started"),
+        ("evaluation", "completed"),
+    ]
+    progress = [event for event in events if isinstance(event, ProgressEvent)]
+    assert len(progress) == 1
+    assert progress[0].completed == 1
+    assert progress[0].total == 1
     assert model.training is True
 
 
