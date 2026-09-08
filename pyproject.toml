@@ -25,6 +25,8 @@ ser = "ser_lib.cli.main:main"
 [project.optional-dependencies]
 test = [
     "pytest>=7.4",
+    "numpy>=1.26",
+    "tqdm>=4.66",
 ]
 dev = [
     "build>=1.2",
