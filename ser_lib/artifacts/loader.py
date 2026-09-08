@@ -1,4 +1,4 @@
-"""校验并加载模型 artifact。"""
+"""快速检查、完整校验并加载模型 artifact。"""
 
 from __future__ import annotations
 
@@ -52,39 +52,29 @@ def _safe_component_path(source: Path, name: str) -> Path:
     return candidate
 
 
-def verify_model_artifact(directory: Path | str) -> ModelArtifactManifest:
-    """验证 manifest、版本、文件存在性与全部校验和，不加载模型。"""
-    source = Path(directory)
+def _read_manifest(source: Path) -> ModelArtifactManifest:
     manifest_path = source / "manifest.json"
     if not manifest_path.is_file():
         raise FileNotFoundError(f"artifact manifest 不存在: {manifest_path}")
     try:
-        manifest = ModelArtifactManifest.model_validate_json(
+        return ModelArtifactManifest.model_validate_json(
             manifest_path.read_text(encoding="utf-8")
         )
     except (OSError, UnicodeError, ValueError) as exc:
-        raise ValueError(f"artifact manifest 无法读取或校验失败: {manifest_path}") from exc
-    if manifest.schema_version >= 2 and _major(manifest.library_version) != _major(__version__):
         raise ValueError(
-            f"artifact 需要 ser_lib {manifest.library_version}，当前版本 {__version__} 不兼容"
+            f"artifact manifest 无法读取或校验失败: {manifest_path}"
+        ) from exc
+
+
+def _validate_manifest_compatibility(manifest: ModelArtifactManifest) -> None:
+    if (
+        manifest.schema_version >= 2
+        and _major(manifest.library_version) != _major(__version__)
+    ):
+        raise ValueError(
+            f"artifact 需要 ser_lib {manifest.library_version}，"
+            f"当前版本 {__version__} 不兼容"
         )
-    weights = _safe_component_path(source, manifest.weights_file)
-    if not weights.is_file():
-        raise FileNotFoundError(f"模型权重不存在: {weights}")
-    if _sha256(weights) != manifest.weights_sha256:
-        raise ValueError("模型权重 SHA-256 校验失败，文件可能损坏或被修改")
-    if manifest.schema_version >= 2:
-        if not manifest.files_sha256:
-            raise ValueError("schema v2 artifact 缺少 files_sha256")
-        if manifest.files_sha256.get(manifest.weights_file) != manifest.weights_sha256:
-            raise ValueError("weights_sha256 与 files_sha256 不一致")
-        for name, expected in manifest.files_sha256.items():
-            path = _safe_component_path(source, name)
-            if not path.is_file():
-                raise FileNotFoundError(f"artifact 组成文件不存在: {path}")
-            if _sha256(path) != expected:
-                raise ValueError(f"artifact 文件 SHA-256 校验失败: {name}")
-    return manifest
 
 
 def _validate_external_metadata(source: Path, manifest: ModelArtifactManifest) -> None:
@@ -97,9 +87,64 @@ def _validate_external_metadata(source: Path, manifest: ModelArtifactManifest) -
         "metrics.json": manifest.metrics,
     }
     for name, embedded in expected.items():
-        actual = json.loads((source / name).read_text(encoding="utf-8"))
+        path = _safe_component_path(source, name)
+        try:
+            actual = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise FileNotFoundError(f"artifact 元数据文件不存在: {path}") from None
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"artifact 元数据文件无法读取: {name}") from exc
         if actual != embedded:
             raise ValueError(f"artifact {name} 与 manifest 内容不一致")
+
+
+def inspect_model_artifact(directory: Path | str) -> ModelArtifactManifest:
+    """快速检查 artifact 结构和轻量 metadata，不计算任何文件 SHA256。
+
+    该入口用于模型列表与详情页首屏：只读取 ``manifest.json`` 和小型 metadata，
+    并检查 manifest 声明的组成文件是否存在。权重即使数 GB 也不会被完整读取。
+    用户明确执行完整性验证时再调用 :func:`verify_model_artifact`。
+    """
+    source = Path(directory)
+    manifest = _read_manifest(source)
+    _validate_manifest_compatibility(manifest)
+
+    weights = _safe_component_path(source, manifest.weights_file)
+    if not weights.is_file():
+        raise FileNotFoundError(f"模型权重不存在: {weights}")
+
+    if manifest.schema_version >= 2:
+        if not manifest.files_sha256:
+            raise ValueError("schema v2 artifact 缺少 files_sha256")
+        if manifest.files_sha256.get(manifest.weights_file) != manifest.weights_sha256:
+            raise ValueError("weights_sha256 与 files_sha256 不一致")
+        for name in manifest.files_sha256:
+            path = _safe_component_path(source, name)
+            if not path.is_file():
+                raise FileNotFoundError(f"artifact 组成文件不存在: {path}")
+
+    _validate_external_metadata(source, manifest)
+    return manifest
+
+
+def verify_model_artifact(directory: Path | str) -> ModelArtifactManifest:
+    """在快速 inspect 基础上计算并校验全部 SHA256，不加载模型。"""
+    source = Path(directory)
+    manifest = inspect_model_artifact(source)
+    weights = _safe_component_path(source, manifest.weights_file)
+    weights_digest = _sha256(weights)
+    if weights_digest != manifest.weights_sha256:
+        raise ValueError("模型权重 SHA-256 校验失败，文件可能损坏或被修改")
+
+    if manifest.schema_version >= 2:
+        for name, expected in manifest.files_sha256.items():
+            if name == manifest.weights_file:
+                actual = weights_digest
+            else:
+                actual = _sha256(_safe_component_path(source, name))
+            if actual != expected:
+                raise ValueError(f"artifact 文件 SHA-256 校验失败: {name}")
+    return manifest
 
 
 def load_model_artifact(
@@ -108,10 +153,9 @@ def load_model_artifact(
     map_location: str | torch.device = "cpu",
     allow_legacy_pickle: bool = False,
 ) -> LoadedArtifact:
-    """验证并加载 artifact；旧 v1 pickle 必须显式授权。"""
+    """完整验证并加载 artifact；旧 v1 pickle 必须显式授权。"""
     source = Path(directory)
     manifest = verify_model_artifact(source)
-    _validate_external_metadata(source, manifest)
     target_device = torch.device(map_location)
     if target_device.type == "cuda" and not torch.cuda.is_available():
         raise ValueError("artifact 加载请求 CUDA，但当前环境不可用")
@@ -133,7 +177,8 @@ def load_model_artifact(
         state = torch.load(weights, map_location="cpu", weights_only=True)
     else:
         raise ValueError(
-            "旧 PyTorch artifact 可能包含 pickle；仅可信文件可设置 allow_legacy_pickle=True"
+            "旧 PyTorch artifact 可能包含 pickle；"
+            "仅可信文件可设置 allow_legacy_pickle=True"
         )
     if not isinstance(state, dict) or not all(
         isinstance(key, str) and isinstance(value, torch.Tensor)
@@ -145,4 +190,9 @@ def load_model_artifact(
     return LoadedArtifact(manifest, model, audio_loader, pipeline, collator)
 
 
-__all__ = ["LoadedArtifact", "verify_model_artifact", "load_model_artifact"]
+__all__ = [
+    "LoadedArtifact",
+    "inspect_model_artifact",
+    "verify_model_artifact",
+    "load_model_artifact",
+]
