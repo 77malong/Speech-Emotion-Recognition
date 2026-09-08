@@ -8,7 +8,8 @@ from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict
 
-from ser_lib.data.importers.base import ImportIssue, ImportPreview
+from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
 from ser_lib.data.importers.csemotions import _validate_speaker_splits
 from ser_lib.data.manifest import DatasetManifest, ManifestMeta
 from ser_lib.data.registry import ComponentDescriptor
@@ -36,7 +37,6 @@ EMOTIONTALK_OFFICIAL_SPLITS = {
 
 class EmotionTalkImportConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     json_directory: str = "json"
     audio_directory: str = "wav"
     encoding: str = "utf-8"
@@ -77,7 +77,15 @@ class EmotionTalkImporter:
         config_schema=EmotionTalkImportConfig.model_json_schema(),
     )
 
-    def scan(self, source: Path, config: Mapping[str, Any]) -> ImportPreview:
+    def scan(
+        self,
+        source: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
+    ) -> ImportPreview:
         cfg = EmotionTalkImportConfig(**dict(config))
         source = Path(source).resolve()
         if not source.is_dir():
@@ -94,90 +102,150 @@ class EmotionTalkImporter:
             preview.warnings.append("官方对话划分会让部分 speaker_id 跨 split；严格说话人泛化实验请使用默认策略。")
 
         seen: set[str] = set()
-        for index, annotation in enumerate(sorted(json_root.rglob("*.json"))):
-            try:
-                payload = json.loads(annotation.read_text(encoding=cfg.encoding))
-            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-                preview.issues.append(ImportIssue(index, annotation, "json", "无法读取 JSON", str(exc)))
-                continue
-            emotion = payload.get("emotion_result")
-            speaker = payload.get("speaker_id")
-            relative_audio = _safe_relative_audio(payload.get("file_path"))
-            if emotion not in mapping or not isinstance(speaker, str) or not speaker or relative_audio is None:
-                preview.issues.append(ImportIssue(index, annotation, "schema", "emotion_result/speaker_id/file_path 非法"))
-                continue
-            expected_json = json_root / relative_audio.with_suffix(".json")
-            if annotation.resolve() != expected_json.resolve():
-                preview.issues.append(ImportIssue(index, annotation, "path", "JSON 路径与 file_path 不对应"))
-                continue
-            audio = audio_root / relative_audio
-            if not audio.is_file():
-                preview.issues.append(ImportIssue(index, audio, "audio", "JSON 对应音频不存在"))
-                continue
-            uid = f"emotiontalk-{relative_audio.stem}"
-            if uid in seen:
-                preview.issues.append(ImportIssue(index, annotation, "uid", f"UID 重复: {uid}"))
-                continue
-            seen.add(uid)
-            paragraphs = payload.get("paragraphs") if isinstance(payload.get("paragraphs"), dict) else {}
-            metadata = {
-                "language": "zh",
-                "text": payload.get("content", ""),
-                "emotion_text": emotion,
-                "dialogue_id": relative_audio.parts[0],
-                "turn_group": relative_audio.parent.name,
-                "start_sec": paragraphs.get("startTime"),
-                "end_sec": paragraphs.get("endTime"),
-                "duration_sec": paragraphs.get("duration"),
-                "annotator_votes": payload.get("data", {}),
-                "descriptions": payload.get("sourceAttr", {}),
-            }
-            preview.records.append(AudioRecord(
-                uid=uid,
-                audio_path=Path(cfg.audio_directory) / relative_audio,
-                label=mapping[emotion],
-                speaker_id=speaker,
-                metadata=metadata,
-            ))
-        preview.label_mapping = mapping
-        if not preview.records and not preview.issues:
-            preview.issues.append(ImportIssue(None, json_root, "scan", "未发现 EmotionTalk JSON"))
-        return preview
+        with ImportTask(
+            self.descriptor.id, "scan", source=source,
+            event_callback=event_callback, cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            candidates = sorted(json_root.rglob("*.json"))
+            total = len(candidates)
+            for index, annotation in enumerate(candidates):
+                task.check()
+                try:
+                    try:
+                        payload = json.loads(annotation.read_text(encoding=cfg.encoding))
+                    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                        preview.issues.append(ImportIssue(index, annotation, "json", "无法读取 JSON", str(exc)))
+                        continue
+                    emotion = payload.get("emotion_result")
+                    speaker = payload.get("speaker_id")
+                    relative_audio = _safe_relative_audio(payload.get("file_path"))
+                    if (
+                        emotion not in mapping
+                        or not isinstance(speaker, str)
+                        or not speaker
+                        or relative_audio is None
+                    ):
+                        preview.issues.append(ImportIssue(index, annotation, "schema", "emotion_result/speaker_id/file_path 非法"))
+                        continue
+                    expected_json = json_root / relative_audio.with_suffix(".json")
+                    if annotation.resolve() != expected_json.resolve():
+                        preview.issues.append(ImportIssue(index, annotation, "path", "JSON 路径与 file_path 不对应"))
+                        continue
+                    audio = audio_root / relative_audio
+                    if not audio.is_file():
+                        preview.issues.append(ImportIssue(index, audio, "audio", "JSON 对应音频不存在"))
+                        continue
+                    uid = f"emotiontalk-{relative_audio.stem}"
+                    if uid in seen:
+                        preview.issues.append(ImportIssue(index, annotation, "uid", f"UID 重复: {uid}"))
+                        continue
+                    seen.add(uid)
+                    paragraphs = payload.get("paragraphs") if isinstance(payload.get("paragraphs"), dict) else {}
+                    metadata = {
+                        "language": "zh",
+                        "text": payload.get("content", ""),
+                        "emotion_text": emotion,
+                        "dialogue_id": relative_audio.parts[0],
+                        "turn_group": relative_audio.parent.name,
+                        "start_sec": paragraphs.get("startTime"),
+                        "end_sec": paragraphs.get("endTime"),
+                        "duration_sec": paragraphs.get("duration"),
+                        "annotator_votes": payload.get("data", {}),
+                        "descriptions": payload.get("sourceAttr", {}),
+                    }
+                    preview.records.append(AudioRecord(
+                        uid=uid,
+                        audio_path=Path(cfg.audio_directory) / relative_audio,
+                        label=mapping[emotion],
+                        speaker_id=speaker,
+                        metadata=metadata,
+                    ))
+                finally:
+                    task.progress(
+                        index + 1, total, message=annotation.name,
+                        details={
+                            "records_discovered": len(preview.records),
+                            "issues": len(preview.issues),
+                        },
+                    )
+            preview.label_mapping = mapping
+            if not preview.records and not preview.issues:
+                preview.issues.append(ImportIssue(None, json_root, "scan", "未发现 EmotionTalk JSON"))
+            task.update_details(
+                records=len(preview.records), issues=len(preview.issues),
+                warnings=len(preview.warnings), candidates=total,
+            )
+            return preview
 
-    def convert(self, source: Path, destination: Path, config: Mapping[str, Any]) -> DatasetManifest:
+    def convert(
+        self,
+        source: Path,
+        destination: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
+    ) -> DatasetManifest:
         cfg = EmotionTalkImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        preview = self.scan(source, config)
-        if not preview.ok or not preview.records:
-            issues = "; ".join(str(issue) for issue in preview.issues[:10])
-            raise ValueError(f"EmotionTalk 扫描失败: {issues or '没有记录'}")
-        if cfg.split_strategy == "official_dialogue":
-            if cfg.speaker_splits is not None:
-                raise ValueError("official_dialogue 策略不能同时配置 speaker_splits")
-            assignments = {}
-            for record in preview.records:
-                dialogue = str(record.metadata["dialogue_id"])
-                split = "val" if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["val"] else (
-                    "test" if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["test"] else "train"
+        with ImportTask(
+            self.descriptor.id, "convert", source=source, destination=destination,
+            event_callback=event_callback, cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            preview = self.scan(
+                source, config, event_callback=event_callback,
+                cancellation=cancellation, event_context=event_context,
+            )
+            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
+            if not preview.ok or not preview.records:
+                issues = "; ".join(str(issue) for issue in preview.issues[:10])
+                raise ValueError(f"EmotionTalk 扫描失败: {issues or '没有记录'}")
+            if cfg.split_strategy == "official_dialogue":
+                if cfg.speaker_splits is not None:
+                    raise ValueError("official_dialogue 策略不能同时配置 speaker_splits")
+                assignments = {}
+                for record in preview.records:
+                    task.check()
+                    dialogue = str(record.metadata["dialogue_id"])
+                    split = "val" if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["val"] else (
+                        "test" if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["test"] else "train"
+                    )
+                    assignments[record.uid] = split
+            else:
+                speakers = {record.speaker_id for record in preview.records if record.speaker_id}
+                splits = (
+                    _validate_speaker_splits(cfg.speaker_splits, speakers)
+                    if cfg.speaker_splits is not None else _automatic_splits(speakers)
                 )
-                assignments[record.uid] = split
-        else:
-            speakers = {record.speaker_id for record in preview.records if record.speaker_id}
-            splits = (_validate_speaker_splits(cfg.speaker_splits, speakers)
-                      if cfg.speaker_splits is not None else _automatic_splits(speakers))
-            speaker_to_split = {speaker: split for split, members in splits.items() for speaker in members}
-            assignments = {record.uid: speaker_to_split[record.speaker_id] for record in preview.records if record.speaker_id}
-        destination.mkdir(parents=True, exist_ok=True)
-        meta = ManifestMeta(
-            dataset_id="emotiontalk",
-            root=source,
-            yaml_path=destination / "dataset.yaml",
-            splits={name: destination / f"{name}.jsonl" for name in ("train", "val", "test")},
-            labels={label: {"en": emotion, "zh": EMOTIONTALK_ZH[emotion]} for emotion, label in preview.label_mapping.items()},
-        )
-        DatasetManifest(meta, preview.records, assignments).write()
-        return DatasetManifest.load(destination / "dataset.yaml")
+                speaker_to_split = {
+                    speaker: split for split, members in splits.items() for speaker in members
+                }
+                assignments = {
+                    record.uid: speaker_to_split[record.speaker_id]
+                    for record in preview.records if record.speaker_id
+                }
+            task.progress(2, 3, message="splits resolved")
+            task.check()
+            destination.mkdir(parents=True, exist_ok=True)
+            meta = ManifestMeta(
+                dataset_id="emotiontalk",
+                root=source,
+                yaml_path=destination / "dataset.yaml",
+                splits={name: destination / f"{name}.jsonl" for name in ("train", "val", "test")},
+                labels={
+                    label: {"en": emotion, "zh": EMOTIONTALK_ZH[emotion]}
+                    for emotion, label in preview.label_mapping.items()
+                },
+            )
+            DatasetManifest(meta, preview.records, assignments).write()
+            task.progress(3, 3, message="dataset manifest written")
+            result = DatasetManifest.load(destination / "dataset.yaml")
+            task.update_details(records=len(preview.records), issues=len(preview.issues))
+            return result
 
 
 __all__ = ["EMOTIONTALK_LABELS", "EmotionTalkImportConfig", "EmotionTalkImporter"]
