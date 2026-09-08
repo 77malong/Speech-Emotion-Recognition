@@ -22,6 +22,7 @@ from ser_lib.data.types import TensorSpec
 STATUS_STABLE = "stable"
 STATUS_EXPERIMENTAL = "experimental"
 STATUS_UNAVAILABLE = "unavailable"
+STATUS_OPTIONAL = "optional"
 
 # 默认公开列表只返回 stable
 PUBLIC_STATUSES: tuple[str, ...] = (STATUS_STABLE,)
@@ -29,10 +30,12 @@ PUBLIC_STATUSES: tuple[str, ...] = (STATUS_STABLE,)
 
 @dataclass(frozen=True)
 class ComponentDescriptor:
-    """公开的组件描述信息。
+    """统一的公开组件描述信息。
 
-    ``config_schema`` 来自 Pydantic 配置模型的 JSON Schema；调用方可以据此
-    检查可用参数，但仍须由注册表执行最终校验。
+    ``config_schema`` 来自 Pydantic JSON Schema，Web 可据此动态生成参数表单；
+    ``capabilities`` 只保存机器可读能力声明，不要求前端从描述文本推断行为。
+    ``input_specs`` / ``output_specs`` 为数据组件的兼容字段，后续新组件优先把
+    额外能力放入 ``capabilities``。
     """
 
     id: str
@@ -42,6 +45,7 @@ class ComponentDescriptor:
     status: str = STATUS_STABLE
     description: str = ""
     config_schema: dict[str, Any] = field(default_factory=dict)
+    capabilities: dict[str, Any] = field(default_factory=dict)
     input_specs: dict[str, TensorSpec] | None = None
     output_specs: dict[str, TensorSpec] | None = None
 
@@ -55,6 +59,7 @@ class ComponentDescriptor:
             "status": self.status,
             "description": self.description,
             "config_schema": self.config_schema,
+            "capabilities": dict(self.capabilities),
             "input_specs": _specs_to_json_safe(self.input_specs),
             "output_specs": _specs_to_json_safe(self.output_specs),
         }
@@ -102,26 +107,10 @@ class ComponentEntry:
 
 
 class Registry:
-    """命名空间隔离的组件注册表。
-
-    用法::
-
-        registry.register(
-            namespace="representation",
-            name="log_mel",
-            factory=LogMelRepresentation,
-            config_model=LogMelConfig,
-            descriptor=ComponentDescriptor(id="log_mel", ...),
-        )
-        rep = registry.create("representation", {"type": "log_mel", "params": {...}})
-    """
+    """命名空间隔离的组件注册表。"""
 
     def __init__(self) -> None:
         self._entries: dict[tuple[str, str], ComponentEntry] = {}
-
-    # ------------------------------------------------------------------
-    # 注册
-    # ------------------------------------------------------------------
 
     def register(
         self,
@@ -133,12 +122,6 @@ class Registry:
         descriptor: ComponentDescriptor | None = None,
         replace: bool = False,
     ) -> None:
-        """注册组件。
-
-        Raises:
-            RegistryError: ``(namespace, name)`` 重复且未显式 ``replace``；
-                descriptor id 与注册名不一致；config_model 不可实例化。
-        """
         if not namespace or not name:
             raise RegistryError(f"namespace 与 name 不能为空: {namespace!r}/{name!r}")
         key = (namespace, name)
@@ -155,27 +138,21 @@ class Registry:
             try:
                 config_model()
             except Exception as exc:  # noqa: BLE001 - 校验模型可用性
-                # Pydantic ValidationError 说明模型本身有效（只是存在必填字段）；
-                # 其他异常说明模型定义有问题，注册阶段即失败。
-                if isinstance(exc, ValidationError):
-                    pass
-                else:
+                if not isinstance(exc, ValidationError):
                     raise RegistryError(
                         f"组件 {namespace}.{name} 的 config_model 无法实例化: {exc}"
                     ) from exc
         if descriptor is None:
             descriptor = ComponentDescriptor(id=name, display_name=name, category=namespace)
         self._entries[key] = ComponentEntry(
-            namespace=namespace, name=name, factory=factory,
-            config_model=config_model, descriptor=descriptor,
+            namespace=namespace,
+            name=name,
+            factory=factory,
+            config_model=config_model,
+            descriptor=descriptor,
         )
 
-    # ------------------------------------------------------------------
-    # 查询与创建
-    # ------------------------------------------------------------------
-
     def get_entry(self, namespace: str, name: str) -> ComponentEntry:
-        """获取组件记录，未知组件报错并列出可用项。"""
         key = (namespace, name)
         if key not in self._entries:
             available = sorted(n for (ns, n) in self._entries if ns == namespace)
@@ -186,16 +163,6 @@ class Registry:
         return self._entries[key]
 
     def create(self, namespace: str, component: Mapping[str, Any] | str, **overrides: Any) -> Any:
-        """根据组件配置创建实例。
-
-        Args:
-            namespace: 命名空间。
-            component: ``{"type": ..., "params": {...}}`` 或直接是类型名字符串。
-            overrides: 追加以关键字形式传入工厂的参数（优先级高于 params）。
-
-        Raises:
-            RegistryError: 未知组件类型或参数校验失败。
-        """
         comp_type: str
         if isinstance(component, str):
             comp_type, params = component, {}
@@ -245,39 +212,31 @@ class Registry:
                 stage="component_build",
             ) from exc
 
-    # ------------------------------------------------------------------
-    # 枚举
-    # ------------------------------------------------------------------
-
     def names(self, namespace: str) -> list[str]:
-        """列出命名空间下全部组件名。"""
         return sorted(n for (ns, n) in self._entries if ns == namespace)
 
     def descriptors(
         self,
         namespace: str,
         *,
-        statuses: tuple[str, ...] = PUBLIC_STATUSES,
+        statuses: tuple[str, ...] | None = PUBLIC_STATUSES,
     ) -> list[ComponentDescriptor]:
-        """枚举命名空间下的组件描述符。
-
-        普通组件列表只返回 stable；experimental 组件需要显式传入 statuses。
-        """
+        """枚举组件；``statuses=None`` 时返回包括 optional/unavailable 在内的全部项。"""
         result = []
-        for (ns, name), entry in sorted(self._entries.items()):
+        for (ns, _name), entry in sorted(self._entries.items()):
             if ns != namespace:
                 continue
-            if entry.descriptor.status in statuses:
-                result.append(entry.descriptor)
+            if statuses is not None and entry.descriptor.status not in statuses:
+                continue
+            result.append(entry.descriptor)
         return result
 
     def json_safe_descriptors(
         self,
         namespace: str,
         *,
-        statuses: tuple[str, ...] = PUBLIC_STATUSES,
+        statuses: tuple[str, ...] | None = PUBLIC_STATUSES,
     ) -> list[dict[str, Any]]:
-        """枚举命名空间下的组件描述符并序列化为 JSON 安全结构。"""
         return [d.to_json_safe() for d in self.descriptors(namespace, statuses=statuses)]
 
 
