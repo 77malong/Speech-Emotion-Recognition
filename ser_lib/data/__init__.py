@@ -14,8 +14,8 @@ import 本包即完成组件注册（注册表操作轻量，不扫描文件、�
 """
 
 from ser_lib.data.audio import AudioLoader, AudioLoaderConfig
-from ser_lib.data.collate import CollateStrategy, SERCollator, build_collator
 from ser_lib.data.cache import CachedRepresentation
+from ser_lib.data.collate import CollateStrategy, SERCollator, build_collator
 from ser_lib.data.config import (
     AudioSettings,
     BatchingConfig,
@@ -57,7 +57,9 @@ from ser_lib.data.pipeline import SamplePipeline, build_components, build_pipeli
 from ser_lib.data.profiling import (
     AudioProbeFailure,
     DatasetAudioProfile,
+    DatasetSummary,
     profile_manifest_audio,
+    summarize_manifest,
 )
 from ser_lib.data.registry import (
     ComponentDescriptor,
@@ -152,5 +154,10 @@ __all__ = [
     "CompatibilityReport",
     "inspect_compatibility",
     "validate_compatibility",
-    "AudioProbeFailure", "DatasetAudioProfile", "profile_manifest_audio",
+    # Dataset summary / profiling
+    "AudioProbeFailure",
+    "DatasetAudioProfile",
+    "DatasetSummary",
+    "profile_manifest_audio",
+    "summarize_manifest",
 ]
