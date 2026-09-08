@@ -9,7 +9,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.core.events import (
+    CancellationCheck,
+    EventCallback,
+    EventContext,
+    PredictionEvent,
+    ProgressEvent,
+)
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.types import AudioRecord
 from ser_lib.inference.offline import EmotionPredictor, PredictionResult
@@ -46,7 +52,7 @@ class BatchPredictionResult:
 
 
 class BatchEmotionPredictor:
-    """在单文件预测器之上提供来源枚举和逐条失败策略。"""
+    """在单文件预测器之上提供来源枚举、增量事件和逐条失败策略。"""
 
     def __init__(self, predictor: EmotionPredictor) -> None:
         self.predictor = predictor
@@ -59,44 +65,82 @@ class BatchEmotionPredictor:
         batch_size: int = 16,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
     ) -> BatchPredictionResult:
+        """批量预测，并在每条成功结果产生后立即发送 ``PredictionEvent``。
+
+        ``PredictionEvent`` 与原有 ``ProgressEvent`` 共用同一 callback，因此 Web
+        Backend 可以边推理边展示结果，而不需要等待完整 ``BatchPredictionResult``。
+        结果仍然保留在返回值中；针对超大任务的 result sink 属于后续内存优化。
+        """
         if batch_size < 1:
             raise ValueError("batch_size 必须 >= 1")
         materialized = list(records)
         predictions: list[PredictionResult] = []
         failures: list[PredictionFailure] = []
         completed = 0
+        base_context = event_context or EventContext()
 
         def report() -> None:
             if event_callback is not None:
-                event_callback(ProgressEvent(
-                    stage="batch_predict",
-                    completed=completed,
-                    total=len(materialized),
-                    message=f"succeeded={len(predictions)}, failed={len(failures)}",
-                ))
+                event_callback(
+                    ProgressEvent(
+                        stage="batch_predict",
+                        completed=completed,
+                        total=len(materialized),
+                        message=(
+                            f"succeeded={len(predictions)}, failed={len(failures)}"
+                        ),
+                        context=base_context,
+                    )
+                )
+
+        def accept_prediction(result: PredictionResult) -> None:
+            nonlocal completed
+            predictions.append(result)
+            completed += 1
+            if event_callback is not None:
+                event_callback(
+                    PredictionEvent(
+                        uid=result.uid,
+                        label_id=result.label_id,
+                        emotion=result.emotion,
+                        confidence=result.confidence,
+                        probabilities=tuple(result.probabilities),
+                        context=base_context,
+                        details={
+                            "completed": completed,
+                            "total": len(materialized),
+                        },
+                    )
+                )
+            report()
 
         def predict_one(record: AudioRecord) -> None:
             nonlocal completed
             if cancellation is not None:
                 cancellation.raise_if_cancelled()
             try:
-                predictions.append(self.predictor.predict_record(record))
+                result = self.predictor.predict_record(record)
             except Exception as exc:
                 if fail_fast:
                     raise
-                failures.append(PredictionFailure(
-                    uid=record.uid,
-                    audio_path=str(record.audio_path),
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                ))
-            completed += 1
-            report()
+                failures.append(
+                    PredictionFailure(
+                        uid=record.uid,
+                        audio_path=str(record.audio_path),
+                        error_type=type(exc).__name__,
+                        message=str(exc),
+                    )
+                )
+                completed += 1
+                report()
+            else:
+                accept_prediction(result)
 
         batch_method = getattr(self.predictor, "predict_records", None)
         for start in range(0, len(materialized), batch_size):
-            chunk = materialized[start:start + batch_size]
+            chunk = materialized[start : start + batch_size]
             if cancellation is not None:
                 cancellation.raise_if_cancelled()
             if batch_method is None or len(chunk) == 1:
@@ -114,11 +158,13 @@ class BatchEmotionPredictor:
                 for record in chunk:
                     predict_one(record)
             else:
-                predictions.extend(chunk_results)
-                for _ in chunk:
-                    completed += 1
-                    report()
-        return BatchPredictionResult(tuple(predictions), tuple(failures), len(materialized))
+                for result in chunk_results:
+                    accept_prediction(result)
+        return BatchPredictionResult(
+            tuple(predictions),
+            tuple(failures),
+            len(materialized),
+        )
 
     def predict_files(
         self,
@@ -126,7 +172,10 @@ class BatchEmotionPredictor:
         **kwargs,
     ) -> BatchPredictionResult:
         records = [
-            AudioRecord(uid=f"{Path(path).stem or 'audio'}-{index:06d}", audio_path=Path(path))
+            AudioRecord(
+                uid=f"{Path(path).stem or 'audio'}-{index:06d}",
+                audio_path=Path(path),
+            )
             for index, path in enumerate(paths, start=1)
         ]
         return self.predict_records(records, **kwargs)
@@ -148,7 +197,11 @@ class BatchEmotionPredictor:
         }
         iterator = root.rglob("*") if recursive else root.glob("*")
         paths = sorted(
-            (path for path in iterator if path.is_file() and path.suffix.lower() in normalized),
+            (
+                path
+                for path in iterator
+                if path.is_file() and path.suffix.lower() in normalized
+            ),
             key=lambda path: path.as_posix().casefold(),
         )
         return self.predict_files(paths, **kwargs)
@@ -160,7 +213,11 @@ class BatchEmotionPredictor:
         split: str | None = None,
         **kwargs,
     ) -> BatchPredictionResult:
-        dataset = manifest if isinstance(manifest, DatasetManifest) else DatasetManifest.load(manifest)
+        dataset = (
+            manifest
+            if isinstance(manifest, DatasetManifest)
+            else DatasetManifest.load(manifest)
+        )
         return self.predict_records(dataset.resolved_records(split), **kwargs)
 
 
@@ -188,21 +245,30 @@ def write_batch_predictions(
                     stream.write(json.dumps(row, ensure_ascii=False) + "\n")
         else:
             columns = [
-                "status", "uid", "label_id", "emotion", "confidence",
-                "probabilities", "audio_path", "error_type", "message",
+                "status",
+                "uid",
+                "label_id",
+                "emotion",
+                "confidence",
+                "probabilities",
+                "audio_path",
+                "error_type",
+                "message",
             ]
             with temporary.open("w", encoding="utf-8", newline="") as stream:
                 writer = csv.DictWriter(stream, fieldnames=columns)
                 writer.writeheader()
                 for prediction in result.predictions:
-                    writer.writerow({
-                        "status": "succeeded",
-                        "uid": prediction.uid,
-                        "label_id": prediction.label_id,
-                        "emotion": prediction.emotion,
-                        "confidence": prediction.confidence,
-                        "probabilities": json.dumps(prediction.probabilities),
-                    })
+                    writer.writerow(
+                        {
+                            "status": "succeeded",
+                            "uid": prediction.uid,
+                            "label_id": prediction.label_id,
+                            "emotion": prediction.emotion,
+                            "confidence": prediction.confidence,
+                            "probabilities": json.dumps(prediction.probabilities),
+                        }
+                    )
                 for failure in result.failures:
                     writer.writerow({"status": "failed", **asdict(failure)})
         temporary.replace(target)
@@ -213,6 +279,8 @@ def write_batch_predictions(
 
 
 __all__ = [
-    "PredictionFailure", "BatchPredictionResult", "BatchEmotionPredictor",
+    "PredictionFailure",
+    "BatchPredictionResult",
+    "BatchEmotionPredictor",
     "write_batch_predictions",
 ]
