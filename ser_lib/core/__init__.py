@@ -11,6 +11,7 @@ from ser_lib.core.events import (
     EVENT_SCHEMA_VERSION,
     CancellationCheck,
     CancellationToken,
+    CheckpointEvent,
     EventCallback,
     EventContext,
     LibraryEvent,
@@ -27,7 +28,7 @@ __all__ = [
     "StrictConfig", "load_yaml_mapping", "load_versioned_config",
     "require_schema_version", "resolve_config_path",
     "EVENT_SCHEMA_VERSION", "EventContext", "ProgressEvent", "MetricEvent",
-    "LogEvent", "LifecycleEvent", "LibraryEvent", "EventCallback",
+    "LogEvent", "LifecycleEvent", "CheckpointEvent", "LibraryEvent", "EventCallback",
     "CancellationCheck", "CancellationToken",
     "get_logger", "configure_library_logging",
 ]

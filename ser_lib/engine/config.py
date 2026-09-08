@@ -26,6 +26,13 @@ class ModelConfig(StrictConfig):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class ObservabilityConfig(StrictConfig):
+    """训练运行时事件频率；不属于影响实验结果的训练超参数。"""
+
+    progress_interval_batches: int = Field(default=1, ge=1)
+    metric_interval_batches: int = Field(default=10, ge=1)
+
+
 class TrainerConfig(StrictConfig):
     """表示无关的训练循环配置。"""
 
@@ -137,6 +144,6 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
 
 
 __all__ = [
-    "ModelConfig", "TrainerConfig", "ExperimentConfig", "ExperimentComponents",
-    "load_experiment_config", "build_experiment_components",
+    "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
+    "ExperimentComponents", "load_experiment_config", "build_experiment_components",
 ]

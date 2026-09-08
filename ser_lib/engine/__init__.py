@@ -3,6 +3,7 @@ from ser_lib.engine.config import (
     ExperimentConfig,
     ExperimentComponents,
     ModelConfig,
+    ObservabilityConfig,
     TrainerConfig,
     build_experiment_components,
     load_experiment_config,
@@ -34,8 +35,8 @@ from ser_lib.engine.objectives import (
 from ser_lib.engine.trainer import EpochResult, Trainer, seed_everything
 
 __all__ = [
-    "ModelConfig", "TrainerConfig", "ExperimentConfig", "ExperimentComponents",
-    "load_experiment_config", "build_experiment_components",
+    "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
+    "ExperimentComponents", "load_experiment_config", "build_experiment_components",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",

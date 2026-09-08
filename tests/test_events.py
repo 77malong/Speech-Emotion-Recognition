@@ -8,6 +8,7 @@ import pytest
 
 from ser_lib.core import (
     EVENT_SCHEMA_VERSION,
+    CheckpointEvent,
     EventContext,
     LifecycleEvent,
     LogEvent,
@@ -43,6 +44,7 @@ def test_progress_event_v2_is_json_safe_and_preserves_legacy_constructor():
         completed=2,
         total=4,
         context=EventContext(run_id="run-001", batch=2, total_batches=4),
+        details={"path": Path("audio.wav"), "rate": 12.5},
     )
     payload = event.to_dict()
 
@@ -53,6 +55,7 @@ def test_progress_event_v2_is_json_safe_and_preserves_legacy_constructor():
     assert payload["completed"] == 2
     assert payload["total"] == 4
     assert payload["context"]["run_id"] == "run-001"
+    assert payload["details"] == {"path": "audio.wav", "rate": 12.5}
     assert payload["sequence"] > 0
     assert event.fraction == 0.5
     json.dumps(payload, ensure_ascii=False)
@@ -121,3 +124,29 @@ def test_lifecycle_event_serializes_status_and_context():
 def test_lifecycle_event_rejects_unknown_status():
     with pytest.raises(ValueError, match="status"):
         LifecycleEvent("training", "unknown")
+
+
+def test_checkpoint_event_is_json_safe():
+    event = CheckpointEvent(
+        "saved",
+        "best",
+        Path("checkpoints/best.pt"),
+        3,
+        metric_name="val_uar",
+        metric_value=0.72,
+        context=EventContext(run_id="run-001", epoch=3),
+    )
+    payload = event.to_dict()
+
+    assert payload["event_type"] == "checkpoint"
+    assert payload["action"] == "saved"
+    assert payload["kind"] == "best"
+    assert payload["path"] == "checkpoints/best.pt"
+    assert payload["metric_name"] == "val_uar"
+    assert payload["metric_value"] == 0.72
+    json.dumps(payload, ensure_ascii=False)
+
+
+def test_checkpoint_event_rejects_unknown_action():
+    with pytest.raises(ValueError, match="action"):
+        CheckpointEvent("unknown", "best", "best.pt", 1)

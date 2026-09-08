@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
-import random
 import logging
-from collections.abc import Callable, Iterable
+import random
+import time
+import uuid
+from collections.abc import Callable, Iterable, Sequence, Sized
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
 
 from ser_lib.core.events import (
     CancellationCheck,
+    CheckpointEvent,
     EventCallback,
+    EventContext,
+    LibraryEvent,
+    LifecycleEvent,
     MetricEvent,
     ProgressEvent,
 )
+from ser_lib.core.exceptions import OperationCancelled
 from ser_lib.data.types import SERBatch
-from ser_lib.engine.config import ExperimentConfig, TrainerConfig
+from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
 from ser_lib.engine.optim import (
     SchedulerConfig,
     build_optimizer,
@@ -62,6 +70,32 @@ def move_batch_to_device(batch: SERBatch, device: torch.device) -> SERBatch:
     )
 
 
+def _safe_len(value: object) -> int | None:
+    if not isinstance(value, Sized):
+        return None
+    try:
+        return len(value)
+    except TypeError:
+        return None
+
+
+def _infer_total_samples(batches: object) -> int | None:
+    dataset = getattr(batches, "dataset", None)
+    if isinstance(dataset, Sized):
+        try:
+            return len(dataset)
+        except TypeError:
+            pass
+    if isinstance(batches, Sequence):
+        total = 0
+        for batch in batches:
+            if not isinstance(batch, SERBatch) or batch.labels is None:
+                return None
+            total += int(batch.labels.shape[0])
+        return total
+    return None
+
+
 class Trainer:
     def __init__(
         self,
@@ -73,6 +107,8 @@ class Trainer:
         loss_fn: torch.nn.Module | None = None,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
+        observability: ObservabilityConfig | None = None,
+        run_id: str | None = None,
     ) -> None:
         self.model = model
         self.config = config or TrainerConfig()
@@ -84,6 +120,8 @@ class Trainer:
             raise ValueError("配置请求 CUDA，但当前环境不可用")
         if self.config.amp and self.device.type != "cuda":
             raise ValueError("AMP 当前仅支持 CUDA 设备")
+        if run_id is not None and not run_id.strip():
+            raise ValueError("run_id 不能为空字符串")
         seed_everything(self.config.seed, deterministic=self.config.deterministic)
         self.model.to(self.device)
         self.optimizer = optimizer or torch.optim.AdamW(
@@ -95,11 +133,17 @@ class Trainer:
         self.loss_fn = loss_fn.to(self.device) if loss_fn is not None else None
         self.event_callback = event_callback
         self.cancellation = cancellation
+        self.observability = observability or ObservabilityConfig()
+        self._run_id_explicit = run_id is not None
+        self.run_id = run_id or f"run_{uuid.uuid4().hex}"
         self._scaler = torch.cuda.amp.GradScaler() if self.config.amp else None
         self.last_completed_epoch = 0
         self.best_metric: float | None = None
         self.best_epoch: int | None = None
         self.epochs_without_improvement = 0
+        self.global_step = 0
+        self.optimizer_step = 0
+        self._run_started_perf: float | None = None
 
     @classmethod
     def from_experiment(
@@ -109,6 +153,8 @@ class Trainer:
         *,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
+        observability: ObservabilityConfig | None = None,
+        run_id: str | None = None,
     ) -> "Trainer":
         """按白名单实验配置构造 optimizer、scheduler 和 Trainer。"""
         from ser_lib.models.registry import model_registry
@@ -140,15 +186,40 @@ class Trainer:
             loss_fn=ClassificationLoss(experiment.loss, num_classes),
             event_callback=event_callback,
             cancellation=cancellation,
+            observability=observability,
+            run_id=run_id,
         )
 
-    def _emit(self, event) -> None:
+    def _emit(self, event: LibraryEvent) -> None:
         if self.event_callback is not None:
             self.event_callback(event)
 
     def _check_cancelled(self) -> None:
         if self.cancellation is not None:
             self.cancellation.raise_if_cancelled()
+
+    def _context(
+        self,
+        *,
+        epoch: int | None = None,
+        batch: int | None = None,
+        total_batches: int | None = None,
+        split: str | None = None,
+    ) -> EventContext:
+        return EventContext(
+            run_id=self.run_id,
+            epoch=epoch,
+            total_epochs=self.config.epochs,
+            batch=batch,
+            total_batches=total_batches,
+            global_step=self.global_step,
+            split=split,
+        )
+
+    def _current_learning_rate(self) -> float:
+        if not self.optimizer.param_groups:
+            return 0.0
+        return float(self.optimizer.param_groups[0].get("lr", 0.0))
 
     def _optimizer_step(self) -> None:
         if self._scaler is not None:
@@ -163,6 +234,42 @@ class Trainer:
             self._scaler.step(self.optimizer)
             self._scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
+        self.optimizer_step += 1
+
+    def _emit_live_metrics(
+        self,
+        *,
+        epoch: int,
+        batch_index: int,
+        total_batches: int | None,
+        batch_loss: float,
+        running_loss: float,
+        running_accuracy: float,
+        samples_per_second: float,
+    ) -> None:
+        context = self._context(
+            epoch=epoch,
+            batch=batch_index,
+            total_batches=total_batches,
+            split="train",
+        )
+        values = {
+            "batch_loss": batch_loss,
+            "running_loss": running_loss,
+            "running_accuracy": running_accuracy,
+            "learning_rate": self._current_learning_rate(),
+            "samples_per_second": samples_per_second,
+        }
+        for name, value in values.items():
+            self._emit(
+                MetricEvent(
+                    name,
+                    value,
+                    step=self.global_step,
+                    split="train",
+                    context=context,
+                )
+            )
 
     def train_epoch(self, batches: Iterable[SERBatch], *, epoch: int) -> EpochResult:
         self.model.train()
@@ -171,6 +278,11 @@ class Trainer:
         total_samples = 0
         optimizer_steps = 0
         pending_batches = 0
+        total_batches = _safe_len(batches)
+        samples_total = _infer_total_samples(batches)
+        epoch_started = time.perf_counter()
+        if self._run_started_perf is None:
+            self._run_started_perf = epoch_started
         self.optimizer.zero_grad(set_to_none=True)
 
         for batch_index, batch in enumerate(batches, start=1):
@@ -206,13 +318,74 @@ class Trainer:
                 pending_batches = 0
 
             count = int(labels.shape[0])
+            batch_loss = float(loss.detach())
             total_samples += count
-            total_loss += float(loss.detach()) * count
+            total_loss += batch_loss * count
             total_correct += int((output.logits.detach().argmax(-1) == labels).sum())
-            self._emit(ProgressEvent(
-                stage="train_batch", completed=batch_index,
-                message=f"epoch={epoch}",
-            ))
+            self.global_step += 1
+
+            epoch_elapsed = max(time.perf_counter() - epoch_started, 0.0)
+            run_elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            running_loss = total_loss / total_samples
+            running_accuracy = total_correct / total_samples
+            samples_per_second = total_samples / epoch_elapsed if epoch_elapsed > 0 else 0.0
+            batches_per_second = batch_index / epoch_elapsed if epoch_elapsed > 0 else 0.0
+            estimated_epoch_remaining: float | None = None
+            estimated_remaining: float | None = None
+            if total_batches is not None and batch_index > 0:
+                average_batch_seconds = epoch_elapsed / batch_index
+                remaining_in_epoch = max(total_batches - batch_index, 0)
+                estimated_epoch_remaining = remaining_in_epoch * average_batch_seconds
+                future_epochs = max(self.config.epochs - epoch, 0)
+                estimated_remaining = (
+                    remaining_in_epoch + future_epochs * total_batches
+                ) * average_batch_seconds
+
+            should_emit_progress = (
+                batch_index % self.observability.progress_interval_batches == 0
+                or total_batches is not None and batch_index == total_batches
+            )
+            if should_emit_progress:
+                self._emit(
+                    ProgressEvent(
+                        stage="train_batch",
+                        completed=batch_index,
+                        total=total_batches,
+                        message=f"epoch={epoch}",
+                        context=self._context(
+                            epoch=epoch,
+                            batch=batch_index,
+                            total_batches=total_batches,
+                            split="train",
+                        ),
+                        details={
+                            "samples_processed": total_samples,
+                            "samples_total": samples_total,
+                            "optimizer_steps": self.optimizer_step,
+                            "batch_loss": batch_loss,
+                            "running_loss": running_loss,
+                            "running_accuracy": running_accuracy,
+                            "learning_rate": self._current_learning_rate(),
+                            "elapsed_seconds": run_elapsed,
+                            "epoch_elapsed_seconds": epoch_elapsed,
+                            "estimated_epoch_remaining_seconds": estimated_epoch_remaining,
+                            "estimated_remaining_seconds": estimated_remaining,
+                            "samples_per_second": samples_per_second,
+                            "batches_per_second": batches_per_second,
+                        },
+                    )
+                )
+
+            if batch_index % self.observability.metric_interval_batches == 0:
+                self._emit_live_metrics(
+                    epoch=epoch,
+                    batch_index=batch_index,
+                    total_batches=total_batches,
+                    batch_loss=batch_loss,
+                    running_loss=running_loss,
+                    running_accuracy=running_accuracy,
+                    samples_per_second=samples_per_second,
+                )
 
         if pending_batches:
             self._optimizer_step()
@@ -227,9 +400,125 @@ class Trainer:
             sample_count=total_samples,
             optimizer_steps=optimizer_steps,
         )
-        self._emit(MetricEvent("loss", result.loss, step=epoch, split="train"))
-        self._emit(MetricEvent("accuracy", result.accuracy, step=epoch, split="train"))
+        epoch_context = self._context(epoch=epoch, split="train")
+        self._emit(
+            MetricEvent("loss", result.loss, step=epoch, split="train", context=epoch_context)
+        )
+        self._emit(
+            MetricEvent(
+                "accuracy", result.accuracy, step=epoch, split="train", context=epoch_context
+            )
+        )
         return result
+
+    def _emit_validation_event(
+        self,
+        event: LibraryEvent,
+        *,
+        epoch: int,
+        total_batches: int | None,
+    ) -> None:
+        if isinstance(event, ProgressEvent):
+            resolved_total = event.total if event.total is not None else total_batches
+            event = replace(
+                event,
+                total=resolved_total,
+                context=self._context(
+                    epoch=epoch,
+                    batch=event.context.batch or event.completed,
+                    total_batches=event.context.total_batches or resolved_total,
+                    split="val",
+                ),
+            )
+        elif isinstance(event, MetricEvent):
+            event = replace(
+                event,
+                split="val",
+                context=self._context(
+                    epoch=epoch,
+                    batch=event.context.batch,
+                    total_batches=event.context.total_batches or total_batches,
+                    split="val",
+                ),
+            )
+        self._emit(event)
+
+    def _save_checkpoint_with_event(
+        self,
+        path: Path,
+        *,
+        kind: str,
+        epoch: int,
+        metrics: dict[str, float],
+        metadata: dict[str, object],
+    ) -> Path:
+        from ser_lib.engine.checkpoint import save_checkpoint
+
+        metric_name = self.config.monitor if kind == "best" else None
+        metric_value = self.best_metric if kind == "best" else None
+        context = self._context(epoch=epoch)
+        self._emit(
+            CheckpointEvent(
+                "started",
+                kind,
+                path,
+                epoch,
+                metric_name=metric_name,
+                metric_value=metric_value,
+                context=context,
+            )
+        )
+        try:
+            saved = save_checkpoint(
+                path,
+                self.model,
+                self.optimizer,
+                epoch=epoch,
+                scheduler=self.scheduler,
+                scaler=self._scaler,
+                metrics=metrics,
+                metadata=metadata,
+                trainer_config=self.config.model_dump(mode="json"),
+            )
+        except Exception as exc:
+            self._emit(
+                CheckpointEvent(
+                    "failed",
+                    kind,
+                    path,
+                    epoch,
+                    metric_name=metric_name,
+                    metric_value=metric_value,
+                    message=str(exc),
+                    details={"error_type": type(exc).__name__},
+                    context=context,
+                )
+            )
+            raise
+        self._emit(
+            CheckpointEvent(
+                "saved",
+                kind,
+                saved,
+                epoch,
+                metric_name=metric_name,
+                metric_value=metric_value,
+                context=context,
+            )
+        )
+        if kind == "best":
+            self._emit(
+                CheckpointEvent(
+                    "best_model_updated",
+                    kind,
+                    saved,
+                    epoch,
+                    metric_name=metric_name,
+                    metric_value=metric_value,
+                    context=context,
+                )
+            )
+        return saved
 
     def fit(
         self,
@@ -239,105 +528,286 @@ class Trainer:
         on_epoch_end: Callable[[EpochResult], None] | None = None,
         start_epoch: int | None = None,
     ) -> list[EpochResult]:
-        from ser_lib.engine.checkpoint import save_checkpoint
-
         if self.config.early_stopping_patience is not None and val_batches is None:
             raise ValueError("启用 early stopping 时必须提供 val_batches")
         first_epoch = self.last_completed_epoch + 1 if start_epoch is None else start_epoch
         if first_epoch < 1:
             raise ValueError("start_epoch 必须 >= 1")
-        history: list[EpochResult] = []
-        for epoch in range(first_epoch, self.config.epochs + 1):
-            self._check_cancelled()
-            batches = train_batches() if callable(train_batches) else train_batches
-            result = self.train_epoch(batches, epoch=epoch)
-            if self.scheduler is not None:
-                self.scheduler.step()
-            self.last_completed_epoch = epoch
-            improved = False
-            if val_batches is not None and epoch % self.config.validation_interval == 0:
-                from ser_lib.engine.evaluator import evaluate
 
-                validation_batches = val_batches() if callable(val_batches) else val_batches
-                num_classes = self.model.model_spec.num_classes
-                if num_classes is None:
-                    raise ValueError("验证要求模型声明 num_classes")
-                validation_result = evaluate(
-                    self.model,
-                    validation_batches,
-                    num_classes=num_classes,
-                    device=self.device,
-                    event_callback=self.event_callback,
-                    cancellation=self.cancellation,
-                    loss_fn=self.loss_fn,
-                )
-                validation = {
-                    "loss": validation_result.loss,
-                    "accuracy": validation_result.accuracy,
-                    "war": validation_result.war,
-                    "uar": validation_result.uar,
-                    "macro_f1": validation_result.macro_f1,
-                }
-                result = replace(result, validation=validation)
-                for name, value in validation.items():
-                    self._emit(MetricEvent(name, value, step=epoch, split="val"))
-                monitored = validation[self.config.monitor.removeprefix("val_")]
-                improved = self._is_improved(monitored)
-                if improved:
-                    self.best_metric = monitored
-                    self.best_epoch = epoch
-                    self.epochs_without_improvement = 0
-                else:
-                    self.epochs_without_improvement += 1
-            history.append(result)
-            logger.info(
-                "epoch=%d train_loss=%.6f train_accuracy=%.4f validation=%s",
-                epoch, result.loss, result.accuracy, result.validation,
+        history: list[EpochResult] = []
+        stop_reason: str | None = None
+        self._run_started_perf = time.perf_counter()
+        self._emit(
+            LifecycleEvent(
+                "training",
+                "started",
+                details={
+                    "device": str(self.device),
+                    "first_epoch": first_epoch,
+                    "total_epochs": self.config.epochs,
+                },
+                context=self._context(),
             )
-            self._check_cancelled()
-            if self.config.checkpoint_dir is not None:
-                metrics = {"loss": result.loss, "accuracy": result.accuracy}
-                if result.validation is not None:
-                    metrics.update({f"val_{k}": v for k, v in result.validation.items()})
-                metadata = {
-                    "best_metric": self.best_metric,
-                    "best_epoch": self.best_epoch,
-                    "epochs_without_improvement": self.epochs_without_improvement,
-                    "monitor": self.config.monitor,
-                }
-                save_checkpoint(
-                    self.config.checkpoint_dir / f"epoch-{epoch:04d}.pt",
-                    self.model,
-                    self.optimizer,
-                    epoch=epoch,
-                    scheduler=self.scheduler,
-                    scaler=self._scaler,
-                    metrics=metrics,
-                    metadata=metadata,
-                    trainer_config=self.config.model_dump(mode="json"),
+        )
+
+        try:
+            for epoch in range(first_epoch, self.config.epochs + 1):
+                self._check_cancelled()
+                self._emit(
+                    LifecycleEvent(
+                        "epoch",
+                        "started",
+                        context=self._context(epoch=epoch),
+                    )
                 )
-                if self.config.save_last:
-                    save_checkpoint(
-                        self.config.checkpoint_dir / "last.pt", self.model, self.optimizer,
-                        epoch=epoch, scheduler=self.scheduler, scaler=self._scaler,
-                        metrics=metrics, metadata=metadata,
-                        trainer_config=self.config.model_dump(mode="json"),
+
+                batches = train_batches() if callable(train_batches) else train_batches
+                train_total_batches = _safe_len(batches)
+                self._emit(
+                    LifecycleEvent(
+                        "train",
+                        "phase_started",
+                        details={"total_batches": train_total_batches},
+                        context=self._context(
+                            epoch=epoch,
+                            total_batches=train_total_batches,
+                            split="train",
+                        ),
                     )
-                if improved and self.config.save_best:
-                    save_checkpoint(
-                        self.config.checkpoint_dir / "best.pt", self.model, self.optimizer,
-                        epoch=epoch, scheduler=self.scheduler, scaler=self._scaler,
-                        metrics=metrics, metadata=metadata,
-                        trainer_config=self.config.model_dump(mode="json"),
+                )
+                result = self.train_epoch(batches, epoch=epoch)
+                self._emit(
+                    LifecycleEvent(
+                        "train",
+                        "phase_completed",
+                        details={
+                            "loss": result.loss,
+                            "accuracy": result.accuracy,
+                            "sample_count": result.sample_count,
+                            "optimizer_steps": result.optimizer_steps,
+                        },
+                        context=self._context(
+                            epoch=epoch,
+                            total_batches=train_total_batches,
+                            split="train",
+                        ),
                     )
-            if on_epoch_end is not None:
-                on_epoch_end(result)
-            if (
-                self.config.early_stopping_patience is not None
-                and self.epochs_without_improvement >= self.config.early_stopping_patience
-            ):
-                break
-        return history
+                )
+
+                if self.scheduler is not None:
+                    self.scheduler.step()
+                self.last_completed_epoch = epoch
+                improved = False
+
+                if val_batches is not None and epoch % self.config.validation_interval == 0:
+                    from ser_lib.engine.evaluator import evaluate
+
+                    validation_batches = val_batches() if callable(val_batches) else val_batches
+                    validation_total_batches = _safe_len(validation_batches)
+                    self._emit(
+                        LifecycleEvent(
+                            "validation",
+                            "phase_started",
+                            details={"total_batches": validation_total_batches},
+                            context=self._context(
+                                epoch=epoch,
+                                total_batches=validation_total_batches,
+                                split="val",
+                            ),
+                        )
+                    )
+                    num_classes = self.model.model_spec.num_classes
+                    if num_classes is None:
+                        raise ValueError("验证要求模型声明 num_classes")
+                    validation_result = evaluate(
+                        self.model,
+                        validation_batches,
+                        num_classes=num_classes,
+                        device=self.device,
+                        event_callback=(
+                            lambda event, current_epoch=epoch,
+                            current_total=validation_total_batches: self._emit_validation_event(
+                                event,
+                                epoch=current_epoch,
+                                total_batches=current_total,
+                            )
+                        ),
+                        cancellation=self.cancellation,
+                        loss_fn=self.loss_fn,
+                    )
+                    validation = {
+                        "loss": validation_result.loss,
+                        "accuracy": validation_result.accuracy,
+                        "war": validation_result.war,
+                        "uar": validation_result.uar,
+                        "macro_f1": validation_result.macro_f1,
+                    }
+                    result = replace(result, validation=validation)
+                    validation_context = self._context(epoch=epoch, split="val")
+                    for name, value in validation.items():
+                        self._emit(
+                            MetricEvent(
+                                name,
+                                value,
+                                step=epoch,
+                                split="val",
+                                context=validation_context,
+                            )
+                        )
+                    monitored = validation[self.config.monitor.removeprefix("val_")]
+                    improved = self._is_improved(monitored)
+                    if improved:
+                        self.best_metric = monitored
+                        self.best_epoch = epoch
+                        self.epochs_without_improvement = 0
+                    else:
+                        self.epochs_without_improvement += 1
+                    self._emit(
+                        LifecycleEvent(
+                            "validation",
+                            "phase_completed",
+                            details={**validation, "improved": improved},
+                            context=self._context(
+                                epoch=epoch,
+                                total_batches=validation_total_batches,
+                                split="val",
+                            ),
+                        )
+                    )
+
+                history.append(result)
+                logger.info(
+                    "epoch=%d train_loss=%.6f train_accuracy=%.4f validation=%s",
+                    epoch, result.loss, result.accuracy, result.validation,
+                )
+                self._check_cancelled()
+
+                if self.config.checkpoint_dir is not None:
+                    metrics = {"loss": result.loss, "accuracy": result.accuracy}
+                    if result.validation is not None:
+                        metrics.update({f"val_{k}": v for k, v in result.validation.items()})
+                    metadata: dict[str, object] = {
+                        "best_metric": self.best_metric,
+                        "best_epoch": self.best_epoch,
+                        "epochs_without_improvement": self.epochs_without_improvement,
+                        "monitor": self.config.monitor,
+                        "run_id": self.run_id,
+                        "global_step": self.global_step,
+                        "optimizer_step": self.optimizer_step,
+                    }
+                    self._save_checkpoint_with_event(
+                        self.config.checkpoint_dir / f"epoch-{epoch:04d}.pt",
+                        kind="epoch",
+                        epoch=epoch,
+                        metrics=metrics,
+                        metadata=metadata,
+                    )
+                    if self.config.save_last:
+                        self._save_checkpoint_with_event(
+                            self.config.checkpoint_dir / "last.pt",
+                            kind="last",
+                            epoch=epoch,
+                            metrics=metrics,
+                            metadata=metadata,
+                        )
+                    if improved and self.config.save_best:
+                        self._save_checkpoint_with_event(
+                            self.config.checkpoint_dir / "best.pt",
+                            kind="best",
+                            epoch=epoch,
+                            metrics=metrics,
+                            metadata=metadata,
+                        )
+
+                if on_epoch_end is not None:
+                    on_epoch_end(result)
+
+                self._emit(
+                    LifecycleEvent(
+                        "epoch",
+                        "completed",
+                        details={
+                            "loss": result.loss,
+                            "accuracy": result.accuracy,
+                            "validation": result.validation,
+                            "best_epoch": self.best_epoch,
+                            "best_metric": self.best_metric,
+                        },
+                        context=self._context(epoch=epoch),
+                    )
+                )
+
+                if (
+                    self.config.early_stopping_patience is not None
+                    and self.epochs_without_improvement >= self.config.early_stopping_patience
+                ):
+                    stop_reason = "early_stopped"
+                    self._emit(
+                        LifecycleEvent(
+                            "training",
+                            "early_stopped",
+                            details={
+                                "patience": self.config.early_stopping_patience,
+                                "monitor": self.config.monitor,
+                                "best_epoch": self.best_epoch,
+                                "best_metric": self.best_metric,
+                            },
+                            context=self._context(epoch=epoch),
+                        )
+                    )
+                    break
+
+            elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            self._emit(
+                LifecycleEvent(
+                    "training",
+                    "completed",
+                    details={
+                        "stop_reason": stop_reason,
+                        "epochs_completed": len(history),
+                        "last_completed_epoch": self.last_completed_epoch,
+                        "best_epoch": self.best_epoch,
+                        "best_metric": self.best_metric,
+                        "global_step": self.global_step,
+                        "optimizer_step": self.optimizer_step,
+                        "elapsed_seconds": elapsed,
+                    },
+                    context=self._context(epoch=self.last_completed_epoch or None),
+                )
+            )
+            return history
+        except OperationCancelled:
+            elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            self._emit(
+                LifecycleEvent(
+                    "training",
+                    "cancelled",
+                    details={
+                        "last_completed_epoch": self.last_completed_epoch,
+                        "global_step": self.global_step,
+                        "elapsed_seconds": elapsed,
+                    },
+                    context=self._context(epoch=self.last_completed_epoch or None),
+                )
+            )
+            raise
+        except Exception as exc:
+            elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            self._emit(
+                LifecycleEvent(
+                    "training",
+                    "failed",
+                    message=str(exc),
+                    details={
+                        "error_type": type(exc).__name__,
+                        "last_completed_epoch": self.last_completed_epoch,
+                        "global_step": self.global_step,
+                        "elapsed_seconds": elapsed,
+                    },
+                    context=self._context(epoch=self.last_completed_epoch or None),
+                )
+            )
+            raise
 
     def _is_improved(self, value: float) -> bool:
         if self.best_metric is None:
@@ -373,9 +843,19 @@ class Trainer:
             self.best_metric = float(best_metric) if best_metric is not None else None
             self.best_epoch = int(best_epoch) if best_epoch is not None else None
             self.epochs_without_improvement = int(without_improvement)
+        saved_run_id = metadata.get("run_id")
+        if not self._run_id_explicit and isinstance(saved_run_id, str) and saved_run_id:
+            self.run_id = saved_run_id
+        saved_global_step = metadata.get("global_step")
+        saved_optimizer_step = metadata.get("optimizer_step")
+        if isinstance(saved_global_step, int) and saved_global_step >= 0:
+            self.global_step = saved_global_step
+        if isinstance(saved_optimizer_step, int) and saved_optimizer_step >= 0:
+            self.optimizer_step = saved_optimizer_step
         return payload
 
 
 __all__ = [
-    "TrainerConfig", "EpochResult", "Trainer", "move_batch_to_device", "seed_everything"
+    "TrainerConfig", "ObservabilityConfig", "EpochResult", "Trainer",
+    "move_batch_to_device", "seed_everything",
 ]
