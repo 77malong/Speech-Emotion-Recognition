@@ -8,10 +8,13 @@ from ser_lib.core.config import (
     resolve_config_path,
 )
 from ser_lib.core.events import (
+    EVENT_SCHEMA_VERSION,
     CancellationCheck,
     CancellationToken,
     EventCallback,
+    EventContext,
     LibraryEvent,
+    LifecycleEvent,
     LogEvent,
     MetricEvent,
     ProgressEvent,
@@ -23,7 +26,8 @@ __all__ = [
     "SERError", "ConfigurationError", "OperationCancelled",
     "StrictConfig", "load_yaml_mapping", "load_versioned_config",
     "require_schema_version", "resolve_config_path",
-    "ProgressEvent", "MetricEvent", "LogEvent", "LibraryEvent", "EventCallback",
+    "EVENT_SCHEMA_VERSION", "EventContext", "ProgressEvent", "MetricEvent",
+    "LogEvent", "LifecycleEvent", "LibraryEvent", "EventCallback",
     "CancellationCheck", "CancellationToken",
     "get_logger", "configure_library_logging",
 ]

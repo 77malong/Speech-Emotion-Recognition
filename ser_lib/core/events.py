@@ -1,18 +1,87 @@
-"""与传输方式无关的进度、指标、日志和取消协议。"""
+"""与传输方式无关的进度、指标、日志、生命周期和取消协议。"""
 
 from __future__ import annotations
 
+import itertools
 import threading
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from enum import Enum
+from pathlib import Path
+from typing import Any, ClassVar, Protocol
 
 from ser_lib.core.exceptions import OperationCancelled
+
+EVENT_SCHEMA_VERSION = 2
+_LIFECYCLE_STATUSES = frozenset({
+    "started",
+    "phase_started",
+    "phase_completed",
+    "completed",
+    "cancelled",
+    "failed",
+    "early_stopped",
+})
+_SEQUENCE_COUNTER = itertools.count(1)
+_SEQUENCE_LOCK = threading.Lock()
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _next_event_sequence() -> int:
+    with _SEQUENCE_LOCK:
+        return next(_SEQUENCE_COUNTER)
+
+
+def _timestamp_to_iso(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _json_safe(value: Any) -> Any:
+    """将常见轻量值转换为事件协议可安全 JSON 序列化的值。"""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return _timestamp_to_iso(value)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Enum):
+        return _json_safe(value.value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_safe(item) for item in value]
+    raise TypeError(f"事件字段包含不可 JSON 序列化的类型: {type(value).__name__}")
+
+
+@dataclass(frozen=True, slots=True)
+class EventContext:
+    """跨事件共享的运行上下文。"""
+
+    run_id: str | None = None
+    epoch: int | None = None
+    total_epochs: int | None = None
+    batch: int | None = None
+    total_batches: int | None = None
+    global_step: int | None = None
+    split: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "epoch": self.epoch,
+            "total_epochs": self.total_epochs,
+            "batch": self.batch,
+            "total_batches": self.total_batches,
+            "global_step": self.global_step,
+            "split": self.split,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +91,11 @@ class ProgressEvent:
     total: int | None = None
     message: str = ""
     timestamp: datetime = field(default_factory=_utc_now)
+    context: EventContext = field(default_factory=EventContext)
+    sequence: int = field(default_factory=_next_event_sequence)
+
+    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
+    event_type: ClassVar[str] = "progress"
 
     def __post_init__(self) -> None:
         if not self.stage:
@@ -30,12 +104,27 @@ class ProgressEvent:
             raise ValueError("completed/total 不能为负数")
         if self.total is not None and self.completed > self.total:
             raise ValueError("completed 不能大于 total")
+        if self.sequence <= 0:
+            raise ValueError("sequence 必须为正整数")
 
     @property
     def fraction(self) -> float | None:
         if self.total is None or self.total == 0:
             return None
         return self.completed / self.total
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "event_type": self.event_type,
+            "sequence": self.sequence,
+            "stage": self.stage,
+            "timestamp": _timestamp_to_iso(self.timestamp),
+            "context": self.context.to_dict(),
+            "completed": self.completed,
+            "total": self.total,
+            "message": self.message,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +134,35 @@ class MetricEvent:
     step: int | None = None
     split: str | None = None
     timestamp: datetime = field(default_factory=_utc_now)
+    context: EventContext = field(default_factory=EventContext)
+    sequence: int = field(default_factory=_next_event_sequence)
+
+    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
+    event_type: ClassVar[str] = "metric"
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("MetricEvent.name 不能为空")
+        if self.sequence <= 0:
+            raise ValueError("sequence 必须为正整数")
+        if self.split is not None:
+            if self.context.split is None:
+                object.__setattr__(self, "context", replace(self.context, split=self.split))
+            elif self.context.split != self.split:
+                raise ValueError("MetricEvent.split 与 context.split 不一致")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "event_type": self.event_type,
+            "sequence": self.sequence,
+            "name": self.name,
+            "value": self.value,
+            "step": self.step,
+            "split": self.split,
+            "timestamp": _timestamp_to_iso(self.timestamp),
+            "context": self.context.to_dict(),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,9 +172,73 @@ class LogEvent:
     stage: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=_utc_now)
+    context: EventContext = field(default_factory=EventContext)
+    sequence: int = field(default_factory=_next_event_sequence)
+
+    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
+    event_type: ClassVar[str] = "log"
+
+    def __post_init__(self) -> None:
+        if not self.level:
+            raise ValueError("LogEvent.level 不能为空")
+        if not self.message:
+            raise ValueError("LogEvent.message 不能为空")
+        if self.sequence <= 0:
+            raise ValueError("sequence 必须为正整数")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "event_type": self.event_type,
+            "sequence": self.sequence,
+            "level": self.level,
+            "message": self.message,
+            "stage": self.stage,
+            "timestamp": _timestamp_to_iso(self.timestamp),
+            "context": self.context.to_dict(),
+            "details": _json_safe(self.details),
+        }
 
 
-LibraryEvent = ProgressEvent | MetricEvent | LogEvent
+@dataclass(frozen=True, slots=True)
+class LifecycleEvent:
+    """描述长任务或其阶段的生命周期变化。"""
+
+    stage: str
+    status: str
+    message: str = ""
+    details: dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=_utc_now)
+    context: EventContext = field(default_factory=EventContext)
+    sequence: int = field(default_factory=_next_event_sequence)
+
+    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
+    event_type: ClassVar[str] = "lifecycle"
+
+    def __post_init__(self) -> None:
+        if not self.stage:
+            raise ValueError("LifecycleEvent.stage 不能为空")
+        if self.status not in _LIFECYCLE_STATUSES:
+            allowed = ", ".join(sorted(_LIFECYCLE_STATUSES))
+            raise ValueError(f"LifecycleEvent.status 非法: {self.status!r}; 支持: {allowed}")
+        if self.sequence <= 0:
+            raise ValueError("sequence 必须为正整数")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "event_type": self.event_type,
+            "sequence": self.sequence,
+            "stage": self.stage,
+            "status": self.status,
+            "timestamp": _timestamp_to_iso(self.timestamp),
+            "context": self.context.to_dict(),
+            "message": self.message,
+            "details": _json_safe(self.details),
+        }
+
+
+LibraryEvent = ProgressEvent | MetricEvent | LogEvent | LifecycleEvent
 EventCallback = Callable[[LibraryEvent], None]
 
 
