@@ -49,14 +49,18 @@ def _timestamp_to_iso(value: datetime) -> str:
 
 
 def _json_safe(value: Any) -> Any:
-    """将常见轻量值转换为事件协议可安全 JSON 序列化的值。"""
+    """将常见轻量值转换为事件协议可安全 JSON 序列化的值。
+
+    ``Path`` 是传输协议字段而不是本机 shell 路径，因此统一使用 POSIX ``/``，
+    避免同一个事件在 Windows 与 Linux/macOS 上产生不同 JSON。
+    """
 
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, datetime):
         return _timestamp_to_iso(value)
     if isinstance(value, Path):
-        return str(value)
+        return value.as_posix()
     if isinstance(value, Enum):
         return _json_safe(value.value)
     if isinstance(value, Mapping):
@@ -285,7 +289,7 @@ class CheckpointEvent:
             "sequence": self.sequence,
             "action": self.action,
             "kind": self.kind,
-            "path": str(self.path),
+            "path": _json_safe(self.path),
             "epoch": self.epoch,
             "metric_name": self.metric_name,
             "metric_value": self.metric_value,
