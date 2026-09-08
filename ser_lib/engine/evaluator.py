@@ -7,7 +7,7 @@ import time
 from collections.abc import Iterable, Mapping, Sized
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Protocol, TextIO
+from typing import Protocol
 
 import torch
 import torch.nn.functional as F
@@ -91,7 +91,7 @@ class JsonlPredictionSink:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._flush_each = flush_each
         mode = "a" if append else "w"
-        self._stream: TextIO = self.path.open(mode, encoding="utf-8", newline="\n")
+        self._stream = self.path.open(mode, encoding="utf-8", newline="\n")
 
     def write(self, record: PredictionRecord) -> None:
         if self._stream.closed:
