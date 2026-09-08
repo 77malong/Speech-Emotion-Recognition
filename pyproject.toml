@@ -12,12 +12,12 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "SER contributors" }]
 dependencies = [
-    # torchaudio.info() is used by the current audio I/O layer and was removed in 2.9.
-    # Keep the supported range explicit until the I/O layer migrates to TorchCodec.
+    # Keep TorchAudio below 2.9 while legacy configurations may still request its I/O backend.
+    # New configurations use SoundFile for portable header probing and decoding.
     "torch>=2.0,<2.9",
     "torchaudio>=2.0,<2.9",
-    # ser_lib.data.cache converts tensors to NumPy arrays, so NumPy is a runtime dependency.
     "numpy>=1.26",
+    "soundfile>=0.12",
     "pydantic>=2.5",
     "PyYAML>=6.0",
     "safetensors>=0.4",
