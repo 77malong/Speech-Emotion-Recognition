@@ -40,7 +40,9 @@ from ser_lib.engine import (
 from ser_lib.inference import (
     BatchEmotionPredictor,
     BatchPredictionResult,
+    BatchPredictionSink,
     EmotionPredictor,
+    JsonlBatchPredictionSink,
     PredictionFailure,
     PredictionResult,
     StreamingConfig,
@@ -85,8 +87,8 @@ __all__ = [
     "ExperimentConfig", "ExperimentValidationResult", "validate_experiment",
     "ModelConfig", "build_experiment_components",
     "EmotionPredictor", "PredictionResult",
-    "PredictionFailure", "BatchPredictionResult", "BatchEmotionPredictor",
-    "write_batch_predictions",
+    "PredictionFailure", "BatchPredictionSink", "JsonlBatchPredictionSink",
+    "BatchPredictionResult", "BatchEmotionPredictor", "write_batch_predictions",
     "StreamingConfig", "StreamingPrediction", "StreamingLatency",
     "StreamingEmotionRecognizer",
 ]

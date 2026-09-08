@@ -8,7 +8,11 @@ from pathlib import Path
 from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.types import AudioRecord
-from ser_lib.inference.batch import BatchEmotionPredictor, BatchPredictionResult
+from ser_lib.inference.batch import (
+    BatchEmotionPredictor,
+    BatchPredictionResult,
+    BatchPredictionSink,
+)
 from ser_lib.inference.offline import EmotionPredictor, PredictionResult
 from ser_lib.inference.streaming import StreamingConfig, StreamingEmotionRecognizer
 
@@ -39,6 +43,9 @@ class InferenceService:
         *,
         fail_fast: bool = True,
         batch_size: int = 16,
+        total: int | None = None,
+        result_sink: BatchPredictionSink | None = None,
+        retain_results: bool = True,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
     ) -> BatchPredictionResult:
@@ -46,6 +53,9 @@ class InferenceService:
             records,
             fail_fast=fail_fast,
             batch_size=batch_size,
+            total=total,
+            result_sink=result_sink,
+            retain_results=retain_results,
             event_callback=event_callback,
             cancellation=cancellation,
         )
@@ -58,6 +68,8 @@ class InferenceService:
         split: str | None = None,
         fail_fast: bool = True,
         batch_size: int = 16,
+        result_sink: BatchPredictionSink | None = None,
+        retain_results: bool = True,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
     ) -> BatchPredictionResult:
@@ -66,6 +78,8 @@ class InferenceService:
             split=split,
             fail_fast=fail_fast,
             batch_size=batch_size,
+            result_sink=result_sink,
+            retain_results=retain_results,
             event_callback=event_callback,
             cancellation=cancellation,
         )
