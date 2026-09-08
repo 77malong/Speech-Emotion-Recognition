@@ -12,8 +12,12 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "SER contributors" }]
 dependencies = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
+    # torchaudio.info() is used by the current audio I/O layer and was removed in 2.9.
+    # Keep the supported range explicit until the I/O layer migrates to TorchCodec.
+    "torch>=2.0,<2.9",
+    "torchaudio>=2.0,<2.9",
+    # ser_lib.data.cache converts tensors to NumPy arrays, so NumPy is a runtime dependency.
+    "numpy>=1.26",
     "pydantic>=2.5",
     "PyYAML>=6.0",
     "safetensors>=0.4",
@@ -25,7 +29,7 @@ ser = "ser_lib.cli.main:main"
 [project.optional-dependencies]
 test = [
     "pytest>=7.4",
-    "numpy>=1.26",
+    # Repository data-processing tests import data.base_processor, which uses tqdm.
     "tqdm>=4.66",
 ]
 dev = [
