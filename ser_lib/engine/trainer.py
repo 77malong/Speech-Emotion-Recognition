@@ -8,7 +8,9 @@ import time
 import uuid
 from collections.abc import Callable, Iterable, Sequence, Sized
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Literal
 
 import torch
 import torch.nn.functional as F
@@ -37,6 +39,8 @@ from ser_lib.models.base import SERModel
 
 logger = logging.getLogger(__name__)
 
+TrainingStatus = Literal["completed", "early_stopped", "cancelled", "failed"]
+
 
 @dataclass(frozen=True, slots=True)
 class EpochResult:
@@ -46,6 +50,56 @@ class EpochResult:
     sample_count: int
     optimizer_steps: int = 0
     validation: dict[str, float] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """返回适合 JSON 序列化的 epoch 结果。"""
+        return {
+            "epoch": self.epoch,
+            "loss": self.loss,
+            "accuracy": self.accuracy,
+            "sample_count": self.sample_count,
+            "optimizer_steps": self.optimizer_steps,
+            "validation": dict(self.validation) if self.validation is not None else None,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingResult:
+    """一次 ``Trainer.fit`` 调用的稳定、JSON-safe 终态结果。"""
+
+    run_id: str
+    status: TrainingStatus
+    epochs: tuple[EpochResult, ...]
+    best_epoch: int | None
+    best_metric: float | None
+    monitored_metric: str
+    started_at: datetime
+    finished_at: datetime
+    duration_seconds: float
+    last_checkpoint: Path | None
+    best_checkpoint: Path | None
+    stop_reason: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        """返回可直接交给 Web/CLI JSON 层的标准字典。"""
+        return {
+            "run_id": self.run_id,
+            "status": self.status,
+            "epochs": [epoch.to_dict() for epoch in self.epochs],
+            "best_epoch": self.best_epoch,
+            "best_metric": self.best_metric,
+            "monitored_metric": self.monitored_metric,
+            "started_at": self.started_at.isoformat(),
+            "finished_at": self.finished_at.isoformat(),
+            "duration_seconds": self.duration_seconds,
+            "last_checkpoint": (
+                str(self.last_checkpoint) if self.last_checkpoint is not None else None
+            ),
+            "best_checkpoint": (
+                str(self.best_checkpoint) if self.best_checkpoint is not None else None
+            ),
+            "stop_reason": self.stop_reason,
+        }
 
 
 def seed_everything(seed: int, *, deterministic: bool = True) -> None:
@@ -143,6 +197,9 @@ class Trainer:
         self.epochs_without_improvement = 0
         self.global_step = 0
         self.optimizer_step = 0
+        self.last_result: TrainingResult | None = None
+        self._last_checkpoint: Path | None = None
+        self._best_checkpoint: Path | None = None
         self._run_started_perf: float | None = None
 
     @classmethod
@@ -220,6 +277,31 @@ class Trainer:
         if not self.optimizer.param_groups:
             return 0.0
         return float(self.optimizer.param_groups[0].get("lr", 0.0))
+
+    def _build_training_result(
+        self,
+        history: Sequence[EpochResult],
+        *,
+        status: TrainingStatus,
+        started_at: datetime,
+        finished_at: datetime,
+        duration_seconds: float,
+        stop_reason: str | None,
+    ) -> TrainingResult:
+        return TrainingResult(
+            run_id=self.run_id,
+            status=status,
+            epochs=tuple(history),
+            best_epoch=self.best_epoch,
+            best_metric=self.best_metric,
+            monitored_metric=self.config.monitor,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_seconds=max(float(duration_seconds), 0.0),
+            last_checkpoint=self._last_checkpoint,
+            best_checkpoint=self._best_checkpoint,
+            stop_reason=stop_reason,
+        )
 
     def _optimizer_step(self) -> None:
         if self._scaler is not None:
@@ -495,6 +577,10 @@ class Trainer:
                 )
             )
             raise
+        if kind in {"epoch", "last"}:
+            self._last_checkpoint = saved
+        if kind == "best":
+            self._best_checkpoint = saved
         self._emit(
             CheckpointEvent(
                 "saved",
@@ -536,6 +622,8 @@ class Trainer:
 
         history: list[EpochResult] = []
         stop_reason: str | None = None
+        started_at = datetime.now(timezone.utc)
+        self.last_result = None
         self._run_started_perf = time.perf_counter()
         self._emit(
             LifecycleEvent(
@@ -758,11 +846,24 @@ class Trainer:
                     break
 
             elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            finished_at = datetime.now(timezone.utc)
+            status: TrainingStatus = (
+                "early_stopped" if stop_reason == "early_stopped" else "completed"
+            )
+            self.last_result = self._build_training_result(
+                history,
+                status=status,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=elapsed,
+                stop_reason=stop_reason,
+            )
             self._emit(
                 LifecycleEvent(
                     "training",
                     "completed",
                     details={
+                        "status": status,
                         "stop_reason": stop_reason,
                         "epochs_completed": len(history),
                         "last_completed_epoch": self.last_completed_epoch,
@@ -778,6 +879,15 @@ class Trainer:
             return history
         except OperationCancelled:
             elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            finished_at = datetime.now(timezone.utc)
+            self.last_result = self._build_training_result(
+                history,
+                status="cancelled",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=elapsed,
+                stop_reason="cancelled",
+            )
             self._emit(
                 LifecycleEvent(
                     "training",
@@ -793,6 +903,16 @@ class Trainer:
             raise
         except Exception as exc:
             elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
+            finished_at = datetime.now(timezone.utc)
+            reason = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            self.last_result = self._build_training_result(
+                history,
+                status="failed",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=elapsed,
+                stop_reason=reason,
+            )
             self._emit(
                 LifecycleEvent(
                     "training",
@@ -835,6 +955,7 @@ class Trainer:
         if not isinstance(epoch, int) or epoch < 0:
             raise ValueError("checkpoint epoch 非法")
         self.last_completed_epoch = epoch
+        self._last_checkpoint = Path(path)
         metadata = payload.get("metadata") or {}
         if metadata.get("monitor") in (None, self.config.monitor):
             best_metric = metadata.get("best_metric")
@@ -856,6 +977,6 @@ class Trainer:
 
 
 __all__ = [
-    "TrainerConfig", "ObservabilityConfig", "EpochResult", "Trainer",
-    "move_batch_to_device", "seed_everything",
+    "TrainerConfig", "ObservabilityConfig", "EpochResult", "TrainingResult",
+    "TrainingStatus", "Trainer", "move_batch_to_device", "seed_everything",
 ]

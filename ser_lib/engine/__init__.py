@@ -32,7 +32,13 @@ from ser_lib.engine.objectives import (
     SamplingConfig,
     build_weighted_sampler,
 )
-from ser_lib.engine.trainer import EpochResult, Trainer, seed_everything
+from ser_lib.engine.trainer import (
+    EpochResult,
+    Trainer,
+    TrainingResult,
+    TrainingStatus,
+    seed_everything,
+)
 
 __all__ = [
     "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
@@ -42,7 +48,7 @@ __all__ = [
     "parse_optimizer_config", "build_optimizer",
     "parse_scheduler_config", "build_scheduler",
     "LossConfig", "SamplingConfig", "ClassificationLoss", "build_weighted_sampler",
-    "Trainer", "EpochResult", "seed_everything",
+    "Trainer", "EpochResult", "TrainingResult", "TrainingStatus", "seed_everything",
     "ClassMetrics", "PredictionRecord", "EvaluationResult",
     "evaluate", "write_evaluation_report", "save_checkpoint", "load_checkpoint",
 ]
