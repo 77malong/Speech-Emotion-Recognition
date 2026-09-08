@@ -52,10 +52,21 @@ from ser_lib.models import (
     SERModel,
     TransformerBaseline,
 )
+from ser_lib.catalog import (
+    CATALOG_CATEGORIES,
+    CATALOG_SCHEMA_VERSION,
+    ComponentCatalog,
+    ComponentDescriptor,
+    get_component_catalog,
+    list_component_descriptors,
+)
 
 __all__ = [
     "Diagnostic", "DiagnosticSeverity",
     "CompatibilityReport", "inspect_compatibility",
+    "CATALOG_SCHEMA_VERSION", "CATALOG_CATEGORIES",
+    "ComponentDescriptor", "ComponentCatalog",
+    "get_component_catalog", "list_component_descriptors",
     "SERDataset", "SERSample", "SERBatch", "TensorSpec",
     "ModelCard", "ModelArtifactManifest", "export_model_artifact",
     "verify_model_artifact", "load_model_artifact",
