@@ -10,7 +10,9 @@ from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.profiling import (
     DatasetAudioProfile,
+    DatasetProfile,
     DatasetSummary,
+    profile_dataset,
     profile_manifest_audio,
     summarize_manifest,
 )
@@ -43,13 +45,36 @@ class DatasetService:
         *,
         split: str | None = None,
         fail_fast: bool = False,
+        histogram_bins: int = 10,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
     ) -> DatasetAudioProfile:
+        """保留现有音频 header profile API。"""
         return profile_manifest_audio(
             manifest,
             split=split,
             fail_fast=fail_fast,
+            histogram_bins=histogram_bins,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
+
+    @staticmethod
+    def detailed_profile(
+        manifest: DatasetManifest | Path | str,
+        *,
+        include_audio: bool = False,
+        fail_fast: bool = False,
+        histogram_bins: int = 10,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> DatasetProfile:
+        """返回数据集分析页使用的 split/label/speaker/audio 详细统计。"""
+        return profile_dataset(
+            manifest,
+            include_audio=include_audio,
+            fail_fast=fail_fast,
+            histogram_bins=histogram_bins,
             event_callback=event_callback,
             cancellation=cancellation,
         )

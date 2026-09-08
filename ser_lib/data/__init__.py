@@ -62,7 +62,10 @@ from ser_lib.data.pipeline import SamplePipeline, build_components, build_pipeli
 from ser_lib.data.profiling import (
     AudioProbeFailure,
     DatasetAudioProfile,
+    DatasetProfile,
     DatasetSummary,
+    DurationHistogramBin,
+    profile_dataset,
     profile_manifest_audio,
     summarize_manifest,
 )
@@ -167,10 +170,13 @@ __all__ = [
     "validate_compatibility",
     # Dataset summary / profiling
     "AudioProbeFailure",
+    "DurationHistogramBin",
     "DatasetAudioProfile",
     "DatasetSummary",
+    "DatasetProfile",
     "profile_manifest_audio",
     "summarize_manifest",
+    "profile_dataset",
     # Dataset query
     "RecordView",
     "RecordPage",
