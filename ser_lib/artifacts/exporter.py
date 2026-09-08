@@ -7,6 +7,7 @@ import json
 import shutil
 import uuid
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +77,24 @@ def _model_card_markdown(card: ModelCard, model_name: str, labels: Mapping[int, 
     )
 
 
+def _standard_metadata(
+    model: SERModel,
+    data_config: DataConfig,
+    supplied: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """为新 artifact 补充稳定管理字段，同时尊重调用方显式值。"""
+    metadata = dict(supplied or {})
+    metadata.setdefault("artifact_id", uuid.uuid4().hex)
+    metadata.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+    metadata.setdefault(
+        "parameter_count",
+        sum(int(parameter.numel()) for parameter in model.parameters()),
+    )
+    if data_config.dataset_id:
+        metadata.setdefault("dataset_id", data_config.dataset_id)
+    return metadata
+
+
 def export_model_artifact(
     directory: Path | str,
     model: SERModel,
@@ -107,6 +126,7 @@ def export_model_artifact(
         raise ValueError("model_params 与模型实例的实际配置不一致")
     normalized_labels = dict(labels)
     card = model_card if isinstance(model_card, ModelCard) else ModelCard(**dict(model_card or {}))
+    resolved_metadata = _standard_metadata(model, data_config, metadata)
 
     target = Path(directory)
     if target.exists():
@@ -275,7 +295,7 @@ def export_model_artifact(
             labels=normalized_labels,
             metrics=dict(metrics or {}),
             model_card=card,
-            metadata=dict(metadata or {}),
+            metadata=resolved_metadata,
         )
         _write_json(temporary / "manifest.json", manifest.model_dump(mode="json"))
         phase("phase_completed", "write_manifest")
@@ -292,6 +312,7 @@ def export_model_artifact(
                 details={
                     "directory": target,
                     "model_name": model_name,
+                    "artifact_id": resolved_metadata["artifact_id"],
                     "bytes_hashed": completed_hash_bytes,
                 },
                 context=context,

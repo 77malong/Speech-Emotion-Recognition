@@ -9,12 +9,14 @@ from typing import Any
 import torch
 
 from ser_lib.artifacts import (
+    ArtifactCatalog,
     LoadedArtifact,
     ModelArtifactManifest,
     ModelCard,
     export_model_artifact,
     inspect_model_artifact,
     load_model_artifact,
+    scan_model_artifacts,
     verify_model_artifact,
 )
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
@@ -23,7 +25,24 @@ from ser_lib.models.base import SERModel
 
 
 class ArtifactService:
-    """统一模型管理页所需的 inspect/verify/export/load 入口。"""
+    """统一模型管理页所需的 scan/inspect/verify/export/load 入口。"""
+
+    @staticmethod
+    def scan(
+        root: Path | str,
+        *,
+        recursive: bool = False,
+        fail_fast: bool = False,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> ArtifactCatalog:
+        return scan_model_artifacts(
+            root,
+            recursive=recursive,
+            fail_fast=fail_fast,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
 
     @staticmethod
     def inspect(directory: Path | str) -> ModelArtifactManifest:

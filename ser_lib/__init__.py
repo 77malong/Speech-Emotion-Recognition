@@ -12,11 +12,15 @@ from ser_lib.data import (
     inspect_compatibility,
 )
 from ser_lib.artifacts import (
+    ArtifactCatalog,
+    ArtifactInfo,
+    ArtifactScanFailure,
     ModelArtifactManifest,
     ModelCard,
     export_model_artifact,
     inspect_model_artifact,
     load_model_artifact,
+    scan_model_artifacts,
     verify_model_artifact,
 )
 from ser_lib.engine import (
@@ -71,7 +75,8 @@ __all__ = [
     "get_component_catalog", "list_component_descriptors",
     "RuntimeDevice", "RuntimeCapabilities", "get_runtime_capabilities",
     "SERDataset", "SERSample", "SERBatch", "TensorSpec",
-    "ModelCard", "ModelArtifactManifest", "export_model_artifact",
+    "ModelCard", "ModelArtifactManifest", "ArtifactInfo", "ArtifactScanFailure",
+    "ArtifactCatalog", "scan_model_artifacts", "export_model_artifact",
     "inspect_model_artifact", "verify_model_artifact", "load_model_artifact",
     "SERModel", "ModelOutput", "CNNBaseline", "GRUBaseline",
     "TransformerBaseline", "HFAudioClassifier",
