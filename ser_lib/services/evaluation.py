@@ -10,6 +10,7 @@ import torch
 
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.types import SERBatch
+from ser_lib.engine.evaluation_catalog import EvaluationRunCatalog, scan_evaluation_runs
 from ser_lib.engine.evaluation_reports import (
     EvaluationPredictionPage,
     EvaluationReportInfo,
@@ -121,6 +122,23 @@ class EvaluationService:
     @staticmethod
     def inspect_run(path: Path | str) -> EvaluationRunInfo:
         return load_evaluation_run_info(path)
+
+    @staticmethod
+    def scan_runs(
+        root: Path | str,
+        *,
+        recursive: bool = False,
+        fail_fast: bool = False,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> EvaluationRunCatalog:
+        return scan_evaluation_runs(
+            root,
+            recursive=recursive,
+            fail_fast=fail_fast,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
 
     @staticmethod
     def inspect_report(directory: Path | str) -> EvaluationReportInfo:

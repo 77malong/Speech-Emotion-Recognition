@@ -8,6 +8,11 @@ from ser_lib.engine.config import (
     build_experiment_components,
     load_experiment_config,
 )
+from ser_lib.engine.evaluation_catalog import (
+    EvaluationRunCatalog,
+    EvaluationRunScanFailure,
+    scan_evaluation_runs,
+)
 from ser_lib.engine.evaluation_reports import (
     EvaluationPredictionPage,
     EvaluationReportInfo,
@@ -77,7 +82,8 @@ __all__ = [
     "scan_training_runs",
     "EVALUATION_RUN_SCHEMA_VERSION", "EvaluationRunMetadata", "EvaluationRunInfo",
     "build_evaluation_run_metadata", "write_evaluation_run_info",
-    "load_evaluation_run_info",
+    "load_evaluation_run_info", "EvaluationRunScanFailure", "EvaluationRunCatalog",
+    "scan_evaluation_runs",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",
