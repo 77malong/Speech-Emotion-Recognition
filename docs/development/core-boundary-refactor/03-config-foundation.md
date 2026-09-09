@@ -57,3 +57,27 @@
 ## 建议提交
 
 `refactor(config): introduce central config foundation`
+
+## 实施记录（2026-09-09）
+
+本阶段开始前再次读取：
+
+- 设计依据：`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`
+- 证据依据：`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
+
+Stage 02 的最终 exact HEAD `1621caabdc9bed5e1a658c0b1fc9005ceaedc153` 对应 CI #217 已全部通过，包含 Ruff、mypy、coverage 与 Windows/macOS/Linux × Python 3.10/3.12 矩阵，因此本阶段在稳定 foundation 基线上开始。
+
+本阶段实现范围严格限定为 config 基础层与核心 data config：
+
+- 新增 `ser_lib/config/base.py`，`StrictConfig` 成为唯一正式严格配置基类；
+- 新增 `ser_lib/config/loader.py`，承接 YAML、schema version、路径解析与版本化配置加载；Stage 05 前 migration 调用仍通过旧 `core.migrations` 的局部兼容入口，不把 migrations 放进 foundation/config；
+- 新增 `ser_lib/config/data.py`，集中 `DataConfig`、组件、batching、audio、cache schema；
+- `AudioSettings` 与 `AudioLoaderConfig` 不再各自定义类型，统一为 `AudioConfig`；旧名称仅作为同一类对象的 0.2.x alias；
+- `CacheSettings` 同理兼容 alias 到正式 `CacheConfig`；
+- `ser_lib/core/config.py` 和 `ser_lib/data/config.py` 降为旧路径兼容 shim，不再包含正式配置实现；
+- `ser_lib/data/audio.py` 删除独立运行时配置 dataclass，直接消费中央 `AudioConfig`，保留旧 `AudioLoaderConfig` 名称作为 alias；
+- `load_data_config` 继续只把 `manifest` 相对配置文件所在目录解析，不改变默认 audio/cache/batching payload；
+- 新增 config 轻量导入、依赖方向、identity shim、round-trip、严格字段和路径行为测试；
+- coverage 门禁新增 `ser_lib/config/ >= 85%`。
+
+本阶段没有迁移模型、训练、optimizer/scheduler、loss、streaming 或 importer 配置，也没有删除剩余 `core`。CI 结果必须以本阶段 exact HEAD 的 GitHub Actions 为准，提交记录不提前声明通过。

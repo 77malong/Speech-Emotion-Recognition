@@ -17,13 +17,13 @@ import logging
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import soundfile as sf
 import torch
 import torchaudio
 import torchaudio.transforms as T
 
+from ser_lib.config.data import AudioBackend, AudioConfig
 from ser_lib.data.errors import (
     AudioDecodeError,
     AudioNotFoundError,
@@ -33,8 +33,6 @@ from ser_lib.data.errors import (
 from ser_lib.data.types import AudioData, AudioRecord
 
 logger = logging.getLogger(__name__)
-
-AudioBackend = Literal["soundfile", "torchaudio"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +105,6 @@ def _decode_soundfile(
         dtype="float32",
         always_2d=True,
     )
-    # SoundFile 输出 [T, C]；库内统一为 [C, T]。copy() 保证转 Tensor 时连续。
     waveform = torch.from_numpy(data.T.copy())
     return waveform, int(sample_rate)
 
@@ -155,25 +152,15 @@ def decode_audio(
             ) from soundfile_exc
 
 
-@dataclass(frozen=True)
-class AudioLoaderConfig:
-    """AudioLoader 运行时配置（设计文档 §7.1）。"""
-
-    target_sample_rate: int = 16000
-    mono: bool = True
-    normalize_peak: bool = False
-    backend: AudioBackend = "soundfile"
+# 0.2.x 读兼容：运行时 loader 与 YAML 现在共享唯一 AudioConfig schema。
+AudioLoaderConfig = AudioConfig
 
 
 class AudioLoader:
-    """从 :class:`AudioRecord` 加载音频并输出标准化的 :class:`AudioData`。
+    """从 :class:`AudioRecord` 加载音频并输出标准化的 :class:`AudioData`。"""
 
-    重采样器按 ``(orig_sr, target_sr, dtype, device)`` 缓存（§7.3）；
-    实例可被 DataLoader worker pickle，不在 worker 间共享不可序列化状态。
-    """
-
-    def __init__(self, config: AudioLoaderConfig | None = None) -> None:
-        config = config or AudioLoaderConfig()
+    def __init__(self, config: AudioConfig | None = None) -> None:
+        config = config or AudioConfig()
         if config.backend not in ("soundfile", "torchaudio"):
             raise SERDataError(
                 f"不支持的音频后端: {config.backend!r}，"
@@ -184,25 +171,10 @@ class AudioLoader:
                 f"target_sample_rate 必须为正，实际: {config.target_sample_rate}"
             )
         self.config = config
-        # 缓存 key: (orig_freq, new_freq, dtype, device)
         self._resamplers: dict[tuple[int, int, torch.dtype, torch.device], T.Resample] = {}
 
-    # ------------------------------------------------------------------
-    # 公开接口
-    # ------------------------------------------------------------------
-
     def load(self, record: AudioRecord, *, base_dir: Path | None = None) -> AudioData:
-        """加载一条记录对应的音频。
-
-        Args:
-            record: 音频记录；相对路径基于 ``base_dir``（通常是 manifest root）解析。
-            base_dir: 相对路径解析基准目录。
-
-        Raises:
-            AudioNotFoundError: 文件不存在。
-            AudioDecodeError: 解码失败。
-            InvalidAudioSegmentError: 片段非法或解码结果为空。
-        """
+        """加载一条记录对应的音频。"""
         path = self.resolve_path(record.audio_path, base_dir)
         uid = record.uid
 
@@ -251,7 +223,6 @@ class AudioLoader:
                 component="audio_loader", stage="decode",
             )
         if sr != original_sr:
-            # 极少数后端会返回与元信息不同的采样率
             logger.warning(
                 "音频实际采样率 (%s) 与元信息 (%s) 不一致: uid=%s, path=%s",
                 sr, original_sr, uid, path,
@@ -264,15 +235,12 @@ class AudioLoader:
                 component="audio_loader", stage="validate",
             )
 
-        # 声道转换：默认求均值；mono 开启时输出 [1, T]
         if self.config.mono and waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
 
-        # 重采样至目标采样率
         if sr != self.config.target_sample_rate:
             waveform = self._resample(waveform, sr)
 
-        # 可选的确定性 loader 级归一化
         if self.config.normalize_peak:
             peak = waveform.abs().max()
             if peak > 0:
@@ -302,10 +270,6 @@ class AudioLoader:
             path = Path(base_dir) / path
         return path.resolve()
 
-    # ------------------------------------------------------------------
-    # 内部实现
-    # ------------------------------------------------------------------
-
     def _segment_to_frames(
         self,
         record: AudioRecord,
@@ -333,7 +297,6 @@ class AudioLoader:
             )
 
         if end_ms is None:
-            # 负数 num_frames 表示读到文件结尾
             return frame_offset, -1
 
         end_frame = int(round(end_ms / 1000.0 * original_sr))
