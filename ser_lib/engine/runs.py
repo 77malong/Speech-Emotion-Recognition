@@ -1,4 +1,4 @@
-"""训练运行记录的原子持久化与轻量 Catalog 扫描。"""
+"""训练运行记录的原子持久化、轻量 Catalog 扫描与详情聚合 DTO。"""
 
 from __future__ import annotations
 
@@ -10,8 +10,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.engine.checkpoint_catalog import CheckpointCatalog
 from ser_lib.engine.lineage import TrainingRunMetadata
+from ser_lib.engine.training_history import TrainingHistoryInfo
 from ser_lib.engine.trainer import TrainingResult, TrainingStatus
 
 RUN_RECORD_SCHEMA_VERSION = 1
@@ -140,6 +143,28 @@ class TrainingRunInfo:
         fields = record.model_dump()
         fields.pop("schema_version", None)
         return cls(**fields)
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingRunDetail:
+    """训练详情页/Worker 可直接消费的轻量聚合结果。
+
+    该 DTO 只组合 ``run.json``、``history.json`` 与 checkpoint 文件 stat，
+    不包含模型/optimizer payload，也不会要求调用方反序列化 checkpoint。
+    """
+
+    run: TrainingRunInfo
+    history: TrainingHistoryInfo | None
+    checkpoints: CheckpointCatalog
+    diagnostics: tuple[Diagnostic, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "run": self.run.to_dict(),
+            "history": self.history.to_dict() if self.history is not None else None,
+            "checkpoints": self.checkpoints.to_dict(),
+            "diagnostics": [item.to_dict() for item in self.diagnostics],
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +304,7 @@ def _candidate_directories(root: Path, *, recursive: bool) -> list[Path]:
 __all__ = [
     "RUN_RECORD_SCHEMA_VERSION",
     "TrainingRunInfo",
+    "TrainingRunDetail",
     "TrainingRunScanFailure",
     "TrainingRunCatalog",
     "write_training_run_info",

@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
+from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.checkpoint_catalog import (
@@ -18,6 +19,7 @@ from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig
 from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.engine.runs import (
     TrainingRunCatalog,
+    TrainingRunDetail,
     TrainingRunInfo,
     load_training_run_info,
     scan_training_runs,
@@ -171,6 +173,54 @@ class TrainingService:
         return load_training_history(path)
 
     @staticmethod
+    def inspect_run_detail(path: Path | str) -> TrainingRunDetail:
+        """聚合训练元数据、曲线与 checkpoint stat，不加载任何 checkpoint 内容。"""
+        run = load_training_run_info(path)
+        run_dir = Path(run.directory)
+        diagnostics: list[Diagnostic] = []
+
+        try:
+            history = load_training_history(run_dir)
+        except (FileNotFoundError, ValueError) as exc:
+            history = None
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="training_history_unavailable",
+                    message=str(exc),
+                    stage="training_run_detail",
+                    path=(run_dir / "history.json").as_posix(),
+                    details={"error_type": type(exc).__name__},
+                )
+            )
+
+        checkpoint_root = _checkpoint_root_for_run(run)
+        if checkpoint_root.is_dir():
+            checkpoints = scan_checkpoint_files(checkpoint_root)
+        else:
+            checkpoints = CheckpointCatalog(
+                root=checkpoint_root.as_posix(),
+                checkpoints=(),
+                failures=(),
+            )
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="training_checkpoint_directory_missing",
+                    message=f"checkpoint 目录不存在: {checkpoint_root}",
+                    stage="training_run_detail",
+                    path=checkpoint_root.as_posix(),
+                )
+            )
+
+        return TrainingRunDetail(
+            run=run,
+            history=history,
+            checkpoints=checkpoints,
+            diagnostics=tuple(diagnostics),
+        )
+
+    @staticmethod
     def scan_runs(
         root: Path | str,
         *,
@@ -207,6 +257,23 @@ class TrainingService:
             event_callback=event_callback,
             cancellation=cancellation,
         )
+
+
+def _checkpoint_root_for_run(run: TrainingRunInfo) -> Path:
+    raw_trainer = run.config.get("trainer")
+    if isinstance(raw_trainer, Mapping):
+        raw_checkpoint_dir = raw_trainer.get("checkpoint_dir")
+        if isinstance(raw_checkpoint_dir, str) and raw_checkpoint_dir.strip():
+            checkpoint_root = Path(raw_checkpoint_dir)
+            if not checkpoint_root.is_absolute():
+                checkpoint_root = Path(run.directory) / checkpoint_root
+            return checkpoint_root
+
+    for raw_checkpoint in (run.last_checkpoint, run.best_checkpoint):
+        if isinstance(raw_checkpoint, str) and raw_checkpoint.strip():
+            return Path(raw_checkpoint).parent
+
+    return Path(run.directory) / "checkpoints"
 
 
 __all__ = ["TrainingService"]
