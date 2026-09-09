@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -12,25 +13,25 @@ from torch.utils.data import DataLoader
 from ser_lib.artifacts import (
     ModelCard,
     ModelArtifactManifest,
-    export_model_artifact,
     load_model_artifact,
     verify_model_artifact,
 )
-from ser_lib.data import DatasetManifest, SERDataset
+from ser_lib.data import DatasetManifest, SERDataset, fingerprint_manifest
 from ser_lib.engine import (
-    Trainer,
+    TrainingRunMetadata,
     build_experiment_components,
+    build_weighted_sampler,
     evaluate,
     load_checkpoint,
     load_experiment_config,
     write_evaluation_report,
-    build_weighted_sampler,
 )
 from ser_lib.inference import (
     BatchEmotionPredictor,
     EmotionPredictor,
     write_batch_predictions,
 )
+from ser_lib.services import ArtifactService, TrainingService
 
 
 def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
@@ -81,12 +82,18 @@ def train_experiment(
         })
     components = build_experiment_components(config, train=True)
     manifest = DatasetManifest.load(config.data.manifest)
+    dataset_fingerprint = fingerprint_manifest(manifest)
     batches = _loader(
         manifest, split, components, batch_size=batch_size, workers=workers, shuffle=True,
         sampling=config.sampling, seed=config.trainer.seed,
         num_classes=components.model.model_spec.num_classes,
     )
-    trainer = Trainer.from_experiment(components.model, config)
+    trainer = TrainingService.create_trainer(
+        components.model,
+        config,
+        dataset_id=manifest.meta.dataset_id,
+        dataset_fingerprint=dataset_fingerprint.digest,
+    )
     val_batches = None
     if "val" in manifest.meta.splits:
         validation_components = build_experiment_components(config, train=False)
@@ -106,11 +113,13 @@ def train_experiment(
             stream.write(json.dumps(asdict(result), ensure_ascii=False) + "\n")
             stream.flush()
 
-    history = trainer.fit(
+    training_result = TrainingService.run(
+        trainer,
         lambda: batches,
         val_batches=(lambda: val_batches) if val_batches is not None else None,
         on_epoch_end=log_epoch,
     )
+    history = list(training_result.epochs)
     history_path = config.output_dir / "history.json"
     temporary = history_path.with_suffix(".json.tmp")
     temporary.write_text(
@@ -118,6 +127,7 @@ def train_experiment(
         encoding="utf-8",
     )
     temporary.replace(history_path)
+    run_info = TrainingService.save_run(config.output_dir, trainer, training_result)
     last_checkpoint = (
         cast(Path, config.trainer.checkpoint_dir)
         / f"epoch-{trainer.last_completed_epoch:04d}.pt"
@@ -125,6 +135,10 @@ def train_experiment(
     )
     return {
         "output_dir": str(config.output_dir),
+        "run_id": run_info.run_id,
+        "run_record": str(config.output_dir / "run.json"),
+        "dataset_id": run_info.dataset_id,
+        "dataset_fingerprint": run_info.dataset_fingerprint,
         "last_checkpoint": str(last_checkpoint) if last_checkpoint else None,
         "best_checkpoint": str(config.trainer.checkpoint_dir / "best.pt")
         if trainer.best_epoch is not None and config.trainer.checkpoint_dir else None,
@@ -227,7 +241,15 @@ def export_checkpoint_artifact(
         raise ValueError(
             f"标签数 {len(labels)} 与模型 num_classes={expected_classes} 不一致"
         )
-    target = export_model_artifact(
+
+    source_run = None
+    checkpoint_metadata = payload.get("metadata")
+    if isinstance(checkpoint_metadata, Mapping):
+        raw_run_metadata = checkpoint_metadata.get("run_metadata")
+        if isinstance(raw_run_metadata, Mapping):
+            source_run = TrainingRunMetadata.from_dict(raw_run_metadata)
+
+    target = ArtifactService.export(
         destination,
         components.model,
         model_name=config.model.type,
@@ -235,9 +257,15 @@ def export_checkpoint_artifact(
         labels=labels,
         metrics=payload.get("metrics") or {},
         metadata={"checkpoint_epoch": payload.get("epoch")},
+        source_run=source_run,
         model_card=ModelCard(**(model_card or {})),
     )
-    return {"artifact": str(target), "model": config.model.type, "labels": labels}
+    return {
+        "artifact": str(target),
+        "model": config.model.type,
+        "labels": labels,
+        "source_run_id": source_run.run_id if source_run is not None else None,
+    }
 
 
 def inspect_artifact(path: Path, *, verify: bool) -> dict[str, Any]:
