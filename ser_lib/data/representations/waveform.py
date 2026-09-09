@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
-
+from ser_lib.config.representations import RawWaveformConfig
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.representations.base import Representation
 from ser_lib.data.types import (
@@ -12,12 +11,6 @@ from ser_lib.data.types import (
     RepresentationOutput,
     TensorSpec,
 )
-
-
-class RawWaveformConfig(BaseModel):
-    """RawWaveform 无参数；保留空模型用于 schema 生成与未知参数报错。"""
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class RawWaveform(Representation):

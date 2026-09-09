@@ -49,6 +49,22 @@ from ser_lib.config.optimizer import (
     SGDConfig,
     parse_optimizer_config,
 )
+from ser_lib.config.presets import (
+    build_experiment_config,
+    get_experiment_preset_payload,
+    list_experiment_preset_ids,
+)
+from ser_lib.config.representations import (
+    AcousticFeatureName,
+    AcousticFeaturesConfig,
+    CompositeConfig,
+    LogMelConfig,
+    MelConfig,
+    MFCCConfig,
+    RawWaveformConfig,
+    SpectralConfigBase,
+    SpectrogramConfig,
+)
 from ser_lib.config.scheduler import (
     CosineSchedulerConfig,
     SchedulerConfig,
@@ -60,6 +76,15 @@ from ser_lib.config.training import (
     ObservabilityConfig,
     SamplingConfig,
     TrainerConfig,
+)
+from ser_lib.config.transforms import (
+    GaussianNoiseConfig,
+    NormalizeConfig,
+    PitchShiftConfig,
+    SpecMaskingConfig,
+    TimeShiftConfig,
+    TimeStretchConfig,
+    VolumeScaleConfig,
 )
 
 __all__ = [
@@ -110,4 +135,23 @@ __all__ = [
     "FolderImportConfig",
     "JsonlImportConfig",
     "RavdessImportConfig",
+    "RawWaveformConfig",
+    "SpectralConfigBase",
+    "SpectrogramConfig",
+    "MelConfig",
+    "LogMelConfig",
+    "MFCCConfig",
+    "AcousticFeatureName",
+    "AcousticFeaturesConfig",
+    "CompositeConfig",
+    "NormalizeConfig",
+    "GaussianNoiseConfig",
+    "TimeShiftConfig",
+    "VolumeScaleConfig",
+    "PitchShiftConfig",
+    "TimeStretchConfig",
+    "SpecMaskingConfig",
+    "list_experiment_preset_ids",
+    "get_experiment_preset_payload",
+    "build_experiment_config",
 ]

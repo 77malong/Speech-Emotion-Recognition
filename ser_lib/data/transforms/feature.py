@@ -9,18 +9,9 @@ from __future__ import annotations
 
 import torch
 import torchaudio.transforms as T
-from pydantic import BaseModel, ConfigDict, Field
 
+from ser_lib.config.transforms import SpecMaskingConfig
 from ser_lib.data.registry import ComponentDescriptor
-
-
-class SpecMaskingConfig(BaseModel):
-    """SpecAugment 掩码参数。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    time_mask_param: int = Field(default=30, ge=1, description="时间掩码最大宽度")
-    freq_mask_param: int = Field(default=15, ge=1, description="频率掩码最大宽度")
 
 
 class SpecMasking(torch.nn.Module):
