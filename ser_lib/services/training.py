@@ -8,6 +8,12 @@ from typing import cast
 
 from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.types import SERBatch
+from ser_lib.engine.checkpoint_catalog import (
+    CheckpointCatalog,
+    CheckpointInfo,
+    inspect_checkpoint_file,
+    scan_checkpoints as scan_checkpoint_files,
+)
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig
 from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.engine.runs import (
@@ -174,6 +180,27 @@ class TrainingService:
         cancellation: CancellationCheck | None = None,
     ) -> TrainingRunCatalog:
         return scan_training_runs(
+            root,
+            recursive=recursive,
+            fail_fast=fail_fast,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
+
+    @staticmethod
+    def inspect_checkpoint(path: Path | str) -> CheckpointInfo:
+        return inspect_checkpoint_file(path)
+
+    @staticmethod
+    def scan_checkpoints(
+        root: Path | str,
+        *,
+        recursive: bool = False,
+        fail_fast: bool = False,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> CheckpointCatalog:
+        return scan_checkpoint_files(
             root,
             recursive=recursive,
             fail_fast=fail_fast,

@@ -1,4 +1,12 @@
 from ser_lib.engine.checkpoint import load_checkpoint, save_checkpoint
+from ser_lib.engine.checkpoint_catalog import (
+    CheckpointCatalog,
+    CheckpointInfo,
+    CheckpointKind,
+    CheckpointScanFailure,
+    inspect_checkpoint_file,
+    scan_checkpoints,
+)
 from ser_lib.engine.config import (
     ExperimentConfig,
     ExperimentComponents,
@@ -95,5 +103,6 @@ __all__ = [
     "EvaluationResult", "EvaluationReportInfo", "EvaluationPredictionPage",
     "inspect_evaluation_report", "query_evaluation_predictions",
     "evaluate", "write_evaluation_report",
-    "save_checkpoint", "load_checkpoint",
+    "CheckpointKind", "CheckpointInfo", "CheckpointScanFailure", "CheckpointCatalog",
+    "inspect_checkpoint_file", "scan_checkpoints", "save_checkpoint", "load_checkpoint",
 ]
