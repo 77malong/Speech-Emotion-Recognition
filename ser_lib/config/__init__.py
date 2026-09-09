@@ -16,6 +16,18 @@ from ser_lib.config.data import (
     load_data_config,
 )
 from ser_lib.config.experiment import ExperimentConfig
+from ser_lib.config.importers import (
+    DEFAULT_AUDIO_EXTENSIONS,
+    CasiaImportConfig,
+    CremaDImportConfig,
+    CsemotionsImportConfig,
+    CsvImportConfig,
+    EmotionTalkImportConfig,
+    EsdImportConfig,
+    FolderImportConfig,
+    JsonlImportConfig,
+    RavdessImportConfig,
+)
 from ser_lib.config.inference import StreamingConfig
 from ser_lib.config.loader import (
     load_versioned_config,
@@ -88,4 +100,14 @@ __all__ = [
     "parse_scheduler_config",
     "ExperimentConfig",
     "StreamingConfig",
+    "DEFAULT_AUDIO_EXTENSIONS",
+    "CasiaImportConfig",
+    "CsvImportConfig",
+    "CsemotionsImportConfig",
+    "CremaDImportConfig",
+    "EmotionTalkImportConfig",
+    "EsdImportConfig",
+    "FolderImportConfig",
+    "JsonlImportConfig",
+    "RavdessImportConfig",
 ]

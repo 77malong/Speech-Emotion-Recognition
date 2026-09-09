@@ -6,8 +6,7 @@ import csv
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict
-
+from ser_lib.config.importers import CremaDImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
@@ -34,15 +33,6 @@ CREMA_D_ZH = {
     "neutral": "中性", "happy": "快乐", "angry": "愤怒", "sad": "悲伤",
     "fearful": "恐惧", "disgust": "厌恶",
 }
-
-
-class CremaDImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    audio_directory: str = "AudioWAV"
-    demographics_file: str | None = "VideoDemographics.csv"
-    encoding: str = "utf-8-sig"
-    label_mapping: dict[str, int] | None = None
-    speaker_splits: dict[str, list[str]] | None = None
 
 
 def _read_demographics(path: Path, encoding: str) -> dict[str, dict[str, Any]]:

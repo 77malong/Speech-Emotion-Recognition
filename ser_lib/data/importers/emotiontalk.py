@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, Mapping
+from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict
-
+from ser_lib.config.importers import EmotionTalkImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
@@ -26,16 +25,6 @@ EMOTIONTALK_ZH = {
     "surprised": "惊讶", "fearful": "恐惧", "disgusted": "厌恶",
 }
 EMOTIONTALK_OFFICIAL_SPLITS = {"val": {"G00001", "G00012"}, "test": {"G00003", "G00015"}}
-
-
-class EmotionTalkImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    json_directory: str = "json"
-    audio_directory: str = "wav"
-    encoding: str = "utf-8"
-    label_mapping: dict[str, int] | None = None
-    split_strategy: Literal["speaker_independent", "official_dialogue"] = "speaker_independent"
-    speaker_splits: dict[str, list[str]] | None = None
 
 
 def _automatic_splits(speakers: set[str]) -> dict[str, list[str]]:

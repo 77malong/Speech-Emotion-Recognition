@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+from ser_lib.config.importers import DEFAULT_AUDIO_EXTENSIONS, FolderImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
@@ -14,29 +13,6 @@ from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
-
-DEFAULT_AUDIO_EXTENSIONS = (".wav", ".flac", ".mp3", ".ogg", ".m4a", ".wv", ".aiff")
-
-
-class FolderImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    audio_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_AUDIO_EXTENSIONS))
-    label_dir_level: int = Field(default=0, ge=0, le=2)
-    speaker_dir_level: int | None = Field(default=None, ge=0, le=3)
-    label_mapping: dict[str, int] | None = None
-    uid_prefix: str = Field(default="audio", min_length=1)
-    relative_paths: bool = True
-
-    @field_validator("audio_extensions")
-    @classmethod
-    def _normalize_ext(cls, value: list[str]) -> list[str]:
-        result = []
-        for ext in value:
-            ext = ext.lower()
-            if not ext.startswith("."):
-                ext = "." + ext
-            result.append(ext)
-        return result
 
 
 class FolderImporter:

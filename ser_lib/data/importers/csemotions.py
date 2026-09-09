@@ -6,8 +6,7 @@ import csv
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict
-
+from ser_lib.config.importers import CsemotionsImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
@@ -29,15 +28,6 @@ CSEMOTIONS_ZH = {
     "neutral": "中性", "happy": "快乐", "angry": "愤怒", "sad": "悲伤",
     "surprise": "惊讶", "fearful": "恐惧", "playfulness": "俏皮",
 }
-
-
-class CsemotionsImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    metadata_file: str = "csemotions_metadata.csv"
-    audio_directory: str = "wav_data"
-    encoding: str = "utf-8-sig"
-    label_mapping: dict[str, int] | None = None
-    speaker_splits: dict[str, list[str]] | None = None
 
 
 def _gender(speaker: str) -> str:

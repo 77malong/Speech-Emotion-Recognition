@@ -6,8 +6,7 @@ import csv
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from ser_lib.config.importers import CsvImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
@@ -15,20 +14,6 @@ from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
-
-
-class CsvImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    audio_path_column: str = Field(default="audio_path", min_length=1)
-    label_column: str | None = Field(default="label")
-    label_mapping: dict[str, int] | None = None
-    speaker_column: str | None = None
-    metadata_columns: list[str] = Field(default_factory=list)
-    uid_column: str | None = None
-    uid_prefix: str = Field(default="audio", min_length=1)
-    delimiter: str = Field(default=",", min_length=1, max_length=1)
-    encoding: str = "utf-8-sig"
-    root: Path | None = None
 
 
 class CsvImporter:

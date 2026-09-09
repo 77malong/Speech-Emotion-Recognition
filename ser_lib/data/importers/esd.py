@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict
-
+from ser_lib.config.importers import EsdImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
@@ -18,14 +17,6 @@ from ser_lib.data.types import AudioRecord
 
 ESD_LABELS = {"Neutral": 0, "Happy": 1, "Angry": 2, "Sad": 3, "Surprise": 4}
 ESD_ZH = {"Neutral": "中性", "Happy": "快乐", "Angry": "愤怒", "Sad": "悲伤", "Surprise": "惊讶"}
-
-
-class EsdImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    languages: list[Literal["zh", "en"]] = ["zh", "en"]
-    encoding: str = "utf-8-sig"
-    label_mapping: dict[str, int] | None = None
-    speaker_splits: dict[str, list[str]] | None = None
 
 
 def _language(speaker: str) -> str | None:

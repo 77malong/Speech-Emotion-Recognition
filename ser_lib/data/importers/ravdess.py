@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Mapping
+from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict
-
+from ser_lib.config.importers import RavdessImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
@@ -25,12 +24,6 @@ RAVDESS_EMOTIONS = {
     "07": (6, "disgust"),
     "08": (7, "surprised"),
 }
-
-
-class RavdessImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    vocal_channel: Literal["speech", "song", "all"] = "speech"
-    relative_paths: bool = True
 
 
 class RavdessImporter:

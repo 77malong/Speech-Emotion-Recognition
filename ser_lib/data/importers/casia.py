@@ -5,13 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from ser_lib.config.importers import CasiaImportConfig, DEFAULT_AUDIO_EXTENSIONS
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
 from ser_lib.data.importers.base import ImportPreview, ImportTask
-from ser_lib.data.importers.folder import DEFAULT_AUDIO_EXTENSIONS
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
@@ -32,12 +30,6 @@ CASIA_EMOTION_ZH: dict[str, str] = {
     "surprise": "惊吓",
     "fear": "恐惧",
 }
-
-
-class CasiaImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    audio_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_AUDIO_EXTENSIONS))
-    label_mapping: dict[str, int] | None = None
 
 
 class CasiaImporter:

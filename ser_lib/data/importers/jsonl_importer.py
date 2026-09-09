@@ -6,8 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
-
+from ser_lib.config.importers import JsonlImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.errors import ManifestError
@@ -26,12 +25,6 @@ LEGACY_ALIASES = {
     "sample_rate": "sample_rate_hint",
     "sr": "sample_rate_hint",
 }
-
-
-class JsonlImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    uid_prefix: str = Field(default="audio", min_length=1)
-    root: Path | None = None
 
 
 def normalize_raw_record(raw: Mapping[str, Any], *, index: int, uid_prefix: str) -> dict[str, Any]:
