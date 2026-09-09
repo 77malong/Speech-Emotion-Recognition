@@ -7,8 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
 from ser_lib.data.manifest import DatasetManifest
+from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 _CHUNK_SIZE = 1024 * 1024
 
