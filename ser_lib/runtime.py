@@ -81,6 +81,16 @@ class RuntimeMetrics:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _HostRuntimeMetrics:
+    process_rss_bytes: int
+    system_memory_used_bytes: int
+    system_memory_available_bytes: int
+    system_memory_total_bytes: int
+    process_cpu_percent: float
+    system_cpu_percent: float
+
+
 def get_runtime_capabilities() -> RuntimeCapabilities:
     """返回 JSON-safe 的 Python/PyTorch 与本机可选设备信息。"""
     cuda_available = bool(torch.cuda.is_available())
@@ -139,19 +149,49 @@ def _resolve_cuda_index(device: torch.device) -> int:
     return index
 
 
-def _host_metrics() -> dict[str, int | float]:
+def _host_metrics() -> _HostRuntimeMetrics:
     """单次、非阻塞采样宿主机与当前 Python 进程资源。"""
     process = psutil.Process()
     memory = psutil.virtual_memory()
-    return {
-        "process_rss_bytes": int(process.memory_info().rss),
-        "system_memory_used_bytes": int(memory.used),
-        "system_memory_available_bytes": int(memory.available),
-        "system_memory_total_bytes": int(memory.total),
+    return _HostRuntimeMetrics(
+        process_rss_bytes=int(process.memory_info().rss),
+        system_memory_used_bytes=int(memory.used),
+        system_memory_available_bytes=int(memory.available),
+        system_memory_total_bytes=int(memory.total),
         # interval=None 不 sleep；首次调用是自进程启动/上次采样后的即时百分比。
-        "process_cpu_percent": float(process.cpu_percent(interval=None)),
-        "system_cpu_percent": float(psutil.cpu_percent(interval=None)),
-    }
+        process_cpu_percent=float(process.cpu_percent(interval=None)),
+        system_cpu_percent=float(psutil.cpu_percent(interval=None)),
+    )
+
+
+def _runtime_metrics_with_host(
+    *,
+    device_id: str,
+    device_type: str,
+    captured_at: datetime,
+    host: _HostRuntimeMetrics,
+    allocated_memory: int | None = None,
+    reserved_memory: int | None = None,
+    max_allocated_memory: int | None = None,
+    free_memory: int | None = None,
+    total_memory: int | None = None,
+) -> RuntimeMetrics:
+    return RuntimeMetrics(
+        device_id=device_id,
+        device_type=device_type,
+        captured_at=captured_at,
+        allocated_memory=allocated_memory,
+        reserved_memory=reserved_memory,
+        max_allocated_memory=max_allocated_memory,
+        free_memory=free_memory,
+        total_memory=total_memory,
+        process_rss_bytes=host.process_rss_bytes,
+        system_memory_used_bytes=host.system_memory_used_bytes,
+        system_memory_available_bytes=host.system_memory_available_bytes,
+        system_memory_total_bytes=host.system_memory_total_bytes,
+        process_cpu_percent=host.process_cpu_percent,
+        system_cpu_percent=host.system_cpu_percent,
+    )
 
 
 def get_runtime_metrics(
@@ -166,16 +206,16 @@ def get_runtime_metrics(
     captured_at = datetime.now(timezone.utc)
     host = _host_metrics()
     if resolved.type != "cuda":
-        return RuntimeMetrics(
+        return _runtime_metrics_with_host(
             device_id=str(resolved),
             device_type=resolved.type,
             captured_at=captured_at,
-            **host,
+            host=host,
         )
 
     index = _resolve_cuda_index(resolved)
     free_memory, total_memory = torch.cuda.mem_get_info(index)
-    return RuntimeMetrics(
+    return _runtime_metrics_with_host(
         device_id=f"cuda:{index}",
         device_type="cuda",
         captured_at=captured_at,
@@ -184,7 +224,7 @@ def get_runtime_metrics(
         max_allocated_memory=int(torch.cuda.max_memory_allocated(index)),
         free_memory=int(free_memory),
         total_memory=int(total_memory),
-        **host,
+        host=host,
     )
 
 
