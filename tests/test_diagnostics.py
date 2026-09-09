@@ -8,17 +8,10 @@ import pytest
 
 from ser_lib.core import Diagnostic
 from ser_lib.data.errors import (
-    AudioDecodeError,
-    AudioNotFoundError,
-    CollationError,
-    CompatibilityError,
-    InvalidAudioSegmentError,
-    ManifestError,
-    RegistryError,
-    RepresentationError,
-    TransformError,
+    AudioDecodeError, AudioNotFoundError, CollationError, CompatibilityError,
+    InvalidAudioSegmentError, ManifestError, RegistryError, RepresentationError, TransformError,
 )
-from ser_lib.data.importers import ImportIssue, ImportPreview
+from ser_lib.data.importers import ImportPreview
 
 
 def test_diagnostic_is_json_safe_and_validates_contract(tmp_path: Path):
@@ -37,14 +30,12 @@ def test_diagnostic_is_json_safe_and_validates_contract(tmp_path: Path):
             "paths": [tmp_path / "a.wav"],
         },
     )
-
     payload = diagnostic.to_dict()
     assert payload["severity"] == "warning"
     assert payload["path"] == str(tmp_path / "a.wav")
     assert payload["details"]["when"].endswith("+00:00")
     assert payload["details"]["paths"] == [str(tmp_path / "a.wav")]
     json.dumps(payload, ensure_ascii=False)
-
     with pytest.raises(ValueError, match="severity"):
         Diagnostic("fatal", "bad", "message")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="code"):
@@ -61,9 +52,7 @@ def test_diagnostic_from_ser_error_preserves_machine_context(tmp_path: Path):
         component="manifest",
         stage="load",
     )
-
     diagnostic = Diagnostic.from_error(error, suggestion="检查 YAML 格式")
-
     assert diagnostic.severity == "error"
     assert diagnostic.code == "manifest_error"
     assert diagnostic.uid == "record-1"
@@ -86,47 +75,49 @@ def test_data_error_subclasses_expose_stable_codes():
         (CompatibilityError, "compatibility_error"),
         (RegistryError, "registry_error"),
     ]
-
     for error_type, expected_code in cases:
         error = error_type("failed")
         assert error.code == expected_code
         assert error.to_dict()["code"] == expected_code
 
 
-def test_import_preview_bridges_legacy_issues_and_warnings_to_diagnostics(tmp_path: Path):
-    # 前五个位置参数保持历史 ImportIssue 构造方式不变。
-    issue = ImportIssue(3, tmp_path / "broken.wav", "validate", "无法解析", "bad header")
+def test_import_preview_uses_single_diagnostic_track(tmp_path: Path):
     preview = ImportPreview(
         importer_id="folder",
-        issues=[issue],
-        warnings=["许可证需要确认"],
-        structured_diagnostics=[
-            Diagnostic("info", "import_hint", "建议检查标签映射", stage="map_labels")
+        diagnostics=[
+            Diagnostic(
+                "error",
+                "import_record_invalid",
+                "无法解析",
+                stage="validate",
+                path=tmp_path / "broken.wav",
+                details={"entry_index": 3, "detail": "bad header"},
+            ),
+            Diagnostic("warning", "import_license_notice", "许可证需要确认", stage="scan"),
+            Diagnostic("info", "import_hint", "建议检查标签映射", stage="map_labels"),
         ],
     )
-
-    diagnostics = preview.diagnostics
-    assert [item.severity for item in diagnostics] == ["error", "warning", "info"]
-    assert [item.code for item in diagnostics] == [
-        "import_issue",
-        "import_warning",
-        "import_hint",
-    ]
-    assert diagnostics[0].details == {"entry_index": 3, "detail": "bad header"}
     assert preview.ok is False
-
+    assert preview.error_count == 1
+    assert preview.warning_count == 1
+    assert preview.info_count == 1
+    assert "无法解析" in preview.format_errors()
     payload = preview.summary()
-    assert payload["num_issues"] == 1
-    assert payload["issues"][0]["entry_index"] == 3
-    assert payload["warnings"] == ["许可证需要确认"]
+    assert payload["num_errors"] == 1
+    assert payload["num_warnings"] == 1
+    assert payload["num_info"] == 1
     assert payload["num_diagnostics"] == 3
-    assert payload["diagnostics"][0]["code"] == "import_issue"
+    assert payload["diagnostics"][0]["details"]["entry_index"] == 3
+    assert "issues" not in payload
+    assert "warnings" not in payload
     json.dumps(payload, ensure_ascii=False)
 
 
 def test_warning_only_import_preview_remains_ok():
-    preview = ImportPreview(importer_id="ravdess", warnings=["license warning"])
-
+    preview = ImportPreview(
+        importer_id="ravdess",
+        diagnostics=[Diagnostic("warning", "license_notice", "license warning")],
+    )
     assert preview.ok is True
-    assert len(preview.diagnostics) == 1
-    assert preview.diagnostics[0].severity == "warning"
+    assert preview.error_count == 0
+    assert preview.warning_count == 1

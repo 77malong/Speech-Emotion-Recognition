@@ -153,3 +153,32 @@ def test_training_run_detail_keeps_corrupt_history_nonfatal(tmp_path: Path):
     assert detail.history is None
     assert [item.code for item in detail.diagnostics] == ["training_history_unavailable"]
     assert detail.diagnostics[0].details["error_type"] == "JSONDecodeError"
+
+
+def test_training_run_detail_keeps_history_validation_error_nonfatal(tmp_path: Path):
+    run_dir = tmp_path / "run"
+    checkpoint_dir = tmp_path / "checkpoints"
+    _write_run(run_dir, checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True)
+    (run_dir / "history.json").write_text(
+        json.dumps(
+            [
+                {
+                    "epoch": 1,
+                    "loss": 0.2,
+                    "accuracy": 1.5,
+                    "sample_count": 4,
+                    "optimizer_steps": 1,
+                    "validation": None,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    detail = TrainingService.inspect_run_detail(run_dir)
+
+    assert detail.history is None
+    assert detail.checkpoints.checkpoints == ()
+    assert [item.code for item in detail.diagnostics] == ["training_history_unavailable"]
+    assert detail.diagnostics[0].details["error_type"] == "ValidationError"

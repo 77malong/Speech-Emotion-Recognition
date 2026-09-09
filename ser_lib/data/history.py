@@ -17,6 +17,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ser_lib.core._catalog_scan import scan_catalog_candidates
 from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
 from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.data.errors import DatasetEditConflictError, DatasetTransactionError
@@ -354,32 +355,25 @@ def scan_dataset_revisions(
         ),
         key=lambda item: item.name.casefold(),
     )
-    revisions: list[DatasetRevisionInfo] = []
-    failures: list[DatasetRevisionScanFailure] = []
-    for index, directory in enumerate(candidates, start=1):
-        if cancellation is not None:
-            cancellation.raise_if_cancelled()
-        try:
-            item = inspect_dataset_revision(directory, cancellation=cancellation)
-            if item.dataset_id == dataset.meta.dataset_id:
-                revisions.append(item)
-        except Exception as exc:
-            if fail_fast:
-                raise
-            failures.append(
-                DatasetRevisionScanFailure(
-                    directory=directory.as_posix(),
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                )
-            )
-        _emit_progress(
-            event_callback,
-            "dataset_revision_catalog_scan",
-            index,
-            len(candidates),
-            {"valid": len(revisions), "failed": len(failures)},
-        )
+
+    def inspect_candidate(directory: Path) -> DatasetRevisionInfo | None:
+        item = inspect_dataset_revision(directory, cancellation=cancellation)
+        return item if item.dataset_id == dataset.meta.dataset_id else None
+
+    revisions, failures = scan_catalog_candidates(
+        candidates,
+        inspect_candidate=inspect_candidate,
+        failure_factory=lambda directory, exc: DatasetRevisionScanFailure(
+            directory=directory.as_posix(),
+            error_type=type(exc).__name__,
+            message=str(exc),
+        ),
+        stage="dataset_revision_catalog_scan",
+        candidate_detail_key=None,
+        fail_fast=fail_fast,
+        event_callback=event_callback,
+        cancellation=cancellation,
+    )
     revisions.sort(key=lambda item: (item.created_at, item.revision_id), reverse=True)
     return DatasetRevisionCatalog(
         dataset_id=dataset.meta.dataset_id,

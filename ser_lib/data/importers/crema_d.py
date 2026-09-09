@@ -8,24 +8,18 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict
 
+from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
-from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
-from ser_lib.data.importers.csemotions import (
-    _automatic_speaker_splits,
-    _validate_speaker_splits,
-)
-from ser_lib.data.manifest import DatasetManifest, ManifestMeta
+from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
+from ser_lib.data.importers.base import ImportPreview, ImportTask
+from ser_lib.data.importers.csemotions import _automatic_speaker_splits, _validate_speaker_splits
+from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
-
 CREMA_D_EMOTIONS = {
-    "NEU": (0, "neutral"),
-    "HAP": (1, "happy"),
-    "ANG": (2, "angry"),
-    "SAD": (3, "sad"),
-    "FEA": (4, "fearful"),
-    "DIS": (5, "disgust"),
+    "NEU": (0, "neutral"), "HAP": (1, "happy"), "ANG": (2, "angry"),
+    "SAD": (3, "sad"), "FEA": (4, "fearful"), "DIS": (5, "disgust"),
 }
 CREMA_D_INTENSITIES = {"XX": "unspecified", "LO": "low", "MD": "medium", "HI": "high"}
 CREMA_D_SENTENCES = {
@@ -59,7 +53,9 @@ def _read_demographics(path: Path, encoding: str) -> dict[str, dict[str, Any]]:
         reader = csv.DictReader(stream)
         required = {"ActorID", "Age", "Sex", "Race", "Ethnicity"}
         if required - set(reader.fieldnames or []):
-            raise ValueError(f"CREMA-D demographics 缺少列: {sorted(required - set(reader.fieldnames or []))}")
+            raise ValueError(
+                f"CREMA-D demographics 缺少列: {sorted(required - set(reader.fieldnames or []))}"
+            )
         for row in reader:
             actor = (row.get("ActorID") or "").strip()
             if not actor or actor in result:
@@ -122,19 +118,36 @@ class CremaDImporter:
             raise NotADirectoryError(f"CREMA-D 音频目录不存在: {audio_root}")
         demographics_path = source / cfg.demographics_file if cfg.demographics_file else None
         demographics = _read_demographics(demographics_path, cfg.encoding) if demographics_path else {}
-        mapping = dict(cfg.label_mapping or {code: label for code, (label, _) in CREMA_D_EMOTIONS.items()})
+        mapping = dict(
+            cfg.label_mapping
+            or {code: label for code, (label, _) in CREMA_D_EMOTIONS.items()}
+        )
         if set(mapping) != set(CREMA_D_EMOTIONS):
             raise ValueError("CREMA-D label_mapping 必须覆盖且只能包含 NEU/HAP/ANG/SAD/FEA/DIS")
         if len(set(mapping.values())) != len(mapping):
             raise ValueError("CREMA-D label_mapping 的整数标签不能重复")
         preview = ImportPreview(importer_id=self.descriptor.id)
-        preview.warnings.append("CREMA-D 使用 ODbL/DbCL；发布衍生数据或模型前请确认适用义务。")
+        preview.diagnostics.append(
+            Diagnostic(
+                "warning", "crema_d_license_notice",
+                "CREMA-D 使用 ODbL/DbCL；发布衍生数据或模型前请确认适用义务。",
+                stage="scan",
+            )
+        )
         if demographics_path and not demographics:
-            preview.warnings.append(f"未找到人口统计文件，将不写入相关元数据: {demographics_path}")
-
+            preview.diagnostics.append(
+                Diagnostic(
+                    "warning", "crema_d_demographics_missing",
+                    f"未找到人口统计文件，将不写入相关元数据: {demographics_path}",
+                    stage="scan", path=demographics_path,
+                )
+            )
         with ImportTask(
-            self.descriptor.id, "scan", source=source,
-            event_callback=event_callback, cancellation=cancellation,
+            self.descriptor.id,
+            "scan",
+            source=source,
+            event_callback=event_callback,
+            cancellation=cancellation,
             event_context=event_context,
         ) as task:
             candidates = sorted(audio_root.glob("*.wav"))
@@ -144,7 +157,13 @@ class CremaDImporter:
                 try:
                     fields = audio.stem.split("_")
                     if len(fields) != 4:
-                        preview.issues.append(ImportIssue(index, audio, "filename", "文件名不是四段 CREMA-D 格式"))
+                        preview.diagnostics.append(
+                            Diagnostic(
+                                "error", "crema_d_filename_invalid",
+                                "文件名不是四段 CREMA-D 格式", stage="filename", path=audio,
+                                details={"entry_index": index},
+                            )
+                        )
                         continue
                     actor, sentence, emotion, intensity = fields
                     if not (
@@ -153,10 +172,22 @@ class CremaDImporter:
                         and emotion in mapping
                         and intensity in CREMA_D_INTENSITIES
                     ):
-                        preview.issues.append(ImportIssue(index, audio, "filename", "文件名包含未知 actor/sentence/emotion/intensity"))
+                        preview.diagnostics.append(
+                            Diagnostic(
+                                "error", "crema_d_filename_invalid",
+                                "文件名包含未知 actor/sentence/emotion/intensity",
+                                stage="filename", path=audio, details={"entry_index": index},
+                            )
+                        )
                         continue
                     if demographics and actor not in demographics:
-                        preview.issues.append(ImportIssue(index, audio, "demographics", f"找不到演员 {actor} 的人口统计记录"))
+                        preview.diagnostics.append(
+                            Diagnostic(
+                                "error", "crema_d_demographics_record_missing",
+                                f"找不到演员 {actor} 的人口统计记录",
+                                stage="demographics", path=audio, details={"entry_index": index},
+                            )
+                        )
                         continue
                     _, emotion_name = CREMA_D_EMOTIONS[emotion]
                     metadata: dict[str, Any] = {
@@ -167,27 +198,32 @@ class CremaDImporter:
                         "intensity": CREMA_D_INTENSITIES[intensity],
                     }
                     metadata.update(demographics.get(actor, {}))
-                    preview.records.append(AudioRecord(
-                        uid=f"crema-d-{audio.stem}",
-                        audio_path=audio.relative_to(source),
-                        label=mapping[emotion],
-                        speaker_id=actor,
-                        metadata=metadata,
-                    ))
+                    preview.records.append(
+                        AudioRecord(
+                            uid=f"crema-d-{audio.stem}",
+                            audio_path=audio.relative_to(source),
+                            label=mapping[emotion],
+                            speaker_id=actor,
+                            metadata=metadata,
+                        )
+                    )
                 finally:
                     task.progress(
                         index + 1, total, message=audio.name,
                         details={
                             "records_discovered": len(preview.records),
-                            "issues": len(preview.issues),
+                            "errors": preview.error_count,
+                            "diagnostics": len(preview.diagnostics),
                         },
                     )
             preview.label_mapping = mapping
-            if not preview.records and not preview.issues:
-                preview.issues.append(ImportIssue(None, audio_root, "scan", "未发现 CREMA-D WAV"))
+            if not preview.records and preview.error_count == 0:
+                preview.diagnostics.append(
+                    Diagnostic("error", "crema_d_no_audio", "未发现 CREMA-D WAV", stage="scan", path=audio_root)
+                )
             task.update_details(
-                records=len(preview.records), issues=len(preview.issues),
-                warnings=len(preview.warnings), candidates=total,
+                records=len(preview.records), errors=preview.error_count,
+                warnings=preview.warning_count, diagnostics=len(preview.diagnostics), candidates=total,
             )
             return preview
 
@@ -204,53 +240,53 @@ class CremaDImporter:
         cfg = CremaDImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        with ImportTask(
-            self.descriptor.id, "convert", source=source, destination=destination,
-            event_callback=event_callback, cancellation=cancellation,
-            event_context=event_context,
-        ) as task:
-            preview = self.scan(
-                source, config, event_callback=event_callback,
-                cancellation=cancellation, event_context=event_context,
-            )
-            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
-            if not preview.ok or not preview.records:
-                issues = "; ".join(str(issue) for issue in preview.issues[:10])
-                raise ValueError(f"CREMA-D 扫描失败: {issues or '没有记录'}")
+
+        def build(preview: ImportPreview, task: ImportTask):
             demographics_path = source / cfg.demographics_file if cfg.demographics_file else None
             demographics = _read_demographics(demographics_path, cfg.encoding) if demographics_path else {}
             speakers = {record.speaker_id for record in preview.records if record.speaker_id}
             split_speakers = _speaker_splits(cfg.speaker_splits, speakers, demographics)
-            speaker_to_split = {speaker: split for split, members in split_speakers.items() for speaker in members}
-            task.progress(2, 3, message="speaker splits resolved")
-            task.check()
-            destination.mkdir(parents=True, exist_ok=True)
-            labels = {
-                label: {
-                    "en": CREMA_D_EMOTIONS[code][1],
-                    "zh": CREMA_D_ZH[CREMA_D_EMOTIONS[code][1]],
-                }
-                for code, label in preview.label_mapping.items()
+            speaker_to_split = {
+                speaker: split for split, members in split_speakers.items() for speaker in members
             }
-            meta = ManifestMeta(
-                dataset_id="crema-d",
-                root=source,
-                yaml_path=destination / "dataset.yaml",
-                splits={name: destination / f"{name}.jsonl" for name in split_speakers},
-                labels=labels,
-            )
             assignments = {
                 record.uid: speaker_to_split[record.speaker_id]
-                for record in preview.records if record.speaker_id
+                for record in preview.records
+                if record.speaker_id
             }
-            DatasetManifest(meta, preview.records, assignments).write()
-            task.progress(3, 3, message="dataset manifest written")
-            result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(
-                records=len(preview.records), issues=len(preview.issues),
-                splits={name: len(members) for name, members in split_speakers.items()},
+            task.progress(2, 3, message="speaker splits resolved")
+            result = write_partitioned_manifest(
+                destination=destination,
+                dataset_id="crema-d",
+                root=source,
+                split_names=tuple(split_speakers),
+                labels={
+                    label: {
+                        "en": CREMA_D_EMOTIONS[code][1],
+                        "zh": CREMA_D_ZH[CREMA_D_EMOTIONS[code][1]],
+                    }
+                    for code, label in preview.label_mapping.items()
+                },
+                records=preview.records,
+                assignments=assignments,
+                task=task,
             )
-            return result
+            return result, {"splits": {name: len(members) for name, members in split_speakers.items()}}
+
+        return run_manifest_conversion(
+            importer_id=self.descriptor.id,
+            scan=self.scan,
+            source=source,
+            destination=destination,
+            config=config,
+            build_manifest=build,
+            failure_message=lambda preview: (
+                f"CREMA-D 扫描失败: {preview.format_errors() or '没有记录'}"
+            ),
+            event_callback=event_callback,
+            cancellation=cancellation,
+            event_context=event_context,
+        )
 
 
 __all__ = ["CREMA_D_EMOTIONS", "CremaDImportConfig", "CremaDImporter"]

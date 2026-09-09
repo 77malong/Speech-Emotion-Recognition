@@ -42,7 +42,7 @@ class ObservabilityConfig(StrictConfig):
 
 
 class TrainerConfig(StrictConfig):
-    """表示无关的训练循环配置。"""
+    """表示无关的训练循环配置；optimizer 参数不属于本节点。"""
 
     epochs: int = Field(default=10, ge=1)
     device: str = "cpu"
@@ -60,9 +60,6 @@ class TrainerConfig(StrictConfig):
     early_stopping_min_delta: float = Field(default=0.0, ge=0.0)
     save_best: bool = True
     save_last: bool = True
-    # 兼容旧调用；使用 ExperimentConfig 时由 optimizer 节点覆盖。
-    learning_rate: float = Field(default=1e-3, gt=0)
-    weight_decay: float = Field(default=0.0, ge=0)
 
 
 class ExperimentConfig(StrictConfig):

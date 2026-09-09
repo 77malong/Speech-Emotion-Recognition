@@ -41,18 +41,13 @@ def _fixture(root: Path) -> None:
 def test_emotiontalk_scan_and_speaker_independent_convert(tmp_path: Path) -> None:
     source = tmp_path / "emotiontalk"
     _fixture(source)
-
     preview = EmotionTalkImporter().scan(source, {})
     manifest = EmotionTalkImporter().convert(source, tmp_path / "standard", {})
-
     assert preview.ok and len(preview.records) == 6
     assert preview.records[0].metadata["annotator_votes"]
     assert preview.records[0].metadata["descriptions"]
     assert manifest.meta.num_classes == 7
-    split_speakers = [
-        {record.speaker_id for record in manifest.get_records(split)}
-        for split in ("train", "val", "test")
-    ]
+    split_speakers = [{record.speaker_id for record in manifest.get_records(split)} for split in ("train", "val", "test")]
     assert all(split_speakers)
     assert split_speakers[0].isdisjoint(split_speakers[1])
     assert split_speakers[0].isdisjoint(split_speakers[2])
@@ -64,17 +59,9 @@ def test_emotiontalk_official_dialogue_split(tmp_path: Path) -> None:
     _fixture(source)
     _record(source, "G00012", "12", 12, "neutral")
     _record(source, "G00015", "15", 15, "neutral")
-
-    manifest = EmotionTalkImporter().convert(
-        source, tmp_path / "standard", {"split_strategy": "official_dialogue"}
-    )
-
-    assert {record.metadata["dialogue_id"] for record in manifest.get_records("val")} == {
-        "G00001", "G00012"
-    }
-    assert {record.metadata["dialogue_id"] for record in manifest.get_records("test")} == {
-        "G00003", "G00015"
-    }
+    manifest = EmotionTalkImporter().convert(source, tmp_path / "standard", {"split_strategy": "official_dialogue"})
+    assert {record.metadata["dialogue_id"] for record in manifest.get_records("val")} == {"G00001", "G00012"}
+    assert {record.metadata["dialogue_id"] for record in manifest.get_records("test")} == {"G00003", "G00015"}
 
 
 def test_emotiontalk_rejects_unsafe_audio_path(tmp_path: Path) -> None:
@@ -84,10 +71,8 @@ def test_emotiontalk_rejects_unsafe_audio_path(tmp_path: Path) -> None:
     payload = json.loads(annotation.read_text(encoding="utf-8"))
     payload["file_path"] = "../escape.wav"
     annotation.write_text(json.dumps(payload), encoding="utf-8")
-
     preview = EmotionTalkImporter().scan(source, {})
-
     assert not preview.ok
-    assert any(issue.stage == "schema" for issue in preview.issues)
+    assert any(item.stage == "schema" for item in preview.diagnostics)
     with pytest.raises(ValueError, match="EmotionTalk 扫描失败"):
         EmotionTalkImporter().convert(source, tmp_path / "standard", {})

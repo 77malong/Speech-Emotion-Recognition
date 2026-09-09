@@ -22,16 +22,8 @@ def _fixture(root: Path) -> None:
             output.setsampwidth(2)
             output.setframerate(16000)
             output.writeframes(b"\0\0" * 160)
-        rows.append({
-            "file_name": name,
-            "text": f"text-{index}",
-            "emotion": emotion,
-            "speaker": speaker,
-            "duration_sec": "0.01",
-        })
-    with (root / "csemotions_metadata.csv").open(
-        "w", encoding="utf-8", newline=""
-    ) as stream:
+        rows.append({"file_name": name, "text": f"text-{index}", "emotion": emotion, "speaker": speaker, "duration_sec": "0.01"})
+    with (root / "csemotions_metadata.csv").open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
@@ -41,18 +33,13 @@ def test_csemotions_scan_and_speaker_independent_convert(tmp_path: Path):
     source = tmp_path / "source"
     _fixture(source)
     importer = CsemotionsImporter()
-
     preview = importer.scan(source, {})
     manifest = importer.convert(source, tmp_path / "standard", {})
-
     assert preview.ok and len(preview.records) == 6
     assert preview.records[0].metadata["language"] == "zh"
     assert manifest.meta.num_classes == 7
     assert manifest.stats()["splits"] == {"train": 2, "val": 2, "test": 2}
-    split_speakers = {
-        split: {record.speaker_id for record in manifest.get_records(split)}
-        for split in ("train", "val", "test")
-    }
+    split_speakers = {split: {record.speaker_id for record in manifest.get_records(split)} for split in ("train", "val", "test")}
     assert split_speakers["train"].isdisjoint(split_speakers["val"])
     assert split_speakers["train"].isdisjoint(split_speakers["test"])
     assert split_speakers["val"].isdisjoint(split_speakers["test"])
@@ -62,13 +49,10 @@ def test_csemotions_scan_and_speaker_independent_convert(tmp_path: Path):
 def test_csemotions_scan_reports_missing_audio(tmp_path: Path):
     source = tmp_path / "source"
     _fixture(source)
-    missing = next((source / "wav_data").glob("*.wav"))
-    missing.unlink()
-
+    next((source / "wav_data").glob("*.wav")).unlink()
     preview = CsemotionsImporter().scan(source, {})
-
     assert not preview.ok
-    assert preview.issues[0].stage == "audio"
+    assert next(item for item in preview.diagnostics if item.severity == "error").stage == "audio"
     with pytest.raises(ValueError, match="扫描失败"):
         CsemotionsImporter().convert(source, tmp_path / "standard", {})
 
@@ -80,6 +64,5 @@ def test_csemotions_custom_splits_must_cover_each_speaker(tmp_path: Path):
         CsemotionsImporter().convert(
             source,
             tmp_path / "standard",
-            {"speaker_splits": {"train": ["female001"], "val": ["male001"],
-                                 "test": ["male002"]}},
+            {"speaker_splits": {"train": ["female001"], "val": ["male001"], "test": ["male002"]}},
         )

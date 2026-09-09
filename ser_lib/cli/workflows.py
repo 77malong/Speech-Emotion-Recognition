@@ -1,4 +1,4 @@
-"""CLI 的薄编排层；所有领域行为委托给公开库 API。"""
+"""CLI 的薄编排层；领域行为统一通过 Service facade。"""
 
 from __future__ import annotations
 
@@ -11,12 +11,7 @@ from typing import Any, Literal, cast
 
 from torch.utils.data import DataLoader
 
-from ser_lib.artifacts import (
-    ModelCard,
-    ModelArtifactManifest,
-    load_model_artifact,
-    verify_model_artifact,
-)
+from ser_lib.artifacts import ModelCard
 from ser_lib.core import EventContext
 from ser_lib.data import DatasetManifest, SERDataset, fingerprint_manifest
 from ser_lib.engine import (
@@ -26,16 +21,15 @@ from ser_lib.engine import (
     load_checkpoint,
     load_experiment_config,
 )
-from ser_lib.inference import (
-    BatchEmotionPredictor,
-    EmotionPredictor,
-    write_batch_predictions,
+from ser_lib.services import (
+    ArtifactService,
+    EvaluationService,
+    InferenceService,
+    TrainingService,
 )
-from ser_lib.services import ArtifactService, EvaluationService, TrainingService
 
 
 def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
-    """选择稳定展示名，优先英文，其次中文，最后使用标签 ID。"""
     return {
         index: str(values.get("en") or values.get("zh") or index)
         for index, values in sorted(meta_labels.items())
@@ -43,8 +37,16 @@ def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
 
 
 def _loader(
-    manifest, split, components, *, batch_size, workers, shuffle=False,
-    sampling=None, seed=42, num_classes=None,
+    manifest,
+    split,
+    components,
+    *,
+    batch_size,
+    workers,
+    shuffle=False,
+    sampling=None,
+    seed=42,
+    num_classes=None,
 ):
     records = manifest.resolved_records(split)
     dataset = SERDataset(records, components.audio_loader, components.pipeline)
@@ -53,7 +55,10 @@ def _loader(
         if num_classes is None:
             raise ValueError("构建训练 sampler 时必须提供 num_classes")
         sampler = build_weighted_sampler(
-            dataset.get_labels(), num_classes=num_classes, config=sampling, seed=seed
+            dataset.get_labels(),
+            num_classes=num_classes,
+            config=sampling,
+            seed=seed,
         )
     return DataLoader(
         dataset,
@@ -75,17 +80,25 @@ def train_experiment(
 ) -> dict[str, Any]:
     config = load_experiment_config(config_path)
     if config.trainer.checkpoint_dir is None:
-        config = config.model_copy(update={
-            "trainer": config.trainer.model_copy(update={
-                "checkpoint_dir": config.output_dir / "checkpoints"
-            })
-        })
+        config = config.model_copy(
+            update={
+                "trainer": config.trainer.model_copy(
+                    update={"checkpoint_dir": config.output_dir / "checkpoints"}
+                )
+            }
+        )
     components = build_experiment_components(config, train=True)
     manifest = DatasetManifest.load(config.data.manifest)
     dataset_fingerprint = fingerprint_manifest(manifest)
     batches = _loader(
-        manifest, split, components, batch_size=batch_size, workers=workers, shuffle=True,
-        sampling=config.sampling, seed=config.trainer.seed,
+        manifest,
+        split,
+        components,
+        batch_size=batch_size,
+        workers=workers,
+        shuffle=True,
+        sampling=config.sampling,
+        seed=config.trainer.seed,
         num_classes=components.model.model_spec.num_classes,
     )
     trainer = TrainingService.create_trainer(
@@ -98,8 +111,11 @@ def train_experiment(
     if "val" in manifest.meta.splits:
         validation_components = build_experiment_components(config, train=False)
         val_batches = _loader(
-            manifest, "val", validation_components,
-            batch_size=batch_size, workers=workers,
+            manifest,
+            "val",
+            validation_components,
+            batch_size=batch_size,
+            workers=workers,
         )
     if resume is not None:
         trainer.resume_from(resume)
@@ -131,7 +147,8 @@ def train_experiment(
     last_checkpoint = (
         cast(Path, config.trainer.checkpoint_dir)
         / f"epoch-{trainer.last_completed_epoch:04d}.pt"
-        if trainer.last_completed_epoch else resume
+        if trainer.last_completed_epoch
+        else resume
     )
     return {
         "output_dir": str(config.output_dir),
@@ -141,7 +158,8 @@ def train_experiment(
         "dataset_fingerprint": run_info.dataset_fingerprint,
         "last_checkpoint": str(last_checkpoint) if last_checkpoint else None,
         "best_checkpoint": str(config.trainer.checkpoint_dir / "best.pt")
-        if trainer.best_epoch is not None and config.trainer.checkpoint_dir else None,
+        if trainer.best_epoch is not None and config.trainer.checkpoint_dir
+        else None,
         "best_epoch": trainer.best_epoch,
         "best_metric": trainer.best_metric,
         "metrics_log": str(metrics_log),
@@ -160,8 +178,10 @@ def evaluate_artifact(
     device: str,
     output: Path,
 ) -> dict[str, Any]:
-    loaded = load_model_artifact(artifact, map_location=device)
-    manifest = DatasetManifest.load(manifest_path or loaded.manifest.preprocessing["manifest"])
+    loaded = ArtifactService.load(artifact, map_location=device)
+    manifest = DatasetManifest.load(
+        manifest_path or loaded.manifest.preprocessing["manifest"]
+    )
     dataset_fingerprint = fingerprint_manifest(manifest)
     raw_source_run_id = loaded.manifest.metadata.get("source_run_id")
     if raw_source_run_id is not None and (
@@ -178,7 +198,13 @@ def evaluate_artifact(
         split=split,
         device=device,
     )
-    batches = _loader(manifest, split, loaded, batch_size=batch_size, workers=workers)
+    batches = _loader(
+        manifest,
+        split,
+        loaded,
+        batch_size=batch_size,
+        workers=workers,
+    )
     started_at = datetime.now(timezone.utc)
     result = EvaluationService.run(
         loaded.model,
@@ -222,31 +248,36 @@ def predict_artifact(
         "mean_logits", "mean_probabilities", "max_confidence"
     ] | None,
 ) -> dict[str, Any]:
-    loaded = load_model_artifact(artifact, map_location=device)
-    predictor = EmotionPredictor(
-        loaded.model,
-        loaded.audio_loader,
-        loaded.pipeline,
-        loaded.collator,
-        loaded.manifest.labels,
+    loaded = ArtifactService.load(artifact, map_location=device)
+    predictor = InferenceService.create_predictor(
+        loaded,
         device=device,
         window_aggregation=window_aggregation,
     )
-    batch = BatchEmotionPredictor(predictor)
     if source.is_dir():
-        result = batch.predict_directory(
-            source, recursive=recursive, batch_size=batch_size,
+        result = InferenceService.predict_directory(
+            predictor,
+            source,
+            recursive=recursive,
+            batch_size=batch_size,
             fail_fast=not keep_going,
         )
     elif source.suffix.lower() in {".yaml", ".yml"}:
-        result = batch.predict_manifest(
-            source, split=split, batch_size=batch_size, fail_fast=not keep_going
+        result = InferenceService.predict_manifest(
+            predictor,
+            source,
+            split=split,
+            batch_size=batch_size,
+            fail_fast=not keep_going,
         )
     else:
-        result = batch.predict_files(
-            [source], batch_size=batch_size, fail_fast=not keep_going
+        result = InferenceService.predict_files(
+            predictor,
+            [source],
+            batch_size=batch_size,
+            fail_fast=not keep_going,
         )
-    write_batch_predictions(output, result)
+    InferenceService.write_predictions(output, result)
     return {
         "output": str(output),
         "total": result.total,
@@ -265,7 +296,10 @@ def export_checkpoint_artifact(
     config = load_experiment_config(config_path)
     components = build_experiment_components(config, train=False)
     payload = load_checkpoint(
-        checkpoint, components.model, map_location="cpu", restore_rng=False
+        checkpoint,
+        components.model,
+        map_location="cpu",
+        restore_rng=False,
     )
     manifest = DatasetManifest.load(config.data.manifest)
     source_labels = config.data.labels or manifest.meta.labels
@@ -275,14 +309,12 @@ def export_checkpoint_artifact(
         raise ValueError(
             f"标签数 {len(labels)} 与模型 num_classes={expected_classes} 不一致"
         )
-
     source_run = None
     checkpoint_metadata = payload.get("metadata")
     if isinstance(checkpoint_metadata, Mapping):
         raw_run_metadata = checkpoint_metadata.get("run_metadata")
         if isinstance(raw_run_metadata, Mapping):
             source_run = TrainingRunMetadata.from_dict(raw_run_metadata)
-
     target = ArtifactService.export(
         destination,
         components.model,
@@ -303,19 +335,14 @@ def export_checkpoint_artifact(
 
 
 def inspect_artifact(path: Path, *, verify: bool) -> dict[str, Any]:
-    if verify:
-        manifest = verify_model_artifact(path)
-    else:
-        manifest_path = path / "manifest.json"
-        if not manifest_path.is_file():
-            raise FileNotFoundError(f"artifact manifest 不存在: {manifest_path}")
-        manifest = ModelArtifactManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
+    manifest = ArtifactService.verify(path) if verify else ArtifactService.inspect(path)
     return manifest.model_dump(mode="json")
 
 
 __all__ = [
-    "train_experiment", "evaluate_artifact", "predict_artifact",
-    "export_checkpoint_artifact", "inspect_artifact",
+    "train_experiment",
+    "evaluate_artifact",
+    "predict_artifact",
+    "export_checkpoint_artifact",
+    "inspect_artifact",
 ]

@@ -128,7 +128,8 @@ def test_training_and_evaluation_services_return_standard_results():
     model = TinyModel()
     trainer = Trainer(
         model,
-        TrainerConfig(epochs=1, device="cpu", learning_rate=0.01),
+        TrainerConfig(epochs=1, device="cpu"),
+        optimizer=torch.optim.AdamW(model.parameters(), lr=0.01),
         run_id="service-run",
     )
 

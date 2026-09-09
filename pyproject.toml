@@ -30,8 +30,6 @@ ser = "ser_lib.cli.main:main"
 [project.optional-dependencies]
 test = [
     "pytest>=7.4",
-    # Repository data-processing tests import data.base_processor, which uses tqdm.
-    "tqdm>=4.66",
 ]
 dev = [
     "build>=1.2",

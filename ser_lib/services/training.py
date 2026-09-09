@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import cast
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback
@@ -31,51 +30,8 @@ from ser_lib.engine.validation import ExperimentValidationResult, validate_exper
 from ser_lib.models.base import SERModel
 
 
-class _LineageTrainer(Trainer):
-    """仅为 Service 路径补 lineage；保持 ``Trainer`` 的公共 API 兼容。"""
-
-    run_metadata: TrainingRunMetadata | None = None
-
-    def _save_checkpoint_with_event(
-        self,
-        path: Path,
-        *,
-        kind: str,
-        epoch: int,
-        metrics: dict[str, float],
-        metadata: dict[str, object],
-    ) -> Path:
-        resolved_metadata = dict(metadata)
-        if self.run_metadata is not None:
-            resolved_metadata["run_metadata"] = self.run_metadata.to_dict()
-        return super()._save_checkpoint_with_event(
-            path,
-            kind=kind,
-            epoch=epoch,
-            metrics=metrics,
-            metadata=resolved_metadata,
-        )
-
-    def resume_from(self, path, *, restore_rng: bool = True) -> dict:
-        payload = super().resume_from(path, restore_rng=restore_rng)
-        raw_checkpoint_metadata = payload.get("metadata")
-        saved_run_metadata: TrainingRunMetadata | None = None
-        if isinstance(raw_checkpoint_metadata, Mapping):
-            raw_lineage = raw_checkpoint_metadata.get("run_metadata")
-            if isinstance(raw_lineage, Mapping):
-                saved_run_metadata = TrainingRunMetadata.from_dict(raw_lineage)
-
-        if not self._run_id_explicit and saved_run_metadata is not None:
-            self.run_metadata = saved_run_metadata.with_run_id(self.run_id)
-        elif self.run_metadata is not None:
-            self.run_metadata = self.run_metadata.with_run_id(self.run_id)
-        elif saved_run_metadata is not None:
-            self.run_metadata = saved_run_metadata.with_run_id(self.run_id)
-        return payload
-
-
 class TrainingService:
-    """隐藏 Trainer 兼容层细节，同时保留底层对象的可组合性。"""
+    """训练应用层 facade；Trainer 本身负责训练状态与 checkpoint lineage。"""
 
     @staticmethod
     def validate(
@@ -101,16 +57,13 @@ class TrainingService:
         使用 ``ExperimentConfig.data.dataset_id``。这避免 Trainer 为补 lineage
         偷偷执行文件系统 I/O。
         """
-        trainer = cast(
-            _LineageTrainer,
-            _LineageTrainer.from_experiment(
-                model,
-                experiment,
-                event_callback=event_callback,
-                cancellation=cancellation,
-                observability=observability,
-                run_id=run_id,
-            ),
+        trainer = Trainer.from_experiment(
+            model,
+            experiment,
+            event_callback=event_callback,
+            cancellation=cancellation,
+            observability=observability,
+            run_id=run_id,
         )
         from ser_lib import __version__
 
@@ -128,8 +81,7 @@ class TrainingService:
 
     @staticmethod
     def get_run_metadata(trainer: Trainer) -> TrainingRunMetadata | None:
-        metadata = getattr(trainer, "run_metadata", None)
-        return metadata if isinstance(metadata, TrainingRunMetadata) else None
+        return trainer.run_metadata
 
     @staticmethod
     def run(
