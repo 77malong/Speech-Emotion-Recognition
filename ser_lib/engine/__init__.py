@@ -67,6 +67,14 @@ from ser_lib.engine.objectives import (
     SamplingConfig,
     build_weighted_sampler,
 )
+from ser_lib.engine.presets import (
+    ExperimentPresetCatalog,
+    ExperimentPresetInfo,
+    PresetStatus,
+    build_experiment_config,
+    get_experiment_preset,
+    list_experiment_presets,
+)
 from ser_lib.engine.runs import (
     RUN_RECORD_SCHEMA_VERSION,
     TrainingRunCatalog,
@@ -90,6 +98,8 @@ from ser_lib.engine.validation import ExperimentValidationResult, validate_exper
 __all__ = [
     "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
     "ExperimentComponents", "load_experiment_config", "build_experiment_components",
+    "PresetStatus", "ExperimentPresetInfo", "ExperimentPresetCatalog",
+    "list_experiment_presets", "get_experiment_preset", "build_experiment_config",
     "ExperimentValidationResult", "validate_experiment",
     "TrainingRunMetadata", "build_training_run_metadata",
     "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunDetail",
