@@ -12,7 +12,6 @@ from typing import Any, Literal, cast
 from torch.utils.data import DataLoader
 
 from ser_lib.artifacts import ModelCard
-from ser_lib.core import EventContext
 from ser_lib.data import DatasetManifest, SERDataset, fingerprint_manifest
 from ser_lib.engine import (
     TrainingRunMetadata,
@@ -21,6 +20,7 @@ from ser_lib.engine import (
     load_checkpoint,
     load_experiment_config,
 )
+from ser_lib.foundation.events import EventContext
 from ser_lib.services import (
     ArtifactService,
     EvaluationService,
