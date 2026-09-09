@@ -8,9 +8,14 @@ from pathlib import Path
 
 import torch
 
+from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.evaluation_catalog import EvaluationRunCatalog, scan_evaluation_runs
+from ser_lib.engine.evaluation_detail import (
+    EvaluationRunDetail,
+    inspect_evaluation_prediction_file,
+)
 from ser_lib.engine.evaluation_reports import (
     EvaluationPredictionPage,
     EvaluationReportInfo,
@@ -122,6 +127,47 @@ class EvaluationService:
     @staticmethod
     def inspect_run(path: Path | str) -> EvaluationRunInfo:
         return load_evaluation_run_info(path)
+
+    @staticmethod
+    def inspect_run_detail(path: Path | str) -> EvaluationRunDetail:
+        """聚合 evaluation metadata、metrics 与 prediction stat，不读预测明细。"""
+        run = load_evaluation_run_info(path)
+        run_dir = Path(run.directory)
+        predictions = inspect_evaluation_prediction_file(run)
+        diagnostics: list[Diagnostic] = []
+
+        try:
+            report = inspect_evaluation_report(run_dir)
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+            report = None
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="evaluation_report_unavailable",
+                    message=str(exc),
+                    stage="evaluation_run_detail",
+                    path=(run_dir / run.metrics_file).as_posix(),
+                    details={"error_type": type(exc).__name__},
+                )
+            )
+
+        if run.predictions_file is not None and not predictions.exists:
+            diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code="evaluation_predictions_unavailable",
+                    message=f"评估 predictions 文件不存在: {predictions.path}",
+                    stage="evaluation_run_detail",
+                    path=predictions.path,
+                )
+            )
+
+        return EvaluationRunDetail(
+            run=run,
+            report=report,
+            predictions=predictions,
+            diagnostics=tuple(diagnostics),
+        )
 
     @staticmethod
     def scan_runs(

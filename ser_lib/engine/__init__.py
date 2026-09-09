@@ -21,6 +21,11 @@ from ser_lib.engine.evaluation_catalog import (
     EvaluationRunScanFailure,
     scan_evaluation_runs,
 )
+from ser_lib.engine.evaluation_detail import (
+    EvaluationPredictionFileInfo,
+    EvaluationRunDetail,
+    inspect_evaluation_prediction_file,
+)
 from ser_lib.engine.evaluation_reports import (
     EvaluationPredictionPage,
     EvaluationReportInfo,
@@ -92,6 +97,8 @@ __all__ = [
     "load_training_run_info", "scan_training_runs", "TrainingHistoryInfo",
     "load_training_history",
     "EVALUATION_RUN_SCHEMA_VERSION", "EvaluationRunMetadata", "EvaluationRunInfo",
+    "EvaluationPredictionFileInfo", "EvaluationRunDetail",
+    "inspect_evaluation_prediction_file",
     "build_evaluation_run_metadata", "write_evaluation_run_info",
     "load_evaluation_run_info", "EvaluationRunScanFailure", "EvaluationRunCatalog",
     "scan_evaluation_runs",
