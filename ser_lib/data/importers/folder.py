@@ -9,8 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers._conversion import run_single_manifest_conversion
 from ser_lib.data.importers.base import ImportPreview, ImportTask
-from ser_lib.data.manifest import DatasetManifest, write_jsonl
+from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
@@ -60,7 +61,6 @@ class FolderImporter:
         source = Path(source).resolve()
         if not source.is_dir():
             raise NotADirectoryError(f"导入源不是目录: {source}")
-
         preview = ImportPreview(importer_id=self.descriptor.id)
         with ImportTask(
             self.descriptor.id,
@@ -134,13 +134,7 @@ class FolderImporter:
                 label_mapping = {name: idx for idx, name in enumerate(sorted(label_names))}
                 if not label_mapping:
                     preview.diagnostics.append(
-                        Diagnostic(
-                            "error",
-                            "import_no_audio",
-                            "未发现任何音频文件",
-                            stage="scan",
-                            path=source,
-                        )
+                        Diagnostic("error", "import_no_audio", "未发现任何音频文件", stage="scan", path=source)
                     )
 
             for index, (path, label_name, speaker) in enumerate(found):
@@ -191,82 +185,41 @@ class FolderImporter:
     ) -> DatasetManifest:
         cfg = FolderImportConfig(**dict(config))
         source = Path(source)
-        destination = Path(destination)
-        with ImportTask(
-            self.descriptor.id,
-            "convert",
+
+        def records(preview: ImportPreview) -> list[AudioRecord]:
+            if cfg.relative_paths:
+                return list(preview.records)
+            return [
+                AudioRecord(
+                    uid=record.uid,
+                    audio_path=source / record.audio_path,
+                    label=record.label,
+                    speaker_id=record.speaker_id,
+                    metadata=dict(record.metadata),
+                )
+                for record in preview.records
+            ]
+
+        return run_single_manifest_conversion(
+            importer_id=self.descriptor.id,
+            scan=self.scan,
             source=source,
             destination=destination,
+            config=config,
+            dataset_id=self.descriptor.id,
+            root=source.resolve() if cfg.relative_paths else ".",
+            records=records,
+            labels=lambda preview: {
+                str(label_id): {"en": name}
+                for name, label_id in sorted(preview.label_mapping.items(), key=lambda item: item[1])
+            },
+            failure_message=lambda preview: (
+                f"扫描发现 {preview.error_count} 个错误，取消导入: {preview.format_errors()}"
+            ),
             event_callback=event_callback,
             cancellation=cancellation,
             event_context=event_context,
-        ) as task:
-            destination.mkdir(parents=True, exist_ok=True)
-            preview = self.scan(
-                source,
-                config,
-                event_callback=event_callback,
-                cancellation=cancellation,
-                event_context=event_context,
-            )
-            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
-            if not preview.ok:
-                raise ValueError(
-                    f"扫描发现 {preview.error_count} 个错误，取消导入: {preview.format_errors()}"
-                )
-            records = preview.records
-            if not cfg.relative_paths:
-                records = [
-                    AudioRecord(
-                        uid=record.uid,
-                        audio_path=source / record.audio_path,
-                        label=record.label,
-                        speaker_id=record.speaker_id,
-                        metadata=dict(record.metadata),
-                    )
-                    for record in records
-                ]
-            task.check()
-            write_jsonl(records, destination / "manifest.jsonl")
-            task.progress(2, 3, message="manifest written")
-            labels_yaml = {
-                str(label_id): {"en": name}
-                for name, label_id in sorted(preview.label_mapping.items(), key=lambda item: item[1])
-            }
-            root = source.resolve() if cfg.relative_paths else "."
-            (destination / "dataset.yaml").write_text(
-                _dataset_yaml(self.descriptor.id, root, {"default": "manifest.jsonl"}, labels_yaml),
-                encoding="utf-8",
-            )
-            task.progress(3, 3, message="dataset manifest written")
-            result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(
-                records=len(preview.records),
-                errors=preview.error_count,
-                diagnostics=len(preview.diagnostics),
-            )
-            return result
-
-
-def _dataset_yaml(
-    dataset_id: str,
-    root: Any,
-    splits: Mapping[str, str],
-    labels: Mapping[str, Any],
-) -> str:
-    import yaml
-
-    return yaml.safe_dump(
-        {
-            "schema_version": 1,
-            "dataset_id": dataset_id,
-            "root": str(root),
-            "splits": dict(splits),
-            "labels": dict(labels),
-        },
-        allow_unicode=True,
-        sort_keys=False,
-    )
+        )
 
 
 __all__ = ["FolderImportConfig", "FolderImporter", "DEFAULT_AUDIO_EXTENSIONS"]

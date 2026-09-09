@@ -10,8 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers._conversion import run_single_manifest_conversion
 from ser_lib.data.importers.base import ImportPreview, ImportTask
-from ser_lib.data.manifest import DatasetManifest, write_jsonl
+from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
@@ -52,7 +53,6 @@ class CsvImporter:
         source = Path(source)
         if not source.is_file():
             raise FileNotFoundError(f"CSV 文件不存在: {source}")
-
         preview = ImportPreview(importer_id=self.descriptor.id)
         with ImportTask(
             self.descriptor.id,
@@ -211,47 +211,25 @@ class CsvImporter:
     ) -> DatasetManifest:
         cfg = CsvImportConfig(**dict(config))
         source = Path(source)
-        destination = Path(destination)
-        with ImportTask(
-            self.descriptor.id,
-            "convert",
+        return run_single_manifest_conversion(
+            importer_id=self.descriptor.id,
+            scan=self.scan,
             source=source,
             destination=destination,
+            config=config,
+            dataset_id=self.descriptor.id,
+            root=cfg.root if cfg.root is not None else source.resolve().parent,
+            labels=lambda preview: {
+                str(label_id): {"en": name}
+                for name, label_id in sorted(preview.label_mapping.items(), key=lambda item: item[1])
+            },
+            failure_message=lambda preview: (
+                f"扫描发现 {preview.error_count} 个错误，取消导入: {preview.format_errors()}"
+            ),
             event_callback=event_callback,
             cancellation=cancellation,
             event_context=event_context,
-        ) as task:
-            destination.mkdir(parents=True, exist_ok=True)
-            preview = self.scan(source, config, event_callback=event_callback, cancellation=cancellation, event_context=event_context)
-            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
-            if not preview.ok:
-                raise ValueError(
-                    f"扫描发现 {preview.error_count} 个错误，取消导入: {preview.format_errors()}"
-                )
-            task.check()
-            write_jsonl(preview.records, destination / "manifest.jsonl")
-            task.progress(2, 3, message="manifest written")
-            root = cfg.root if cfg.root is not None else source.resolve().parent
-            labels_yaml = {
-                str(label_id): {"en": name}
-                for name, label_id in sorted(preview.label_mapping.items(), key=lambda item: item[1])
-            }
-            (destination / "dataset.yaml").write_text(
-                _simple_yaml(
-                    {
-                        "schema_version": 1,
-                        "dataset_id": self.descriptor.id,
-                        "root": str(root),
-                        "splits": {"default": "manifest.jsonl"},
-                        "labels": labels_yaml,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            task.progress(3, 3, message="dataset manifest written")
-            result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(records=len(preview.records), errors=preview.error_count, diagnostics=len(preview.diagnostics))
-            return result
+        )
 
 
 def _is_int(value: str) -> bool:
@@ -260,12 +238,6 @@ def _is_int(value: str) -> bool:
         return True
     except ValueError:
         return False
-
-
-def _simple_yaml(doc: Mapping[str, Any]) -> str:
-    import yaml
-
-    return yaml.safe_dump(dict(doc), allow_unicode=True, sort_keys=False)
 
 
 __all__ = ["CsvImportConfig", "CsvImporter"]
