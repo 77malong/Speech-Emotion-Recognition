@@ -71,6 +71,13 @@ def test_experiment_config_rejects_unknown_optimizer_and_scheduler():
         parse_optimizer_config({"type": "adamw", "params": {}, "typo": True})
 
 
+def test_trainer_config_rejects_legacy_optimizer_fields():
+    with pytest.raises(ValidationError, match="learning_rate"):
+        TrainerConfig(learning_rate=0.1)
+    with pytest.raises(ValidationError, match="weight_decay"):
+        TrainerConfig(weight_decay=0.1)
+
+
 def test_load_experiment_config_resolves_paths_from_config_file(tmp_path: Path):
     path = tmp_path / "configs" / "experiment.yaml"
     path.parent.mkdir()
@@ -163,15 +170,16 @@ def test_experiment_preflight_rejects_incompatible_feature_dimension(tmp_path: P
 def test_trainer_validation_best_last_and_early_stopping(tmp_path: Path):
     checkpoint_dir = tmp_path / "checkpoints"
     model = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-30)
     trainer = Trainer(
         model,
         TrainerConfig(
             epochs=5,
-            learning_rate=1e-30,
             checkpoint_dir=checkpoint_dir,
             monitor="val_accuracy",
             early_stopping_patience=2,
         ),
+        optimizer=optimizer,
     )
 
     history = trainer.fit([_batch()], val_batches=[_batch()])
@@ -184,9 +192,11 @@ def test_trainer_validation_best_last_and_early_stopping(tmp_path: Path):
     assert (checkpoint_dir / "last.pt").is_file()
     assert (checkpoint_dir / "epoch-0003.pt").is_file()
 
+    resumed_model = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
     resumed = Trainer(
-        CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0),
+        resumed_model,
         trainer.config,
+        optimizer=torch.optim.AdamW(resumed_model.parameters(), lr=1e-30),
     )
     resumed.resume_from(checkpoint_dir / "last.pt")
     assert resumed.last_completed_epoch == 3

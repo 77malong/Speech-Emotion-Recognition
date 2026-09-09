@@ -106,6 +106,7 @@ def run_smoke_test(device: str) -> None:
         parameters_before = {
             name: parameter.detach().clone() for name, parameter in model.named_parameters()
         }
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
         trainer = Trainer(
             model,
             TrainerConfig(
@@ -113,13 +114,13 @@ def run_smoke_test(device: str) -> None:
                 device=device,
                 seed=2026,
                 deterministic=True,
-                learning_rate=1e-3,
             ),
+            optimizer=optimizer,
         )
         history = trainer.fit(batches)
 
         if len(history) != 10:
-            raise RuntimeError(f"expected one epoch result, got {len(history)}")
+            raise RuntimeError(f"expected ten epoch results, got {len(history)}")
         result = history[0]
         if result.sample_count != len(dataset):
             raise RuntimeError(
