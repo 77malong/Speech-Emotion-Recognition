@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+import psutil
 import torch
 
 
@@ -44,7 +45,7 @@ class RuntimeCapabilities:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeMetrics:
-    """单设备即时资源快照；设计为由 Web Backend 低频主动轮询。"""
+    """单设备 + 主进程即时资源快照；设计为由上层低频主动轮询。"""
 
     device_id: str
     device_type: str
@@ -54,6 +55,12 @@ class RuntimeMetrics:
     max_allocated_memory: int | None = None
     free_memory: int | None = None
     total_memory: int | None = None
+    process_rss_bytes: int | None = None
+    system_memory_used_bytes: int | None = None
+    system_memory_available_bytes: int | None = None
+    system_memory_total_bytes: int | None = None
+    process_cpu_percent: float | None = None
+    system_cpu_percent: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,16 +72,17 @@ class RuntimeMetrics:
             "max_allocated_memory": self.max_allocated_memory,
             "free_memory": self.free_memory,
             "total_memory": self.total_memory,
+            "process_rss_bytes": self.process_rss_bytes,
+            "system_memory_used_bytes": self.system_memory_used_bytes,
+            "system_memory_available_bytes": self.system_memory_available_bytes,
+            "system_memory_total_bytes": self.system_memory_total_bytes,
+            "process_cpu_percent": self.process_cpu_percent,
+            "system_cpu_percent": self.system_cpu_percent,
         }
 
 
 def get_runtime_capabilities() -> RuntimeCapabilities:
-    """返回 JSON-safe 的 Python/PyTorch 与本机可选设备信息。
-
-    当前项目仍是单设备训练，因此这里列出所有设备只是为了让上层界面选择
-    ``cpu`` 或某一张 ``cuda:N``，并不表示 Trainer 已支持多卡/多机训练。
-    ``amp_supported`` 与当前 Trainer 行为保持一致：仅 CUDA 为 ``True``。
-    """
+    """返回 JSON-safe 的 Python/PyTorch 与本机可选设备信息。"""
     cuda_available = bool(torch.cuda.is_available())
     devices: list[RuntimeDevice] = [
         RuntimeDevice(
@@ -131,26 +139,38 @@ def _resolve_cuda_index(device: torch.device) -> int:
     return index
 
 
+def _host_metrics() -> dict[str, int | float]:
+    """单次、非阻塞采样宿主机与当前 Python 进程资源。"""
+    process = psutil.Process()
+    memory = psutil.virtual_memory()
+    return {
+        "process_rss_bytes": int(process.memory_info().rss),
+        "system_memory_used_bytes": int(memory.used),
+        "system_memory_available_bytes": int(memory.available),
+        "system_memory_total_bytes": int(memory.total),
+        # interval=None 不 sleep；首次调用是自进程启动/上次采样后的即时百分比。
+        "process_cpu_percent": float(process.cpu_percent(interval=None)),
+        "system_cpu_percent": float(psutil.cpu_percent(interval=None)),
+    }
+
+
 def get_runtime_metrics(
     device: str | torch.device = "cpu",
 ) -> RuntimeMetrics:
-    """返回一个设备的即时资源快照，不做 GPU synchronize。
-
-    CUDA 暴露 PyTorch allocator 的 allocated/reserved/max allocated，以及驱动层
-    ``mem_get_info`` 的 free/total。CPU/MPS 当前不引入 psutil 或平台专用依赖，
-    因此内存字段保持 ``None``。该函数只负责单次采样，轮询频率由 Backend 决定。
-    """
+    """返回设备和宿主机的即时资源快照，不做 GPU synchronize，也不 sleep。"""
     try:
         resolved = torch.device(device)
     except (TypeError, RuntimeError) as exc:
         raise ValueError(f"无效运行设备: {device!r}") from exc
 
     captured_at = datetime.now(timezone.utc)
+    host = _host_metrics()
     if resolved.type != "cuda":
         return RuntimeMetrics(
             device_id=str(resolved),
             device_type=resolved.type,
             captured_at=captured_at,
+            **host,
         )
 
     index = _resolve_cuda_index(resolved)
@@ -164,6 +184,7 @@ def get_runtime_metrics(
         max_allocated_memory=int(torch.cuda.max_memory_allocated(index)),
         free_memory=int(free_memory),
         total_memory=int(total_memory),
+        **host,
     )
 
 

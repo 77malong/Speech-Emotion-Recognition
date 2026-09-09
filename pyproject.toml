@@ -21,6 +21,7 @@ dependencies = [
     "pydantic>=2.5",
     "PyYAML>=6.0",
     "safetensors>=0.4",
+    "psutil>=5.9",
 ]
 
 [project.scripts]
