@@ -1,4 +1,4 @@
-"""表示无关、可观测且可取消的 SER 分类训练器。"""
+"""表示无关、可观测且可取消的 SER 分类训练内部核心。"""
 
 from __future__ import annotations
 
@@ -157,7 +157,7 @@ class Trainer:
         model: SERModel,
         config: TrainerConfig | None = None,
         *,
-        optimizer: torch.optim.Optimizer | None = None,
+        optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
         loss_fn: torch.nn.Module | None = None,
         event_callback: EventCallback | None = None,
@@ -179,11 +179,7 @@ class Trainer:
             raise ValueError("run_id 不能为空字符串")
         seed_everything(self.config.seed, deterministic=self.config.deterministic)
         self.model.to(self.device)
-        self.optimizer = optimizer or torch.optim.AdamW(
-            model.parameters(),
-            lr=self.config.learning_rate,
-            weight_decay=self.config.weight_decay,
-        )
+        self.optimizer = optimizer
         self.scheduler = scheduler
         self.loss_fn = loss_fn.to(self.device) if loss_fn is not None else None
         self.event_callback = event_callback
