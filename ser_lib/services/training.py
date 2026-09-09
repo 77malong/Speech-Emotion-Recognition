@@ -6,8 +6,6 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
-from pydantic import ValidationError
-
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.types import SERBatch
@@ -183,7 +181,7 @@ class TrainingService:
 
         try:
             history = load_training_history(run_dir)
-        except (FileNotFoundError, ValueError, ValidationError) as exc:
+        except (FileNotFoundError, ValueError) as exc:
             history = None
             diagnostics.append(
                 Diagnostic(

@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
-from pydantic import ValidationError
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
@@ -139,7 +138,7 @@ class EvaluationService:
 
         try:
             report = inspect_evaluation_report(run_dir)
-        except (FileNotFoundError, NotADirectoryError, ValueError, ValidationError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             report = None
             diagnostics.append(
                 Diagnostic(
