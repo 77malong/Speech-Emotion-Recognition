@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.engine.checkpoint_catalog import CheckpointCatalog
 from ser_lib.engine.lineage import TrainingRunMetadata
 from ser_lib.engine.training_history import TrainingHistoryInfo
@@ -137,6 +138,14 @@ class TrainingRunInfo:
         directory: Path | str | None = None,
     ) -> "TrainingRunInfo":
         payload = dict(value)
+        # 0.2.0 之前的内部记录允许省略 schema_version；读取时继续按 v1 解释，
+        # 但未来显式版本仍统一经过 migration registry 拒绝/迁移。
+        payload.setdefault("schema_version", RUN_RECORD_SCHEMA_VERSION)
+        payload = migrate_schema_payload(
+            "training_run",
+            payload,
+            target_version=RUN_RECORD_SCHEMA_VERSION,
+        )
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
         record = _RunRecordModel.model_validate(payload)
