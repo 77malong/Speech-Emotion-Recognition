@@ -6,9 +6,13 @@
 
 基线：`main@ff01c437f544ac606fb5b807bce06aae0e5627e8`
 
+最终代码验收 HEAD：`aa9c979ca130e1993994467ad3ac1b679e2e0dcd`
+
+最终代码验收 CI：GitHub Actions CI #194（run `34321169294`），全平台通过。
+
 ## 0. 当前执行状态
 
-本计划已经进入最终验证阶段。Task 01–08 的代码重构与测试/文档收口均已实施，Task 09 等待最新 exact-HEAD CI 全平台验证完成后关闭。
+本计划已完成。Task 01–09 均已实施并通过最终 exact-HEAD 验证；后续仅进入 PR review / merge 流程，不再继续维护旧业务路径。
 
 | Task | 状态 | 结果 |
 | --- | --- | --- |
@@ -20,7 +24,7 @@
 | 06 Optimizer Config Single Track | ✅ 完成 | `TrainerConfig.learning_rate/weight_decay` 已删除；正式实验只认 `ExperimentConfig.optimizer` |
 | 07 Shared Catalog Scan Primitive | ✅ 完成 | Training / Evaluation / Checkpoint / Artifact / Dataset Revision 共用扫描控制流 |
 | 08 Test & Docs Cleanup | ✅ 完成 | run-detail ValidationError 回归并回领域测试；重复测试文件删除；本文件更新为当前架构记录 |
-| 09 Full Validation | ⏳ 进行中 | exact-HEAD GitHub Actions 全平台 CI 通过后完成 |
+| 09 Full Validation | ✅ 完成 | `aa9c979c` 对应 CI #194 全平台、静态检查、coverage、build/wheel smoke 全部通过 |
 
 ## 1. 背景与目标
 
@@ -155,7 +159,7 @@ optimizer:
     weight_decay: 0.0
 ```
 
-直接低层构造 `Trainer` 时，调用方可以显式传入 optimizer；未传时使用 `engine.optim.AdamWConfig` 的统一默认值。
+直接低层构造公开 `Trainer` 时，调用方可以显式传入 optimizer；未传时使用 `engine.optim.AdamWConfig` 的统一默认值。私有训练核心不再保留读取 `TrainerConfig.learning_rate/weight_decay` 的 fallback。
 
 ## 4. 明确保留的历史兼容能力
 
@@ -184,35 +188,36 @@ optimizer:
 9. `bdcf8af9` — `refactor(data): reuse shared catalog scanner for revisions`
 10. `5008f2e7` — `test(refactor): consolidate run detail regression coverage`
 11. `e483e51e` — `fix(training): preserve public trainer type in service path`
+12. `a0c92a31` — `docs(refactor): record legacy retirement progress`
+13. `aa9c979c` — `refactor(training): require optimizer in internal trainer core`
 
-中间历史中存在一次无业务内容的 `noop` 提交；未采用 force-push 改写历史，最终合并策略可在 PR 阶段再决定是否 squash。
+中间历史中存在一次无业务内容的 `noop` 提交；未采用 force-push 改写历史，最终合并策略可在 PR 阶段决定是否 squash。
 
-## 6. 验证记录
+## 6. 最终验证记录
 
-已确认：
+Task 09 已以代码 HEAD `aa9c979ca130e1993994467ad3ac1b679e2e0dcd` 完成最终验证。
 
-- Diagnostic 单轨化后的 CI #183 全平台通过；
-- Task 05/06 的行为测试在 Linux / Windows / macOS、Python 3.10 / 3.12 全部通过；
-- training smoke 全部通过；
-- Linux Python 3.12 distribution build / wheel smoke 通过；
-- Task 05/06 首轮 static check 仅暴露公开 Trainer 返回类型的 mypy 问题，已由 `e483e51e` 修复。
+GitHub Actions CI #194（run `34321169294`）结果：
 
-最终 Task 09 必须以最新 HEAD 再验证：
+- dependency consistency ✅
+- compileall ✅
+- pytest ✅
+- Ruff ✅
+- mypy ✅
+- coverage gate ✅
+- training smoke ✅
+- package build ✅
+- built-wheel smoke ✅
+- Linux / Windows / macOS ✅
+- Python 3.10 / 3.12 ✅
 
-- dependency consistency
-- compileall
-- pytest
-- Ruff
-- mypy
-- coverage gate
-- training smoke
-- package build / wheel smoke
-- Linux / Windows / macOS
-- Python 3.10 / 3.12
+此前 Diagnostic 单轨化后的 CI #183 也已全平台通过；Task 05/06 首轮 static check 暴露的公开 Trainer 返回类型 mypy 问题已由 `e483e51e` 修复，并在 CI #194 中验证通过。
 
-## 7. 最终验收标准
+本计划封板文档自身不改变运行时代码；PR 阶段仍应以 PR 最新 HEAD 的 GitHub Actions 结果作为最终 merge gate。
 
-合并到 `main` 前必须满足：
+## 7. 最终验收结果
+
+以下验收标准全部满足：
 
 - 仓库只有一套 Dataset 导入/准备体系；
 - Importer 只有一套 Diagnostic 表示；
@@ -221,5 +226,7 @@ optimizer:
 - optimizer 参数只有一个正式配置来源；
 - Importer convert 与 Catalog scan 不复制大段公共控制流；
 - 旧测试、旧命令、旧文档入口、只为旧路径存在的依赖已清理；
-- 当前 JSON-safe DTO、事件、取消、轻量 inspect 成本边界不退化；
-- 最新 exact-HEAD 全平台 CI 通过。
+- 当前 JSON-safe DTO、事件、取消、轻量 inspect 成本边界未退化；
+- 最新代码 exact-HEAD 全平台 CI 已通过。
+
+计划状态：**完成，可进入 PR review / merge gate。**
