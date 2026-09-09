@@ -42,6 +42,16 @@ from ser_lib.data.errors import (
     TransformError,
 )
 from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
+from ser_lib.data.history import (
+    DATASET_REVISION_SCHEMA_VERSION,
+    DatasetRevisionCatalog,
+    DatasetRevisionInfo,
+    DatasetRevisionScanFailure,
+    create_dataset_revision,
+    inspect_dataset_revision,
+    restore_dataset_revision,
+    scan_dataset_revisions,
+)
 from ser_lib.data.importers import (
     CasiaImporter,
     CsvImporter,
@@ -70,11 +80,7 @@ from ser_lib.data.profiling import (
     summarize_manifest,
 )
 from ser_lib.data.query import RecordPage, RecordView, query_records
-from ser_lib.data.registry import (
-    ComponentDescriptor,
-    Registry,
-    default_registry,
-)
+from ser_lib.data.registry import ComponentDescriptor, Registry, default_registry
 from ser_lib.data.representations import register_representations
 from ser_lib.data.transforms import register_transforms
 from ser_lib.data.types import (
@@ -128,6 +134,15 @@ __all__ = [
     "write_jsonl",
     # Dataset editor
     "DatasetEditor",
+    # Dataset history
+    "DATASET_REVISION_SCHEMA_VERSION",
+    "DatasetRevisionInfo",
+    "DatasetRevisionScanFailure",
+    "DatasetRevisionCatalog",
+    "create_dataset_revision",
+    "inspect_dataset_revision",
+    "scan_dataset_revisions",
+    "restore_dataset_revision",
     # Audio
     "AudioLoader",
     "AudioLoaderConfig",

@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.editor import DatasetEditor
 from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
+from ser_lib.data.history import (
+    DatasetRevisionCatalog,
+    DatasetRevisionInfo,
+    create_dataset_revision,
+    inspect_dataset_revision,
+    restore_dataset_revision,
+    scan_dataset_revisions,
+)
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.profiling import (
     DatasetAudioProfile,
@@ -20,7 +29,7 @@ from ser_lib.data.query import RecordPage, query_records
 
 
 class DatasetService:
-    """薄 facade；不复制 Manifest/Query/Editor 的业务规则。"""
+    """薄 facade；不复制 Manifest/Query/Editor/History 的业务规则。"""
 
     @staticmethod
     def summary(
@@ -116,6 +125,74 @@ class DatasetService:
     @staticmethod
     def editor(manifest: DatasetManifest | Path | str) -> DatasetEditor:
         return DatasetEditor(manifest)
+
+    @staticmethod
+    def snapshot_revision(
+        manifest: DatasetManifest | Path | str,
+        *,
+        history_root: Path | str | None = None,
+        revision_id: str | None = None,
+        note: str = "",
+        created_at: datetime | None = None,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> DatasetRevisionInfo:
+        return create_dataset_revision(
+            manifest,
+            history_root=history_root,
+            revision_id=revision_id,
+            note=note,
+            created_at=created_at,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
+
+    @staticmethod
+    def inspect_revision(
+        revision: Path | str,
+        *,
+        verify: bool = False,
+        cancellation: CancellationCheck | None = None,
+    ) -> DatasetRevisionInfo:
+        return inspect_dataset_revision(
+            revision,
+            verify=verify,
+            cancellation=cancellation,
+        )
+
+    @staticmethod
+    def revision_history(
+        manifest: DatasetManifest | Path | str,
+        *,
+        history_root: Path | str | None = None,
+        fail_fast: bool = False,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> DatasetRevisionCatalog:
+        return scan_dataset_revisions(
+            manifest,
+            history_root=history_root,
+            fail_fast=fail_fast,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
+
+    @staticmethod
+    def restore_revision(
+        manifest: DatasetManifest | Path | str,
+        revision: Path | str,
+        *,
+        expected_current_fingerprint: str,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> DatasetManifest:
+        return restore_dataset_revision(
+            manifest,
+            revision,
+            expected_current_fingerprint=expected_current_fingerprint,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
 
 
 __all__ = ["DatasetService"]
