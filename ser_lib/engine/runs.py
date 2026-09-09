@@ -10,8 +10,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ser_lib.core._catalog_scan import scan_catalog_candidates
 from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.engine.checkpoint_catalog import CheckpointCatalog
 from ser_lib.engine.lineage import TrainingRunMetadata
@@ -138,17 +139,18 @@ class TrainingRunInfo:
         directory: Path | str | None = None,
     ) -> "TrainingRunInfo":
         payload = dict(value)
-        # 0.2.0 之前的内部记录允许省略 schema_version；读取时继续按 v1 解释。
         payload.setdefault("schema_version", RUN_RECORD_SCHEMA_VERSION)
         version = payload.get("schema_version")
-        if isinstance(version, int) and not isinstance(version, bool) and version <= RUN_RECORD_SCHEMA_VERSION:
+        if (
+            isinstance(version, int)
+            and not isinstance(version, bool)
+            and version <= RUN_RECORD_SCHEMA_VERSION
+        ):
             payload = migrate_schema_payload(
                 "training_run",
                 payload,
                 target_version=RUN_RECORD_SCHEMA_VERSION,
             )
-        # 对未来/非法版本继续交给既有 Pydantic 磁盘模型拒绝，保持公开
-        # ``from_dict`` 的 ValidationError 契约；migration 独立 API 仍报告结构化错误。
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
         record = _RunRecordModel.model_validate(payload)
@@ -260,36 +262,20 @@ def scan_training_runs(
     if not root_path.is_dir():
         raise NotADirectoryError(f"训练运行根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
-    runs: list[TrainingRunInfo] = []
-    failures: list[TrainingRunScanFailure] = []
-    for index, directory in enumerate(candidates, start=1):
-        if cancellation is not None:
-            cancellation.raise_if_cancelled()
-        try:
-            runs.append(load_training_run_info(directory))
-        except Exception as exc:
-            if fail_fast:
-                raise
-            failures.append(
-                TrainingRunScanFailure(
-                    directory=directory.as_posix(),
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                )
-            )
-        if event_callback is not None:
-            event_callback(
-                ProgressEvent(
-                    stage="training_run_catalog_scan",
-                    completed=index,
-                    total=len(candidates),
-                    details={
-                        "directory": directory,
-                        "valid": len(runs),
-                        "failed": len(failures),
-                    },
-                )
-            )
+    runs, failures = scan_catalog_candidates(
+        candidates,
+        inspect_candidate=load_training_run_info,
+        failure_factory=lambda directory, exc: TrainingRunScanFailure(
+            directory=directory.as_posix(),
+            error_type=type(exc).__name__,
+            message=str(exc),
+        ),
+        stage="training_run_catalog_scan",
+        candidate_detail_key="directory",
+        fail_fast=fail_fast,
+        event_callback=event_callback,
+        cancellation=cancellation,
+    )
     runs.sort(key=lambda item: (item.created_at, item.run_id), reverse=True)
     return TrainingRunCatalog(
         root=root_path.as_posix(),

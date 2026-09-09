@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.core._catalog_scan import scan_catalog_candidates
+from ser_lib.core.events import CancellationCheck, EventCallback
 
 CheckpointKind = Literal["best", "last", "epoch", "other"]
 _EPOCH_NAME = re.compile(r"^epoch-(\d+)\.pt$")
@@ -103,36 +104,20 @@ def scan_checkpoints(
     if not root_path.is_dir():
         raise NotADirectoryError(f"checkpoint 根目录不存在或不是目录: {root_path}")
     candidates = _candidate_files(root_path, recursive=recursive)
-    checkpoints: list[CheckpointInfo] = []
-    failures: list[CheckpointScanFailure] = []
-    for index, path in enumerate(candidates, start=1):
-        if cancellation is not None:
-            cancellation.raise_if_cancelled()
-        try:
-            checkpoints.append(inspect_checkpoint_file(path))
-        except Exception as exc:
-            if fail_fast:
-                raise
-            failures.append(
-                CheckpointScanFailure(
-                    path=path.as_posix(),
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                )
-            )
-        if event_callback is not None:
-            event_callback(
-                ProgressEvent(
-                    stage="checkpoint_catalog_scan",
-                    completed=index,
-                    total=len(candidates),
-                    details={
-                        "path": path,
-                        "valid": len(checkpoints),
-                        "failed": len(failures),
-                    },
-                )
-            )
+    checkpoints, failures = scan_catalog_candidates(
+        candidates,
+        inspect_candidate=inspect_checkpoint_file,
+        failure_factory=lambda path, exc: CheckpointScanFailure(
+            path=path.as_posix(),
+            error_type=type(exc).__name__,
+            message=str(exc),
+        ),
+        stage="checkpoint_catalog_scan",
+        candidate_detail_key="path",
+        fail_fast=fail_fast,
+        event_callback=event_callback,
+        cancellation=cancellation,
+    )
     checkpoints.sort(
         key=lambda item: (item.modified_at, item.name.casefold()),
         reverse=True,
