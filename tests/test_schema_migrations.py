@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from ser_lib.core import MigrationRegistry, SchemaMigrationError
+from ser_lib.artifacts.migrations import validate_artifact_manifest_version
+from ser_lib.config.migrations import MigrationRegistry
+from ser_lib.data.migrations import migrate_data_payload
+from ser_lib.engine.migrations import migrate_engine_payload
+from ser_lib.foundation.errors import SchemaMigrationError
 
 
 def test_schema_migration_chains_without_mutating_input():
@@ -83,3 +87,33 @@ def test_schema_migration_wraps_function_failure_and_rejects_duplicate():
         registry.migrate("demo", {"schema_version": 1}, target_version=2)
     assert failed.value.code == "schema_migration_failed"
     assert failed.value.details["error_type"] == "RuntimeError"
+
+
+def test_data_and_engine_version_gates_preserve_current_payload_and_errors():
+    source = {"schema_version": 1, "nested": {"items": [1]}}
+    data = migrate_data_payload("dataset_manifest", source, target_version=1)
+    engine = migrate_engine_payload("training_run", source, target_version=1)
+    data["nested"]["items"].append(2)
+    engine["nested"]["items"].append(3)
+    assert source == {"schema_version": 1, "nested": {"items": [1]}}
+
+    with pytest.raises(SchemaMigrationError) as future:
+        migrate_engine_payload("evaluation_run", {"schema_version": 2}, target_version=1)
+    assert future.value.code == "schema_version_future"
+
+    with pytest.raises(SchemaMigrationError) as missing:
+        migrate_data_payload("dataset_revision", {"schema_version": 1}, target_version=2)
+    assert missing.value.code == "schema_migration_missing"
+
+
+def test_artifact_versions_are_validated_without_fake_upgrade():
+    v1 = {"schema_version": 1, "weights_file": "model_state.pt"}
+    v2 = {"schema_version": 2, "weights_file": "model.safetensors", "files_sha256": {}}
+
+    assert validate_artifact_manifest_version(v1) == 1
+    assert validate_artifact_manifest_version(v2) == 2
+    assert "files_sha256" not in v1
+
+    with pytest.raises(SchemaMigrationError) as future:
+        validate_artifact_manifest_version({"schema_version": 3})
+    assert future.value.code == "schema_version_future"

@@ -8,6 +8,7 @@ from typing import Any, TypeVar
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from ser_lib.config.migrations import migrate_config_payload
 from ser_lib.foundation.errors import ConfigurationError, SchemaMigrationError
 
 ConfigT = TypeVar("ConfigT", bound=BaseModel)
@@ -62,17 +63,11 @@ def load_versioned_config(
     schema_domain: str | None = None,
     target_version: int | None = None,
 ) -> ConfigT:
-    """读取版本化 YAML，按需迁移后用当前 Pydantic 模型严格校验。
-
-    migration registry 在 Stage 05 才按领域拆分；此前仅在实际需要迁移时
-    通过旧 ``core.migrations`` 兼容入口调用，避免 config 基础导入加载领域实现。
-    """
+    """读取版本化 YAML，按需使用 config 域 registry 迁移并严格校验。"""
     raw, source = load_yaml_mapping(path)
     if schema_domain is None:
         require_schema_version(raw, supported=supported_versions, source=source)
     else:
-        from ser_lib.core.migrations import migrate_schema_payload
-
         resolved_target = target_version
         if resolved_target is None:
             versions = frozenset(supported_versions)
@@ -80,7 +75,7 @@ def load_versioned_config(
                 raise ValueError("supported_versions 不能为空")
             resolved_target = max(versions)
         try:
-            raw = migrate_schema_payload(
+            raw = migrate_config_payload(
                 schema_domain,
                 raw,
                 target_version=resolved_target,
