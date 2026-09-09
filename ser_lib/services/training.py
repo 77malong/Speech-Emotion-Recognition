@@ -1,4 +1,4 @@
-"""训练应用服务：稳定 dry-run、Trainer 构造、lineage 和终态结果入口。"""
+"""训练应用服务：稳定 dry-run、Trainer 构造、lineage、历史记录和终态结果入口。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,13 @@ from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig
 from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
+from ser_lib.engine.runs import (
+    TrainingRunCatalog,
+    TrainingRunInfo,
+    load_training_run_info,
+    scan_training_runs,
+    write_training_run_info,
+)
 from ser_lib.engine.trainer import EpochResult, Trainer, TrainingResult
 from ser_lib.engine.validation import ExperimentValidationResult, validate_experiment
 from ser_lib.models.base import SERModel
@@ -76,9 +83,15 @@ class TrainingService:
         cancellation: CancellationCheck | None = None,
         observability: ObservabilityConfig | None = None,
         run_id: str | None = None,
+        dataset_id: str | None = None,
         dataset_fingerprint: str | None = None,
     ) -> Trainer:
-        """构造可追踪 Trainer，不读取 manifest 或隐式计算 fingerprint。"""
+        """构造可追踪 Trainer，不读取 manifest 或隐式计算 fingerprint。
+
+        ``dataset_id`` 可以由已经加载 manifest 的 CLI/Web 显式传入；未提供时
+        使用 ``ExperimentConfig.data.dataset_id``。这避免 Trainer 为补 lineage
+        偷偷执行文件系统 I/O。
+        """
         trainer = cast(
             _LineageTrainer,
             _LineageTrainer.from_experiment(
@@ -94,7 +107,7 @@ class TrainingService:
 
         trainer.run_metadata = build_training_run_metadata(
             run_id=trainer.run_id,
-            dataset_id=experiment.data.dataset_id,
+            dataset_id=dataset_id if dataset_id is not None else experiment.data.dataset_id,
             dataset_fingerprint=dataset_fingerprint,
             model_id=model.model_spec.model_id,
             config=experiment.model_dump(mode="json"),
@@ -128,6 +141,40 @@ class TrainingService:
         if trainer.last_result is None:
             raise RuntimeError("Trainer.fit 完成后未生成 TrainingResult")
         return trainer.last_result
+
+    @staticmethod
+    def save_run(
+        directory: Path | str,
+        trainer: Trainer,
+        result: TrainingResult,
+    ) -> TrainingRunInfo:
+        """原子持久化终态 run.json，并返回重新读取后的规范记录。"""
+        metadata = TrainingService.get_run_metadata(trainer)
+        if metadata is None:
+            raise ValueError("Trainer 没有 TrainingRunMetadata，无法保存训练运行记录")
+        path = write_training_run_info(directory, metadata, result)
+        return load_training_run_info(path)
+
+    @staticmethod
+    def inspect_run(path: Path | str) -> TrainingRunInfo:
+        return load_training_run_info(path)
+
+    @staticmethod
+    def scan_runs(
+        root: Path | str,
+        *,
+        recursive: bool = False,
+        fail_fast: bool = False,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> TrainingRunCatalog:
+        return scan_training_runs(
+            root,
+            recursive=recursive,
+            fail_fast=fail_fast,
+            event_callback=event_callback,
+            cancellation=cancellation,
+        )
 
 
 __all__ = ["TrainingService"]

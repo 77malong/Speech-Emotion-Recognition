@@ -24,6 +24,7 @@ from ser_lib.artifacts import (
     verify_model_artifact,
 )
 from ser_lib.engine import (
+    RUN_RECORD_SCHEMA_VERSION,
     ExperimentConfig,
     ExperimentValidationResult,
     ModelConfig,
@@ -31,13 +32,19 @@ from ser_lib.engine import (
     Trainer,
     TrainerConfig,
     TrainingResult,
+    TrainingRunCatalog,
+    TrainingRunInfo,
     TrainingRunMetadata,
+    TrainingRunScanFailure,
     TrainingStatus,
     build_experiment_components,
     build_training_run_metadata,
     evaluate,
+    load_training_run_info,
+    scan_training_runs,
     validate_experiment,
     write_evaluation_report,
+    write_training_run_info,
 )
 from ser_lib.inference import (
     BatchEmotionPredictor,
@@ -93,6 +100,9 @@ __all__ = [
     "TransformerBaseline", "HFAudioClassifier",
     "Trainer", "TrainerConfig", "ObservabilityConfig", "TrainingResult", "TrainingStatus",
     "TrainingRunMetadata", "build_training_run_metadata",
+    "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunScanFailure",
+    "TrainingRunCatalog", "write_training_run_info", "load_training_run_info",
+    "scan_training_runs",
     "evaluate", "write_evaluation_report",
     "ExperimentConfig", "ExperimentValidationResult", "validate_experiment",
     "ModelConfig", "build_experiment_components",

@@ -35,6 +35,15 @@ from ser_lib.engine.objectives import (
     SamplingConfig,
     build_weighted_sampler,
 )
+from ser_lib.engine.runs import (
+    RUN_RECORD_SCHEMA_VERSION,
+    TrainingRunCatalog,
+    TrainingRunInfo,
+    TrainingRunScanFailure,
+    load_training_run_info,
+    scan_training_runs,
+    write_training_run_info,
+)
 from ser_lib.engine.trainer import (
     EpochResult,
     Trainer,
@@ -49,6 +58,9 @@ __all__ = [
     "ExperimentComponents", "load_experiment_config", "build_experiment_components",
     "ExperimentValidationResult", "validate_experiment",
     "TrainingRunMetadata", "build_training_run_metadata",
+    "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunScanFailure",
+    "TrainingRunCatalog", "write_training_run_info", "load_training_run_info",
+    "scan_training_runs",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",
