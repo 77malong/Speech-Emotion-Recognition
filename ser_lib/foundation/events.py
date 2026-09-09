@@ -239,9 +239,10 @@ class LifecycleEvent:
 
 
 class EventLike(Protocol):
-    """所有可由事件 callback 消费的结构化事件协议。"""
+    """所有可由事件 callback 消费的只读结构化事件协议。"""
 
-    sequence: int
+    @property
+    def sequence(self) -> int: ...
 
     def to_dict(self) -> dict[str, Any]: ...
 
