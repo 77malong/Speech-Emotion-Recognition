@@ -1,97 +1,21 @@
-"""版本化实验配置。"""
+"""实验运行时组件构建与配置文件加载兼容入口。"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
-from pydantic import Field, field_validator, model_validator
-
-from ser_lib.core.config import StrictConfig, load_versioned_config
-from ser_lib.data.config import DataConfig
-from ser_lib.engine.objectives import LossConfig, SamplingConfig
+from ser_lib.config.experiment import ExperimentConfig
+from ser_lib.config.loader import load_versioned_config
+from ser_lib.config.model import ModelConfig
+from ser_lib.config.training import ObservabilityConfig, TrainerConfig
 
 if TYPE_CHECKING:
     from ser_lib.data.audio import AudioLoader
     from ser_lib.data.collate import SERCollator
     from ser_lib.data.pipeline import SamplePipeline
     from ser_lib.models.base import SERModel
-
-
-class ModelConfig(StrictConfig):
-    """注册表模型及其构造参数。"""
-
-    type: str = Field(min_length=1)
-    params: dict[str, Any] = Field(default_factory=dict)
-
-
-class ObservabilityConfig(StrictConfig):
-    """训练运行时事件频率与轻量 ETA 参数。"""
-
-    progress_interval_batches: int = Field(default=1, ge=1)
-    metric_interval_batches: int = Field(default=10, ge=1)
-    eta_window_batches: int = Field(default=20, ge=1)
-    eta_warmup_batches: int = Field(default=3, ge=1)
-
-    @model_validator(mode="after")
-    def _validate_eta_window(self) -> "ObservabilityConfig":
-        if self.eta_warmup_batches > self.eta_window_batches:
-            raise ValueError("eta_warmup_batches 不能大于 eta_window_batches")
-        return self
-
-
-class TrainerConfig(StrictConfig):
-    """表示无关的训练循环配置；optimizer 参数不属于本节点。"""
-
-    epochs: int = Field(default=10, ge=1)
-    device: str = "cpu"
-    seed: int = Field(default=42, ge=0)
-    deterministic: bool = True
-    amp: bool = False
-    gradient_clip_norm: float | None = Field(default=None, gt=0)
-    gradient_accumulation_steps: int = Field(default=1, ge=1)
-    checkpoint_dir: Path | None = None
-    validation_interval: int = Field(default=1, ge=1)
-    monitor: Literal[
-        "val_loss", "val_accuracy", "val_uar", "val_macro_f1"
-    ] = "val_loss"
-    early_stopping_patience: int | None = Field(default=None, ge=1)
-    early_stopping_min_delta: float = Field(default=0.0, ge=0.0)
-    save_best: bool = True
-    save_last: bool = True
-
-
-class ExperimentConfig(StrictConfig):
-    """一次可复现实验的完整、可序列化配置快照。"""
-
-    schema_version: int = 1
-    data: DataConfig
-    model: ModelConfig
-    trainer: TrainerConfig = Field(default_factory=TrainerConfig)
-    optimizer: dict[str, Any] = Field(
-        default_factory=lambda: {"type": "adamw", "params": {}}
-    )
-    scheduler: dict[str, Any] | None = None
-    loss: LossConfig = Field(default_factory=LossConfig)
-    sampling: SamplingConfig = Field(default_factory=SamplingConfig)
-    output_dir: Path = Path("runs/default")
-
-    @field_validator("optimizer")
-    @classmethod
-    def _validate_optimizer(cls, value: dict[str, Any]) -> dict[str, Any]:
-        from ser_lib.engine.optim import parse_optimizer_config
-
-        parse_optimizer_config(value)
-        return value
-
-    @field_validator("scheduler")
-    @classmethod
-    def _validate_scheduler(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
-        from ser_lib.engine.optim import parse_scheduler_config
-
-        parse_scheduler_config(value)
-        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,19 +66,28 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
     updates: dict[str, Any] = {}
     if not config.output_dir.is_absolute():
         updates["output_dir"] = (source.parent / config.output_dir).resolve()
-    if config.trainer.checkpoint_dir is not None \
-            and not config.trainer.checkpoint_dir.is_absolute():
-        updates["trainer"] = config.trainer.model_copy(update={
-            "checkpoint_dir": (source.parent / config.trainer.checkpoint_dir).resolve()
-        })
+    if (
+        config.trainer.checkpoint_dir is not None
+        and not config.trainer.checkpoint_dir.is_absolute()
+    ):
+        updates["trainer"] = config.trainer.model_copy(
+            update={
+                "checkpoint_dir": (source.parent / config.trainer.checkpoint_dir).resolve()
+            }
+        )
     if not config.data.manifest.is_absolute():
-        updates["data"] = config.data.model_copy(update={
-            "manifest": (source.parent / config.data.manifest).resolve()
-        })
+        updates["data"] = config.data.model_copy(
+            update={"manifest": (source.parent / config.data.manifest).resolve()}
+        )
     return config.model_copy(update=updates)
 
 
 __all__ = [
-    "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
-    "ExperimentComponents", "load_experiment_config", "build_experiment_components",
+    "ModelConfig",
+    "ObservabilityConfig",
+    "TrainerConfig",
+    "ExperimentConfig",
+    "ExperimentComponents",
+    "load_experiment_config",
+    "build_experiment_components",
 ]

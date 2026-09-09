@@ -6,20 +6,12 @@ from typing import Any
 
 import torch
 from torch import nn
-from pydantic import Field
 
-from ser_lib.core.config import StrictConfig
+from ser_lib.config.model import CNNBaselineConfig
 from ser_lib.data.types import SERBatch, TensorSpec
 from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
-
-
-class CNNBaselineConfig(StrictConfig):
-    feature_dim: int = Field(ge=1)
-    num_classes: int = Field(ge=2)
-    hidden_dim: int = Field(default=128, ge=1)
-    dropout: float = Field(default=0.2, ge=0, lt=1)
 
 
 class CNNBaseline(SERModel):
@@ -111,9 +103,12 @@ def _model_spec_from_config(params: dict[str, Any]) -> ModelSpec:
 
 
 model_registry.register(
-    "cnn_baseline", CNNBaseline, config_model=CNNBaselineConfig,
+    "cnn_baseline",
+    CNNBaseline,
+    config_model=CNNBaselineConfig,
     descriptor=ModelDescriptor(
-        id="cnn_baseline", display_name="CNN 基线",
+        id="cnn_baseline",
+        display_name="CNN 基线",
         description="适用于 MFCC/Mel/Log-Mel 的轻量时间卷积分类器。",
         config_schema=CNNBaselineConfig.model_json_schema(),
         input_layouts={"features": "FT"},

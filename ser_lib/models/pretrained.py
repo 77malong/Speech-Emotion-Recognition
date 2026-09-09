@@ -7,39 +7,13 @@ from typing import Any, Literal
 
 import torch
 import torch.nn.functional as F
-from pydantic import Field, model_validator
 from torch import nn
 
-from ser_lib.core.config import StrictConfig
+from ser_lib.config.model import HFAudioClassifierConfig
 from ser_lib.data.types import SERBatch, TensorSpec
 from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
-
-
-class HFAudioClassifierConfig(StrictConfig):
-    num_classes: int = Field(ge=2)
-    pretrained_model_name_or_path: str | None = None
-    encoder_config: dict[str, Any] | None = None
-    local_files_only: bool = True
-    revision: str | None = None
-    freeze_encoder: bool = False
-    dropout: float = Field(default=0.1, ge=0, lt=1)
-    pooling: Literal["mean", "max"] = "mean"
-    expected_sample_rate: int = Field(default=16000, ge=1000, le=192000)
-
-    @model_validator(mode="after")
-    def _exactly_one_encoder_source(self) -> "HFAudioClassifierConfig":
-        supplied = sum(value is not None for value in (
-            self.pretrained_model_name_or_path, self.encoder_config
-        ))
-        if supplied != 1:
-            raise ValueError(
-                "pretrained_model_name_or_path 与 encoder_config 必须且只能提供一个"
-            )
-        if self.pretrained_model_name_or_path == "":
-            raise ValueError("pretrained_model_name_or_path 不能为空")
-        return self
 
 
 def _transformers():
@@ -52,11 +26,7 @@ def _transformers():
 
 
 class HFAudioClassifier(SERModel):
-    """为 Hugging Face AutoModel 语音编码器增加掩码池化与分类头。
-
-    默认 ``local_files_only=True``，构造期间不会隐式下载；本适配器始终禁用
-    ``trust_remote_code``，仅支持 Transformers 已注册的受控模型架构。
-    """
+    """为 Hugging Face AutoModel 语音编码器增加掩码池化与分类头。"""
 
     def __init__(
         self,
@@ -123,7 +93,6 @@ class HFAudioClassifier(SERModel):
 
     @property
     def model_config(self) -> dict[str, Any]:
-        # 固化架构配置而不是外部模型路径，使 artifact 可离线、自包含地恢复。
         return HFAudioClassifierConfig(
             num_classes=self.num_classes,
             encoder_config=self.encoder_config,
@@ -146,7 +115,9 @@ class HFAudioClassifier(SERModel):
         lengths = batch.lengths.get("waveform")
         mask = batch.masks.get("waveform")
         if lengths is None and mask is None:
-            return torch.ones(batch_size, time, dtype=torch.bool, device=waveform.device)
+            return torch.ones(
+                batch_size, time, dtype=torch.bool, device=waveform.device
+            )
         if lengths is not None:
             if lengths.shape != (batch_size,):
                 raise ValueError("waveform lengths 必须是 [B]")
@@ -184,13 +155,17 @@ class HFAudioClassifier(SERModel):
         if not isinstance(hidden, torch.Tensor) or hidden.dim() != 3:
             raise ValueError("预训练编码器必须返回 last_hidden_state [B,T,D]")
         encoded_valid = F.interpolate(
-            valid.unsqueeze(1).to(torch.float32), size=hidden.shape[1], mode="nearest"
+            valid.unsqueeze(1).to(torch.float32),
+            size=hidden.shape[1],
+            mode="nearest",
         ).squeeze(1).to(torch.bool)
         if self.pooling == "mean":
             weights = encoded_valid.unsqueeze(-1).to(hidden.dtype)
             embeddings = (hidden * weights).sum(1) / weights.sum(1).clamp_min(1)
         else:
-            embeddings = hidden.masked_fill(~encoded_valid.unsqueeze(-1), float("-inf")).max(1).values
+            embeddings = hidden.masked_fill(
+                ~encoded_valid.unsqueeze(-1), float("-inf")
+            ).max(1).values
         return ModelOutput(
             logits=self.classifier(self.dropout(embeddings)), embeddings=embeddings
         )

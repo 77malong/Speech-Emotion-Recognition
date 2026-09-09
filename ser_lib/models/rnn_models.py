@@ -5,39 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-from pydantic import Field, model_validator
 from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
 
-from ser_lib.core.config import StrictConfig
+from ser_lib.config.model import GRUBaselineConfig
 from ser_lib.data.types import SERBatch, TensorSpec
 from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
 
 
-class GRUBaselineConfig(StrictConfig):
-    feature_dim: int = Field(ge=1)
-    num_classes: int = Field(ge=2)
-    hidden_dim: int = Field(default=128, ge=1)
-    num_layers: int = Field(default=1, ge=1)
-    bidirectional: bool = True
-    dropout: float = Field(default=0.0, ge=0, lt=1)
-
-    @model_validator(mode="after")
-    def _dropout_requires_multiple_layers(self) -> "GRUBaselineConfig":
-        # PyTorch GRU 在单层时忽略内部 dropout；配置中拒绝这种隐式降级。
-        if self.num_layers == 1 and self.dropout != 0:
-            raise ValueError("num_layers=1 时 dropout 必须为 0")
-        return self
-
-
 class GRUBaseline(SERModel):
-    """使用 packed sequence 忽略 padding 的 GRU 分类基线。
-
-    输入 ``features`` 为 ``[B,F,T]``，输出 embedding 是最后一层最终隐藏状态；
-    双向模式会拼接正向与反向状态。
-    """
+    """使用 packed sequence 忽略 padding 的 GRU 分类基线。"""
 
     def __init__(
         self,
@@ -93,9 +72,15 @@ class GRUBaseline(SERModel):
         lengths = batch.lengths.get("features")
         mask = batch.masks.get("features")
         if lengths is None:
-            lengths = mask.sum(dim=-1) if mask is not None else torch.full(
-                (features.shape[0],), features.shape[-1], dtype=torch.long,
-                device=features.device,
+            lengths = (
+                mask.sum(dim=-1)
+                if mask is not None
+                else torch.full(
+                    (features.shape[0],),
+                    features.shape[-1],
+                    dtype=torch.long,
+                    device=features.device,
+                )
             )
         if lengths.shape != (features.shape[0],):
             raise ValueError(f"features lengths 必须是 [B]，实际 {tuple(lengths.shape)}")
@@ -122,8 +107,10 @@ class GRUBaseline(SERModel):
             raise ValueError(f"GRUBaseline features 必须是浮点 tensor，实际 {features.dtype}")
         lengths = self._lengths(batch, features)
         packed = pack_padded_sequence(
-            features.transpose(1, 2), lengths.detach().cpu(),
-            batch_first=True, enforce_sorted=False,
+            features.transpose(1, 2),
+            lengths.detach().cpu(),
+            batch_first=True,
+            enforce_sorted=False,
         )
         _, hidden = self.encoder(packed)
         if self.bidirectional:

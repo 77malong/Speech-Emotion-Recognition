@@ -15,11 +15,39 @@ from ser_lib.config.data import (
     SlidingBatching,
     load_data_config,
 )
+from ser_lib.config.experiment import ExperimentConfig
+from ser_lib.config.inference import StreamingConfig
 from ser_lib.config.loader import (
     load_versioned_config,
     load_yaml_mapping,
     require_schema_version,
     resolve_config_path,
+)
+from ser_lib.config.model import (
+    CNNBaselineConfig,
+    GRUBaselineConfig,
+    HFAudioClassifierConfig,
+    ModelConfig,
+    TransformerBaselineConfig,
+)
+from ser_lib.config.optimizer import (
+    AdamConfig,
+    AdamWConfig,
+    OptimizerConfig,
+    SGDConfig,
+    parse_optimizer_config,
+)
+from ser_lib.config.scheduler import (
+    CosineSchedulerConfig,
+    SchedulerConfig,
+    StepSchedulerConfig,
+    parse_scheduler_config,
+)
+from ser_lib.config.training import (
+    LossConfig,
+    ObservabilityConfig,
+    SamplingConfig,
+    TrainerConfig,
 )
 
 __all__ = [
@@ -40,4 +68,24 @@ __all__ = [
     "load_data_config",
     "AudioSettings",
     "CacheSettings",
+    "ModelConfig",
+    "CNNBaselineConfig",
+    "GRUBaselineConfig",
+    "TransformerBaselineConfig",
+    "HFAudioClassifierConfig",
+    "ObservabilityConfig",
+    "TrainerConfig",
+    "LossConfig",
+    "SamplingConfig",
+    "AdamWConfig",
+    "AdamConfig",
+    "SGDConfig",
+    "OptimizerConfig",
+    "parse_optimizer_config",
+    "StepSchedulerConfig",
+    "CosineSchedulerConfig",
+    "SchedulerConfig",
+    "parse_scheduler_config",
+    "ExperimentConfig",
+    "StreamingConfig",
 ]

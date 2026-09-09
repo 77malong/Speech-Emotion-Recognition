@@ -2,47 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Literal, Sequence
+from typing import Sequence
 
 import torch
 import torch.nn.functional as F
-from pydantic import Field, model_validator
 from torch import nn
 from torch.utils.data import WeightedRandomSampler
 
-from ser_lib.core.config import StrictConfig
-
-
-class LossConfig(StrictConfig):
-    type: Literal["cross_entropy", "focal"] = "cross_entropy"
-    class_weights: list[float] | None = None
-    label_smoothing: float = Field(default=0.0, ge=0.0, lt=1.0)
-    focal_gamma: float = Field(default=2.0, ge=0.0)
-
-    @model_validator(mode="after")
-    def _validate_weights(self) -> "LossConfig":
-        if self.class_weights is not None and any(value <= 0 for value in self.class_weights):
-            raise ValueError("loss.class_weights 必须全部大于 0")
-        if self.type != "focal" and self.focal_gamma != 2.0:
-            raise ValueError("focal_gamma 仅用于 focal loss")
-        return self
-
-
-class SamplingConfig(StrictConfig):
-    type: Literal["shuffle", "weighted"] = "shuffle"
-    class_weights: list[float] | None = None
-    replacement: bool = True
-    num_samples: int | None = Field(default=None, ge=1)
-
-    @model_validator(mode="after")
-    def _validate_options(self) -> "SamplingConfig":
-        if self.class_weights is not None and any(value <= 0 for value in self.class_weights):
-            raise ValueError("sampling.class_weights 必须全部大于 0")
-        if self.type == "shuffle" and (
-            self.class_weights is not None or self.num_samples is not None or not self.replacement
-        ):
-            raise ValueError("class_weights/replacement/num_samples 仅用于 weighted sampling")
-        return self
+from ser_lib.config.training import LossConfig, SamplingConfig
 
 
 class ClassificationLoss(nn.Module):
@@ -54,7 +21,8 @@ class ClassificationLoss(nn.Module):
             )
         weights = (
             torch.tensor(config.class_weights, dtype=torch.float32)
-            if config.class_weights is not None else None
+            if config.class_weights is not None
+            else None
         )
         self.register_buffer("class_weights", weights)
         self.config = config
@@ -62,15 +30,24 @@ class ClassificationLoss(nn.Module):
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         if self.config.type == "cross_entropy":
             return F.cross_entropy(
-                logits, targets, weight=self.class_weights,
+                logits,
+                targets,
+                weight=self.class_weights,
                 label_smoothing=self.config.label_smoothing,
             )
         per_sample = F.cross_entropy(
-            logits, targets, weight=self.class_weights,
-            label_smoothing=self.config.label_smoothing, reduction="none",
+            logits,
+            targets,
+            weight=self.class_weights,
+            label_smoothing=self.config.label_smoothing,
+            reduction="none",
         )
-        target_probability = logits.softmax(dim=-1).gather(1, targets.unsqueeze(1)).squeeze(1)
-        return (((1.0 - target_probability) ** self.config.focal_gamma) * per_sample).mean()
+        target_probability = logits.softmax(dim=-1).gather(
+            1, targets.unsqueeze(1)
+        ).squeeze(1)
+        return (
+            ((1.0 - target_probability) ** self.config.focal_gamma) * per_sample
+        ).mean()
 
 
 def build_weighted_sampler(
@@ -91,7 +68,8 @@ def build_weighted_sampler(
     if config.class_weights is None:
         class_weights = torch.where(
             counts > 0,
-            counts.sum().to(torch.float64) / counts.clamp_min(1).to(torch.float64),
+            counts.sum().to(torch.float64)
+            / counts.clamp_min(1).to(torch.float64),
             torch.zeros(num_classes, dtype=torch.float64),
         )
     else:
@@ -114,5 +92,8 @@ def build_weighted_sampler(
 
 
 __all__ = [
-    "LossConfig", "SamplingConfig", "ClassificationLoss", "build_weighted_sampler"
+    "LossConfig",
+    "SamplingConfig",
+    "ClassificationLoss",
+    "build_weighted_sampler",
 ]

@@ -6,47 +6,34 @@ import math
 from typing import Any, Literal
 
 import torch
-from pydantic import Field, model_validator
 from torch import nn
 
-from ser_lib.core.config import StrictConfig
+from ser_lib.config.model import TransformerBaselineConfig
 from ser_lib.data.types import SERBatch, TensorSpec
 from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
 
 
-class TransformerBaselineConfig(StrictConfig):
-    feature_dim: int = Field(ge=1)
-    num_classes: int = Field(ge=2)
-    d_model: int = Field(default=128, ge=4)
-    num_heads: int = Field(default=4, ge=1)
-    num_layers: int = Field(default=2, ge=1)
-    feedforward_dim: int = Field(default=256, ge=1)
-    dropout: float = Field(default=0.1, ge=0, lt=1)
-    activation: Literal["relu", "gelu"] = "gelu"
-    norm_first: bool = False
-
-    @model_validator(mode="after")
-    def _validate_attention_dimensions(self) -> "TransformerBaselineConfig":
-        if self.d_model % self.num_heads:
-            raise ValueError("d_model 必须能被 num_heads 整除")
-        if self.feedforward_dim < self.d_model:
-            raise ValueError("feedforward_dim 必须 >= d_model")
-        return self
-
-
-def _sinusoidal_positions(length: int, dimension: int, tensor: torch.Tensor) -> torch.Tensor:
+def _sinusoidal_positions(
+    length: int, dimension: int, tensor: torch.Tensor
+) -> torch.Tensor:
     """动态生成位置编码，避免固定最大序列长度和 artifact 状态膨胀。"""
-    positions = torch.arange(length, device=tensor.device, dtype=torch.float32).unsqueeze(1)
+    positions = torch.arange(
+        length, device=tensor.device, dtype=torch.float32
+    ).unsqueeze(1)
     frequencies = torch.exp(
         torch.arange(0, dimension, 2, device=tensor.device, dtype=torch.float32)
         * (-math.log(10000.0) / dimension)
     )
-    encoding = torch.zeros(length, dimension, device=tensor.device, dtype=torch.float32)
+    encoding = torch.zeros(
+        length, dimension, device=tensor.device, dtype=torch.float32
+    )
     encoding[:, 0::2] = torch.sin(positions * frequencies)
     if dimension > 1:
-        encoding[:, 1::2] = torch.cos(positions * frequencies[:dimension // 2])
+        encoding[:, 1::2] = torch.cos(
+            positions * frequencies[: dimension // 2]
+        )
     return encoding.to(dtype=tensor.dtype)
 
 
@@ -118,15 +105,19 @@ class TransformerBaseline(SERModel):
         lengths = batch.lengths.get("features")
         mask = batch.masks.get("features")
         if lengths is None and mask is None:
-            return torch.ones(batch_size, time, dtype=torch.bool, device=features.device)
+            return torch.ones(
+                batch_size, time, dtype=torch.bool, device=features.device
+            )
         if lengths is not None:
             if lengths.shape != (batch_size,):
-                raise ValueError(f"features lengths 必须是 [B]，实际 {tuple(lengths.shape)}")
+                raise ValueError(
+                    f"features lengths 必须是 [B]，实际 {tuple(lengths.shape)}"
+                )
             if torch.any(lengths <= 0) or torch.any(lengths > time):
                 raise ValueError("features lengths 必须位于 [1,T]")
-            length_mask = torch.arange(time, device=features.device).unsqueeze(0) < (
-                lengths.to(features.device).unsqueeze(1)
-            )
+            length_mask = torch.arange(
+                time, device=features.device
+            ).unsqueeze(0) < lengths.to(features.device).unsqueeze(1)
             if mask is None:
                 return length_mask
         if mask is None or mask.shape != (batch_size, time):
