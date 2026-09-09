@@ -138,14 +138,17 @@ class TrainingRunInfo:
         directory: Path | str | None = None,
     ) -> "TrainingRunInfo":
         payload = dict(value)
-        # 0.2.0 之前的内部记录允许省略 schema_version；读取时继续按 v1 解释，
-        # 但未来显式版本仍统一经过 migration registry 拒绝/迁移。
+        # 0.2.0 之前的内部记录允许省略 schema_version；读取时继续按 v1 解释。
         payload.setdefault("schema_version", RUN_RECORD_SCHEMA_VERSION)
-        payload = migrate_schema_payload(
-            "training_run",
-            payload,
-            target_version=RUN_RECORD_SCHEMA_VERSION,
-        )
+        version = payload.get("schema_version")
+        if isinstance(version, int) and not isinstance(version, bool) and version <= RUN_RECORD_SCHEMA_VERSION:
+            payload = migrate_schema_payload(
+                "training_run",
+                payload,
+                target_version=RUN_RECORD_SCHEMA_VERSION,
+            )
+        # 对未来/非法版本继续交给既有 Pydantic 磁盘模型拒绝，保持公开
+        # ``from_dict`` 的 ValidationError 契约；migration 独立 API 仍报告结构化错误。
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
         record = _RunRecordModel.model_validate(payload)
