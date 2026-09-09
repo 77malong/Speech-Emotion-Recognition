@@ -11,8 +11,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.engine.evaluator import EvaluationResult
+from ser_lib.engine.migrations import migrate_engine_payload
 
 EVALUATION_RUN_SCHEMA_VERSION = 1
 _EVALUATION_RECORD_NAME = "evaluation.json"
@@ -218,7 +218,7 @@ class EvaluationRunInfo:
     ) -> "EvaluationRunInfo":
         payload = dict(value)
         payload.setdefault("schema_version", EVALUATION_RUN_SCHEMA_VERSION)
-        payload = migrate_schema_payload(
+        payload = migrate_engine_payload(
             "evaluation_run",
             payload,
             target_version=EVALUATION_RUN_SCHEMA_VERSION,
