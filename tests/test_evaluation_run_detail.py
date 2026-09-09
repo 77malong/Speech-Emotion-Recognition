@@ -157,3 +157,22 @@ def test_evaluation_run_detail_allows_run_without_prediction_sink(tmp_path: Path
     assert detail.predictions.path is None
     assert detail.predictions.exists is False
     assert detail.diagnostics == ()
+
+
+def test_evaluation_run_detail_keeps_report_validation_error_nonfatal(tmp_path: Path):
+    directory = tmp_path / "evaluation"
+    _write_run(directory, predictions_file=None)
+    invalid_report = {
+        **_aggregate_metrics(),
+        "sample_count": 4,
+        "confusion_matrix": [[1, 0], [0, 1]],
+        "per_class": _metrics_report()["per_class"],
+    }
+    (directory / "metrics.json").write_text(json.dumps(invalid_report), encoding="utf-8")
+
+    detail = EvaluationService.inspect_run_detail(directory)
+
+    assert detail.report is None
+    assert detail.predictions.path is None
+    assert [item.code for item in detail.diagnostics] == ["evaluation_report_unavailable"]
+    assert detail.diagnostics[0].details["error_type"] == "ValidationError"
