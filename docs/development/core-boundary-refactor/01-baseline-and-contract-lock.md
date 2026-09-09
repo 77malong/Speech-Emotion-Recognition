@@ -55,3 +55,31 @@
 ## 建议提交
 
 `test(refactor): lock pre-refactor SER-lib behavior`
+
+## 实施记录（2026-09-09）
+
+本阶段已完成代码侧基线锁定；**不在文档中预判 CI 为通过**，最终验证必须以本阶段 exact HEAD 的实际检查结果为准。
+
+新增内容：
+
+- `tests/fixtures/pre_refactor_contract_snapshot.json`
+  - 固定 `ser_lib`、`core`、`data`、`engine`、`artifacts`、`inference`、`models`、`services` 的完整 `__all__` 顺序快照；
+  - 固定当前持久化版本号、coverage 门槛和 CI OS/Python matrix。
+- `tests/test_pre_refactor_contracts.py`
+  - 校验完整 public API 快照；
+  - 校验 event/dataset/revision/run/evaluation/checkpoint/artifact 版本；
+  - 校验 artifact v1 继续使用真实 legacy PyTorch defaults，不伪升级为 v2；
+  - 校验 `AudioSettings` 默认值、round-trip、unknown field 拒绝和 config-relative path；
+  - 校验当前 coverage/CI 基线；
+  - 校验 `hf_audio_classifier` 注册 ID、optional 状态和 exact state_dict keys。
+
+现有测试继续承担并已被本阶段确认作为后续回归门禁：
+
+- `tests/test_training_lineage.py`：Service lineage → checkpoint / artifact，以及 resume lineage；
+- `tests/test_training_result.py`：当前 `Trainer.fit()` 返回 `list[EpochResult]`，`last_result` 保存 completed/early-stopped/cancelled/failed 终态；
+- `tests/test_checkpoint_resume.py`：checkpoint v1/v2 读取与 resume；
+- `tests/test_artifacts.py`：artifact v1 显式信任门禁与 v2 safetensors/hash；
+- `tests/test_schema_migrations.py`：只读迁移、缺链、future version、坏结果；
+- evaluation / batch / streaming 现有测试继续锁定结果格式、取消和流式行为。
+
+本阶段没有修改 `ser_lib/` 生产实现，也没有新增 `foundation/`、`config/` 或删除任何旧 API。

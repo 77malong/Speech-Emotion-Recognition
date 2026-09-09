@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import importlib
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ValidationError
+from torch import nn
+
+import ser_lib
+from scripts.check_coverage import DEFAULT_THRESHOLDS
+from ser_lib.artifacts import ModelArtifactManifest
+from ser_lib.core import EVENT_SCHEMA_VERSION
+from ser_lib.data import DATASET_REVISION_SCHEMA_VERSION
+from ser_lib.data.config import AudioSettings, load_data_config
+from ser_lib.data.manifest import MANIFEST_SCHEMA_VERSION
+from ser_lib.engine import EVALUATION_RUN_SCHEMA_VERSION, RUN_RECORD_SCHEMA_VERSION
+from ser_lib.engine.checkpoint import CHECKPOINT_FORMAT_VERSION
+from ser_lib.models import HFAudioClassifier, model_registry
+
+
+_FIXTURE = Path(__file__).parent / "fixtures" / "pre_refactor_contract_snapshot.json"
+
+
+def _snapshot() -> dict:
+    return json.loads(_FIXTURE.read_text(encoding="utf-8"))
+
+
+def test_pre_refactor_public_api_exact_snapshot():
+    snapshot = _snapshot()
+    assert ser_lib.__version__ == snapshot["version"]
+
+    for module_name, expected in snapshot["public_api"].items():
+        module = importlib.import_module(module_name)
+        assert list(module.__all__) == expected, module_name
+
+
+def test_pre_refactor_persistent_format_versions_are_locked():
+    expected = _snapshot()["persistent_versions"]
+    assert EVENT_SCHEMA_VERSION == expected["event_schema"]
+    assert MANIFEST_SCHEMA_VERSION == expected["dataset_manifest_schema"]
+    assert DATASET_REVISION_SCHEMA_VERSION == expected["dataset_revision_schema"]
+    assert RUN_RECORD_SCHEMA_VERSION == expected["training_run_schema"]
+    assert EVALUATION_RUN_SCHEMA_VERSION == expected["evaluation_run_schema"]
+    assert CHECKPOINT_FORMAT_VERSION == expected["checkpoint_format"]
+    assert (
+        ModelArtifactManifest.model_fields["schema_version"].default
+        == expected["artifact_manifest_schema"]
+    )
+
+
+def test_legacy_artifact_v1_defaults_remain_pytorch_without_fake_upgrade():
+    manifest = ModelArtifactManifest.model_validate(
+        {
+            "schema_version": 1,
+            "library_version": ser_lib.__version__,
+            "model_name": "cnn_baseline",
+            "model_params": {"feature_dim": 4, "num_classes": 2},
+            "weights_sha256": "0" * 64,
+            "preprocessing": {},
+            "labels": {0: "neutral", 1: "happy"},
+        }
+    )
+
+    assert manifest.schema_version == 1
+    assert manifest.weights_file == "model_state.pt"
+    assert manifest.weights_format == "pytorch"
+    assert manifest.files_sha256 == {}
+
+
+def test_audio_settings_round_trip_unknown_field_and_config_relative_path(tmp_path: Path):
+    payload = AudioSettings().model_dump(mode="json")
+    assert payload == {
+        "target_sample_rate": 16000,
+        "mono": True,
+        "normalize_peak": False,
+        "backend": "soundfile",
+    }
+    assert AudioSettings.model_validate(payload).model_dump(mode="json") == payload
+
+    with pytest.raises(ValidationError):
+        AudioSettings.model_validate({**payload, "target_sample_rate_typo": 8000})
+
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    config_path = config_dir / "demo.yaml"
+    config_path.write_text(
+        "schema_version: 1\n"
+        "manifest: ../data/dataset.yaml\n"
+        "representation:\n"
+        "  type: waveform\n",
+        encoding="utf-8",
+    )
+    loaded = load_data_config(config_path)
+    assert loaded.manifest == (config_dir / "../data/dataset.yaml").resolve()
+
+
+def test_pre_refactor_coverage_thresholds_and_ci_matrix_are_recorded():
+    snapshot = _snapshot()
+    assert DEFAULT_THRESHOLDS == snapshot["coverage_thresholds"]
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    for os_name in snapshot["ci"]["os"]:
+        assert os_name in workflow
+    for python_version in snapshot["ci"]["python"]:
+        assert f'"{python_version}"' in workflow
+    assert "python -m pytest -q" in workflow
+    assert "python scripts/smoke_train_epoch.py --device cpu" in workflow
+    assert "python scripts/check_coverage.py coverage.json" in workflow
+
+
+class _FakeConfig:
+    model_type = "fake_audio"
+    hidden_size = 4
+
+    def __init__(self, **values):
+        self.hidden_size = values.get("hidden_size", 4)
+
+    def to_dict(self):
+        return {"model_type": self.model_type, "hidden_size": self.hidden_size}
+
+
+class _FakeEncoder(nn.Module):
+    def __init__(self, config=None):
+        super().__init__()
+        self.config = config or _FakeConfig()
+        self.projection = nn.Linear(1, self.config.hidden_size, bias=False)
+
+
+def test_hf_registration_and_state_dict_key_shape_are_locked(monkeypatch):
+    class AutoConfig:
+        @staticmethod
+        def for_model(model_type, **values):
+            assert model_type == "fake_audio"
+            return _FakeConfig(**values)
+
+    class AutoModel:
+        @staticmethod
+        def from_config(config):
+            return _FakeEncoder(config)
+
+    monkeypatch.setattr(
+        "ser_lib.models.pretrained._transformers",
+        lambda: SimpleNamespace(AutoConfig=AutoConfig, AutoModel=AutoModel),
+    )
+    model = HFAudioClassifier(
+        num_classes=2,
+        encoder_config={"model_type": "fake_audio", "hidden_size": 4},
+        dropout=0,
+    )
+
+    assert "hf_audio_classifier" in model_registry.names()
+    descriptor = model_registry.descriptor("hf_audio_classifier")
+    assert descriptor.id == "hf_audio_classifier"
+    assert descriptor.status == "optional"
+    assert tuple(model.state_dict()) == (
+        "encoder.projection.weight",
+        "classifier.weight",
+        "classifier.bias",
+    )
