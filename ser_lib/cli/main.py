@@ -13,13 +13,13 @@ import yaml
 from pydantic import ValidationError
 
 from ser_lib import __version__
-from ser_lib.core import ConfigurationError, SERError
 from ser_lib.data import (
     DatasetManifest,
     ManifestError,
     default_registry,
     profile_manifest_audio,
 )
+from ser_lib.foundation.errors import ConfigurationError, SERError
 from ser_lib.models import model_registry
 from ser_lib.cli.workflows import (
     evaluate_artifact,
