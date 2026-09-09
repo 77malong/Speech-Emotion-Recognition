@@ -24,7 +24,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ser_lib.core.exceptions import SERError
+from ser_lib.foundation.errors import SERError
 
 
 class SERDataError(SERError):
