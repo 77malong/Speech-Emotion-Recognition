@@ -17,10 +17,10 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
-from ser_lib.core.exceptions import SchemaMigrationError
-from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.data.errors import ManifestError
+from ser_lib.data.migrations import migrate_data_payload
 from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.errors import SchemaMigrationError
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
     # 历史 manifest 允许省略版本；保持兼容并统一归一到 v1 migration 入口。
     payload.setdefault("schema_version", MANIFEST_SCHEMA_VERSION)
     try:
-        payload = migrate_schema_payload(
+        payload = migrate_data_payload(
             "dataset_manifest",
             payload,
             target_version=MANIFEST_SCHEMA_VERSION,
