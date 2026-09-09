@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import torch
 
@@ -18,6 +19,7 @@ from ser_lib.engine._trainer_core import (
     move_batch_to_device,
     seed_everything,
 )
+from ser_lib.engine.config import ExperimentConfig
 from ser_lib.engine.lineage import TrainingRunMetadata
 from ser_lib.engine.optim import AdamWConfig, build_optimizer
 from ser_lib.models.base import SERModel
@@ -31,6 +33,8 @@ class Trainer(_TrainerCore):
     ``ExperimentConfig.optimizer`` 构造。lineage 是 Trainer 自身状态，checkpoint
     保存和恢复不再依赖 Service 私有子类。
     """
+
+    run_metadata: TrainingRunMetadata | None
 
     def __init__(
         self,
@@ -61,6 +65,30 @@ class Trainer(_TrainerCore):
             cancellation=cancellation,
             observability=observability,
             run_id=run_id,
+        )
+
+    @classmethod
+    def from_experiment(
+        cls,
+        model: SERModel,
+        experiment: ExperimentConfig,
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        observability: ObservabilityConfig | None = None,
+        run_id: str | None = None,
+    ) -> "Trainer":
+        """按完整 ExperimentConfig 构造当前公开 Trainer 类型。"""
+        return cast(
+            Trainer,
+            super().from_experiment(
+                model,
+                experiment,
+                event_callback=event_callback,
+                cancellation=cancellation,
+                observability=observability,
+                run_id=run_id,
+            ),
         )
 
     def _save_checkpoint_with_event(
