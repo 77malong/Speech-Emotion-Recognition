@@ -13,6 +13,7 @@ from safetensors.torch import load_file
 
 from ser_lib._version import __version__
 from ser_lib.artifacts.manifest import ModelArtifactManifest
+from ser_lib.artifacts.migrations import validate_artifact_manifest_version
 from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
@@ -21,7 +22,6 @@ from ser_lib.foundation.events import (
     ProgressEvent,
 )
 from ser_lib.foundation.errors import OperationCancelled
-from ser_lib.core.migrations import validate_schema_version
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator, build_collator
 from ser_lib.data.config import DataConfig
@@ -94,7 +94,7 @@ def _read_manifest(source: Path) -> ModelArtifactManifest:
         if not isinstance(raw, dict):
             raise ValueError("artifact manifest 顶层必须是映射")
         raw.setdefault("schema_version", 1)
-        validate_schema_version("artifact_manifest", raw, supported_versions=(1, 2))
+        validate_artifact_manifest_version(raw, supported_versions=(1, 2))
         return ModelArtifactManifest.model_validate(raw)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(
