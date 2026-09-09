@@ -13,16 +13,16 @@ from typing import Any
 
 from safetensors.torch import save_file
 
-from ser_lib import __version__
+from ser_lib._version import __version__
 from ser_lib.artifacts.manifest import ModelArtifactManifest, ModelCard
-from ser_lib.core.events import (
+from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
     EventContext,
     LifecycleEvent,
     ProgressEvent,
 )
-from ser_lib.core.exceptions import OperationCancelled
+from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.data.config import DataConfig
 from ser_lib.models.base import SERModel
 from ser_lib.models.registry import model_registry

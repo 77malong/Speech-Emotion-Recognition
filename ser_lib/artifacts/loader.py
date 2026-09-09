@@ -11,16 +11,16 @@ from pathlib import Path
 import torch
 from safetensors.torch import load_file
 
-from ser_lib import __version__
+from ser_lib._version import __version__
 from ser_lib.artifacts.manifest import ModelArtifactManifest
-from ser_lib.core.events import (
+from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
     EventContext,
     LifecycleEvent,
     ProgressEvent,
 )
-from ser_lib.core.exceptions import OperationCancelled
+from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.core.migrations import validate_schema_version
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator, build_collator
@@ -93,8 +93,6 @@ def _read_manifest(source: Path) -> ModelArtifactManifest:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise ValueError("artifact manifest 顶层必须是映射")
-        # v1 是真实历史格式，不能伪造完整性字段升级成 v2；这里只集中做版本门禁，
-        # 然后继续交给当前 ModelArtifactManifest 的 legacy defaults/严格验证。
         raw.setdefault("schema_version", 1)
         validate_schema_version("artifact_manifest", raw, supported_versions=(1, 2))
         return ModelArtifactManifest.model_validate(raw)
@@ -175,7 +173,14 @@ def verify_model_artifact(
         if event_callback is not None:
             event_callback(event)
 
-    emit(LifecycleEvent("artifact_verify", "started", details={"directory": source}, context=context))
+    emit(
+        LifecycleEvent(
+            "artifact_verify",
+            "started",
+            details={"directory": source},
+            context=context,
+        )
+    )
 
     completed_bytes = 0
     files_completed = 0
@@ -194,7 +199,10 @@ def verify_model_artifact(
         else:
             file_entries = [(manifest.weights_file, manifest.weights_sha256)]
 
-        resolved = [(name, expected, _safe_component_path(source, name)) for name, expected in file_entries]
+        resolved = [
+            (name, expected, _safe_component_path(source, name))
+            for name, expected in file_entries
+        ]
         total_bytes = sum(path.stat().st_size for _, _, path in resolved)
         emit(
             ProgressEvent(
@@ -202,7 +210,11 @@ def verify_model_artifact(
                 completed=0,
                 total=total_bytes,
                 message="ready",
-                details={"files_completed": 0, "files_total": len(resolved), "bytes_total": total_bytes},
+                details={
+                    "files_completed": 0,
+                    "files_total": len(resolved),
+                    "bytes_total": total_bytes,
+                },
                 context=context,
             )
         )
@@ -232,7 +244,11 @@ def verify_model_artifact(
                     )
                 )
 
-            actual = _sha256_with_progress(path, cancellation=cancellation, on_chunk=on_chunk)
+            actual = _sha256_with_progress(
+                path,
+                cancellation=cancellation,
+                on_chunk=on_chunk,
+            )
             if actual != expected:
                 if name == manifest.weights_file:
                     raise ValueError("模型权重 SHA-256 校验失败，文件可能损坏或被修改")
@@ -243,7 +259,11 @@ def verify_model_artifact(
             LifecycleEvent(
                 "artifact_verify",
                 "completed",
-                details={"directory": source, "bytes_verified": completed_bytes, "files_verified": files_completed},
+                details={
+                    "directory": source,
+                    "bytes_verified": completed_bytes,
+                    "files_verified": files_completed,
+                },
                 context=context,
             )
         )
@@ -253,7 +273,11 @@ def verify_model_artifact(
             LifecycleEvent(
                 "artifact_verify",
                 "cancelled",
-                details={"directory": source, "bytes_verified": completed_bytes, "files_verified": files_completed},
+                details={
+                    "directory": source,
+                    "bytes_verified": completed_bytes,
+                    "files_verified": files_completed,
+                },
                 context=context,
             )
         )

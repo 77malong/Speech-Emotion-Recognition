@@ -62,3 +62,47 @@
 ## 建议提交
 
 `refactor(core): split foundation and domain events`
+
+## 实施记录（2026-09-09）
+
+本阶段开始前重新读取并以以下两份文件作为直接依据：
+
+- 设计依据：`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`
+- 证据依据：`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
+
+同时先复核 Stage 01。`1022a329` 的第一次 CI 暴露了测试自身把
+`ModelRegistry.descriptor()` 的 `dict` 返回误当成对象的问题；修复提交
+`9c2bf8c9f727b10ea115c735d09d61b0c9678281` 对应 CI #214 已通过，随后才开始本阶段生产代码迁移。
+
+本阶段实现：
+
+- 新增 `ser_lib/foundation/`：
+  - `errors.py`：稳定根异常与 error code；
+  - `diagnostics.py`：结构化 Diagnostic，去除 Web/UI 专属措辞；
+  - `events.py`：Progress/Metric/Log/Lifecycle、EventContext、取消协议与共享事件序列；
+  - `logging.py`：显式库日志 helper。
+- `CheckpointEvent` 的实现归 `ser_lib/engine/events.py`；
+  `PredictionEvent` 的实现归 `ser_lib/inference/events.py`。两个领域事件继续复用
+  foundation 的 schema、JSON helper 和全局 sequence，避免事件排序语义变化。
+- foundation 的 `LibraryEvent` 只表达通用事件；callback 使用结构化 `EventLike`
+  协议接受领域事件，foundation 不反向 import engine/inference。
+- 新增 `ser_lib/_version.py`；artifact exporter/loader 直接从该模块取版本，不再
+  `from ser_lib import __version__`。
+- 根 `ser_lib/__init__.py` 保留原 0.2.x `__all__` 顺序和名称，但改为惰性导出。
+  这是满足 `import ser_lib.foundation` 不加载 torch/models/engine/inference 的必要条件，
+  不是 Stage 12 的公开 API 收缩。
+- `ser_lib/core/{exceptions,diagnostics,logging,events}.py` 与 `ser_lib.core` 保留为
+  0.2.x 兼容 shim；旧名称仍解析到同一个新实现对象。shim 明确标记在 Stage 05 前删除。
+  config、migration registry、`_catalog_scan.py` 本阶段保持原位。
+- coverage 门禁新增 `ser_lib/foundation/ >= 85%`；Stage 01 快照测试改为验证旧门槛
+  不得降低，同时允许本阶段新增 package 门槛。
+- 新增 `tests/test_foundation_boundaries.py`，锁定：
+  - foundation 无领域反向 import；
+  - 轻量导入不加载 torch/models/engine/inference；
+  - legacy core alias 与新实现对象 identity；
+  - domain event 所属模块；
+  - common/domain event 共用全局 sequence；
+  - artifact 版本来源不再回引根包。
+
+本阶段不迁移 config/migrations，不删除整个 `core/`，也不修改事件字段、schema version、
+error code 或持久化格式。CI 结果以本阶段 exact HEAD 的 GitHub Actions 为准，不在提交前预判。

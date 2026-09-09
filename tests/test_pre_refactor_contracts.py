@@ -99,7 +99,9 @@ def test_audio_settings_round_trip_unknown_field_and_config_relative_path(tmp_pa
 
 def test_pre_refactor_coverage_thresholds_and_ci_matrix_are_recorded():
     snapshot = _snapshot()
-    assert DEFAULT_THRESHOLDS == snapshot["coverage_thresholds"]
+    for prefix, minimum in snapshot["coverage_thresholds"].items():
+        assert DEFAULT_THRESHOLDS[prefix] == minimum
+    assert DEFAULT_THRESHOLDS["ser_lib/foundation/"] == 85.0
 
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

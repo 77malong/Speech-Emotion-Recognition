@@ -1,4 +1,12 @@
-"""SER 基础库的轻量公共基础设施。"""
+"""SER 基础库的 0.2.x 兼容入口。
+
+通用基础设施已迁移到 ``ser_lib.foundation``；配置与 migration 仍将在后续阶段迁移。
+"""
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 from ser_lib.core.config import (
     StrictConfig,
@@ -7,28 +15,18 @@ from ser_lib.core.config import (
     require_schema_version,
     resolve_config_path,
 )
-from ser_lib.core.diagnostics import Diagnostic, DiagnosticSeverity
 from ser_lib.core.events import (
     EVENT_SCHEMA_VERSION,
     CancellationCheck,
     CancellationToken,
-    CheckpointEvent,
     EventCallback,
     EventContext,
     LibraryEvent,
     LifecycleEvent,
     LogEvent,
     MetricEvent,
-    PredictionEvent,
     ProgressEvent,
 )
-from ser_lib.core.exceptions import (
-    ConfigurationError,
-    OperationCancelled,
-    SchemaMigrationError,
-    SERError,
-)
-from ser_lib.core.logging import configure_library_logging, get_logger
 from ser_lib.core.migrations import (
     MigrationFunction,
     MigrationRegistry,
@@ -38,6 +36,26 @@ from ser_lib.core.migrations import (
     register_schema_migration,
     validate_schema_version,
 )
+from ser_lib.foundation.diagnostics import Diagnostic, DiagnosticSeverity
+from ser_lib.foundation.errors import (
+    ConfigurationError,
+    OperationCancelled,
+    SchemaMigrationError,
+    SERError,
+)
+from ser_lib.foundation.logging import configure_library_logging, get_logger
+
+
+def __getattr__(name: str) -> Any:
+    if name == "CheckpointEvent":
+        value = getattr(importlib.import_module("ser_lib.engine.events"), name)
+    elif name == "PredictionEvent":
+        value = getattr(importlib.import_module("ser_lib.inference.events"), name)
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "SERError", "ConfigurationError", "SchemaMigrationError", "OperationCancelled",

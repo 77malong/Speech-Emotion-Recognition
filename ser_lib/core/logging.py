@@ -1,33 +1,12 @@
-"""不会擅自配置宿主应用 root logger 的日志工具。"""
+"""兼容入口：日志 helper 已迁移到 :mod:`ser_lib.foundation.logging`。
 
-from __future__ import annotations
+该 shim 仅用于 0.2.x 过渡，计划在 Stage 05 删除。
+"""
 
-import logging
-from typing import TextIO
+from ser_lib.foundation.logging import (
+    LOGGER_NAME,
+    configure_library_logging,
+    get_logger,
+)
 
-
-LOGGER_NAME = "ser_lib"
-
-
-def get_logger(name: str | None = None) -> logging.Logger:
-    """获取库命名空间下的 logger。"""
-    if not name:
-        return logging.getLogger(LOGGER_NAME)
-    return logging.getLogger(name if name.startswith(f"{LOGGER_NAME}.") else f"{LOGGER_NAME}.{name}")
-
-
-def configure_library_logging(
-    level: int | str = logging.INFO,
-    *,
-    stream: TextIO | None = None,
-) -> logging.Handler:
-    """显式为 ``ser_lib`` 安装一个 handler，并返回它供调用方移除。
-
-    重复调用不会清除调用方已经安装的 handler，也不会修改 root logger。
-    """
-    handler = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    logger = logging.getLogger(LOGGER_NAME)
-    logger.setLevel(level)
-    logger.addHandler(handler)
-    return handler
+__all__ = ["LOGGER_NAME", "get_logger", "configure_library_logging"]
