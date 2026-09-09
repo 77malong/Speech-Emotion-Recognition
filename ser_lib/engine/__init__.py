@@ -16,6 +16,7 @@ from ser_lib.engine.config import (
     build_experiment_components,
     load_experiment_config,
 )
+from ser_lib.engine.eta import EtaEstimator, EtaSnapshot
 from ser_lib.engine.evaluation_catalog import (
     EvaluationRunCatalog,
     EvaluationRunScanFailure,
@@ -98,6 +99,7 @@ from ser_lib.engine.validation import ExperimentValidationResult, validate_exper
 __all__ = [
     "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
     "ExperimentComponents", "load_experiment_config", "build_experiment_components",
+    "EtaSnapshot", "EtaEstimator",
     "PresetStatus", "ExperimentPresetInfo", "ExperimentPresetCatalog",
     "list_experiment_presets", "get_experiment_preset", "build_experiment_config",
     "ExperimentValidationResult", "validate_experiment",

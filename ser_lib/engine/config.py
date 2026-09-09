@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from ser_lib.core.config import StrictConfig, load_versioned_config
 from ser_lib.data.config import DataConfig
@@ -27,10 +27,18 @@ class ModelConfig(StrictConfig):
 
 
 class ObservabilityConfig(StrictConfig):
-    """训练运行时事件频率；不属于影响实验结果的训练超参数。"""
+    """训练运行时事件频率与轻量 ETA 参数。"""
 
     progress_interval_batches: int = Field(default=1, ge=1)
     metric_interval_batches: int = Field(default=10, ge=1)
+    eta_window_batches: int = Field(default=20, ge=1)
+    eta_warmup_batches: int = Field(default=3, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_eta_window(self) -> "ObservabilityConfig":
+        if self.eta_warmup_batches > self.eta_window_batches:
+            raise ValueError("eta_warmup_batches 不能大于 eta_window_batches")
+        return self
 
 
 class TrainerConfig(StrictConfig):
