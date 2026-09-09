@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ser_lib.artifacts.migrations import validate_artifact_manifest_version
 from ser_lib.config.migrations import (
     MigrationFunction,
     MigrationRegistry,
@@ -15,8 +14,6 @@ from ser_lib.config.migrations import (
     register_config_migration,
     validate_schema_version as validate_config_schema_version,
 )
-from ser_lib.data.migrations import migrate_data_payload
-from ser_lib.engine.migrations import migrate_engine_payload
 
 _DATA_DOMAINS = frozenset({"dataset_manifest", "dataset_revision"})
 _ENGINE_DOMAINS = frozenset({"training_run", "evaluation_run"})
@@ -43,8 +40,15 @@ def migrate_schema_payload(
     target_version: int,
 ) -> dict[str, Any]:
     if domain in _DATA_DOMAINS:
+        # 兼容层必须惰性导入领域包；顶层 import 会触发 data.__init__，
+        # 而旧 data 持久化模块在 Stage 05 过渡期仍可能导入 core.migrations。
+        from ser_lib.data.migrations import migrate_data_payload
+
         return migrate_data_payload(domain, payload, target_version=target_version)
     if domain in _ENGINE_DOMAINS:
+        # 同上，避免 core.migrations <-> engine.__init__ 的过渡期循环依赖。
+        from ser_lib.engine.migrations import migrate_engine_payload
+
         return migrate_engine_payload(domain, payload, target_version=target_version)
     return migrate_config_payload(domain, payload, target_version=target_version)
 
@@ -56,6 +60,10 @@ def validate_schema_version(
     supported_versions: set[int] | frozenset[int] | tuple[int, ...],
 ) -> int:
     if domain == "artifact_manifest":
+        # artifacts.__init__ 会加载 loader/manifest；保持惰性导入，直到旧 core
+        # 兼容层在 Stage 05 末尾被整体删除。
+        from ser_lib.artifacts.migrations import validate_artifact_manifest_version
+
         return validate_artifact_manifest_version(
             payload,
             supported_versions=supported_versions,
