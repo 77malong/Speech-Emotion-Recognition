@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.engine.evaluator import EvaluationResult
 
 EVALUATION_RUN_SCHEMA_VERSION = 1
@@ -216,6 +217,12 @@ class EvaluationRunInfo:
         directory: Path | str | None = None,
     ) -> "EvaluationRunInfo":
         payload = dict(value)
+        payload.setdefault("schema_version", EVALUATION_RUN_SCHEMA_VERSION)
+        payload = migrate_schema_payload(
+            "evaluation_run",
+            payload,
+            target_version=EVALUATION_RUN_SCHEMA_VERSION,
+        )
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
         record = _EvaluationRunRecordModel.model_validate(payload)
