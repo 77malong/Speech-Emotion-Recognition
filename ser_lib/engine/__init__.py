@@ -63,6 +63,7 @@ from ser_lib.engine.runs import (
     scan_training_runs,
     write_training_run_info,
 )
+from ser_lib.engine.training_history import TrainingHistoryInfo, load_training_history
 from ser_lib.engine.trainer import (
     EpochResult,
     Trainer,
@@ -79,7 +80,7 @@ __all__ = [
     "TrainingRunMetadata", "build_training_run_metadata",
     "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunScanFailure",
     "TrainingRunCatalog", "write_training_run_info", "load_training_run_info",
-    "scan_training_runs",
+    "scan_training_runs", "TrainingHistoryInfo", "load_training_history",
     "EVALUATION_RUN_SCHEMA_VERSION", "EvaluationRunMetadata", "EvaluationRunInfo",
     "build_evaluation_run_metadata", "write_evaluation_run_info",
     "load_evaluation_run_info", "EvaluationRunScanFailure", "EvaluationRunCatalog",

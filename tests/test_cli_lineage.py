@@ -14,6 +14,7 @@ from ser_lib.cli.workflows import (
     export_checkpoint_artifact,
     train_experiment,
 )
+from ser_lib.services import TrainingService
 
 
 def _write_wav(path: Path, frequency: float) -> None:
@@ -88,6 +89,11 @@ output_dir: run
     assert len(saved_run["dataset_fingerprint"]) == 64
     assert saved_run["model_id"] == "cnn_baseline"
     assert saved_run["status"] == "completed"
+
+    history = TrainingService.inspect_history(Path(result["output_dir"]))
+    assert history.epoch_count == 1
+    assert history.epochs[0].epoch == 1
+    assert history.epochs[0].sample_count == 2
 
     checkpoint = Path(result["last_checkpoint"])
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)

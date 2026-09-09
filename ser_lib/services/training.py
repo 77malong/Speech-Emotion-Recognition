@@ -17,6 +17,7 @@ from ser_lib.engine.runs import (
     scan_training_runs,
     write_training_run_info,
 )
+from ser_lib.engine.training_history import TrainingHistoryInfo, load_training_history
 from ser_lib.engine.trainer import EpochResult, Trainer, TrainingResult
 from ser_lib.engine.validation import ExperimentValidationResult, validate_experiment
 from ser_lib.models.base import SERModel
@@ -158,6 +159,10 @@ class TrainingService:
     @staticmethod
     def inspect_run(path: Path | str) -> TrainingRunInfo:
         return load_training_run_info(path)
+
+    @staticmethod
+    def inspect_history(path: Path | str) -> TrainingHistoryInfo:
+        return load_training_history(path)
 
     @staticmethod
     def scan_runs(
