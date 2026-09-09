@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from ser_lib.config.importers import CasiaImportConfig, DEFAULT_AUDIO_EXTENSIONS
+from ser_lib.config.importers import CasiaImportConfig
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
