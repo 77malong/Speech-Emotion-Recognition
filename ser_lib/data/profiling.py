@@ -6,9 +6,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
 from ser_lib.data.audio import probe_audio
 from ser_lib.data.manifest import DatasetManifest
+from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 
 @dataclass(frozen=True, slots=True)
