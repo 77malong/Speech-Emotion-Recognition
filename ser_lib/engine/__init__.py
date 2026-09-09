@@ -17,6 +17,7 @@ from ser_lib.engine.evaluator import (
     evaluate,
     write_evaluation_report,
 )
+from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.engine.optim import (
     AdamConfig,
     AdamWConfig,
@@ -47,6 +48,7 @@ __all__ = [
     "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
     "ExperimentComponents", "load_experiment_config", "build_experiment_components",
     "ExperimentValidationResult", "validate_experiment",
+    "TrainingRunMetadata", "build_training_run_metadata",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",

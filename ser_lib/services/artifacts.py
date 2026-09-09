@@ -21,6 +21,7 @@ from ser_lib.artifacts import (
 )
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.config import DataConfig
+from ser_lib.engine.lineage import TrainingRunMetadata
 from ser_lib.models.base import SERModel
 
 
@@ -74,11 +75,21 @@ class ArtifactService:
         model_params: Mapping[str, Any] | None = None,
         metrics: Mapping[str, float] | None = None,
         metadata: Mapping[str, Any] | None = None,
+        source_run: TrainingRunMetadata | None = None,
         model_card: ModelCard | Mapping[str, Any] | None = None,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
         event_context: EventContext | None = None,
     ) -> Path:
+        resolved_metadata = dict(metadata or {})
+        if source_run is not None:
+            resolved_metadata.setdefault("source_run_id", source_run.run_id)
+            if source_run.dataset_id is not None:
+                resolved_metadata.setdefault("dataset_id", source_run.dataset_id)
+            if source_run.dataset_fingerprint is not None:
+                resolved_metadata.setdefault(
+                    "dataset_fingerprint", source_run.dataset_fingerprint
+                )
         return export_model_artifact(
             directory,
             model,
@@ -87,7 +98,7 @@ class ArtifactService:
             data_config=data_config,
             labels=labels,
             metrics=metrics,
-            metadata=metadata,
+            metadata=resolved_metadata or None,
             model_card=model_card,
             event_callback=event_callback,
             cancellation=cancellation,
