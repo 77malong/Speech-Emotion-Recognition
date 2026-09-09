@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from ser_lib.core.config import StrictConfig
+from ser_lib.config.base import StrictConfig
 
 
 class ModelCard(StrictConfig):
