@@ -21,6 +21,7 @@ from ser_lib.core.events import (
     ProgressEvent,
 )
 from ser_lib.core.exceptions import OperationCancelled
+from ser_lib.core.migrations import validate_schema_version
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator, build_collator
 from ser_lib.data.config import DataConfig
@@ -54,7 +55,6 @@ def _sha256_with_progress(
     cancellation: CancellationCheck | None = None,
     on_chunk: Callable[[int], None] | None = None,
 ) -> str:
-    """按 1 MiB chunk 计算 SHA256，并允许在 chunk 边界取消/上报进度。"""
     digest = hashlib.sha256()
     with path.open("rb") as source:
         while True:
@@ -90,10 +90,15 @@ def _read_manifest(source: Path) -> ModelArtifactManifest:
     if not manifest_path.is_file():
         raise FileNotFoundError(f"artifact manifest 不存在: {manifest_path}")
     try:
-        return ModelArtifactManifest.model_validate_json(
-            manifest_path.read_text(encoding="utf-8")
-        )
-    except (OSError, UnicodeError, ValueError) as exc:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("artifact manifest 顶层必须是映射")
+        # v1 是真实历史格式，不能伪造完整性字段升级成 v2；这里只集中做版本门禁，
+        # 然后继续交给当前 ModelArtifactManifest 的 legacy defaults/严格验证。
+        raw.setdefault("schema_version", 1)
+        validate_schema_version("artifact_manifest", raw, supported_versions=(1, 2))
+        return ModelArtifactManifest.model_validate(raw)
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(
             f"artifact manifest 无法读取或校验失败: {manifest_path}"
         ) from exc
@@ -132,12 +137,7 @@ def _validate_external_metadata(source: Path, manifest: ModelArtifactManifest) -
 
 
 def inspect_model_artifact(directory: Path | str) -> ModelArtifactManifest:
-    """快速检查 artifact 结构和轻量 metadata，不计算任何文件 SHA256。
-
-    该入口用于模型列表与详情页首屏：只读取 ``manifest.json`` 和小型 metadata，
-    并检查 manifest 声明的组成文件是否存在。权重即使数 GB 也不会被完整读取。
-    用户明确执行完整性验证时再调用 :func:`verify_model_artifact`。
-    """
+    """快速检查 artifact 结构和轻量 metadata，不计算任何文件 SHA256。"""
     source = Path(directory)
     manifest = _read_manifest(source)
     _validate_manifest_compatibility(manifest)
@@ -167,12 +167,7 @@ def verify_model_artifact(
     cancellation: CancellationCheck | None = None,
     event_context: EventContext | None = None,
 ) -> ModelArtifactManifest:
-    """完整校验全部 SHA256，并以读取字节数暴露进度。
-
-    ``inspect_model_artifact()`` 仍保持轻量；只有该函数会读取完整组成文件。
-    当可获取文件大小时 ``ProgressEvent.total`` 为待 hash 的总字节数，Web 可以
-    直接展示真实百分比。取消在每个 1 MiB chunk 边界检查。
-    """
+    """完整校验全部 SHA256，并以读取字节数暴露进度。"""
     source = Path(directory)
     context = event_context or EventContext()
 
@@ -180,14 +175,7 @@ def verify_model_artifact(
         if event_callback is not None:
             event_callback(event)
 
-    emit(
-        LifecycleEvent(
-            "artifact_verify",
-            "started",
-            details={"directory": source},
-            context=context,
-        )
-    )
+    emit(LifecycleEvent("artifact_verify", "started", details={"directory": source}, context=context))
 
     completed_bytes = 0
     files_completed = 0
@@ -206,10 +194,7 @@ def verify_model_artifact(
         else:
             file_entries = [(manifest.weights_file, manifest.weights_sha256)]
 
-        resolved = [
-            (name, expected, _safe_component_path(source, name))
-            for name, expected in file_entries
-        ]
+        resolved = [(name, expected, _safe_component_path(source, name)) for name, expected in file_entries]
         total_bytes = sum(path.stat().st_size for _, _, path in resolved)
         emit(
             ProgressEvent(
@@ -217,11 +202,7 @@ def verify_model_artifact(
                 completed=0,
                 total=total_bytes,
                 message="ready",
-                details={
-                    "files_completed": 0,
-                    "files_total": len(resolved),
-                    "bytes_total": total_bytes,
-                },
+                details={"files_completed": 0, "files_total": len(resolved), "bytes_total": total_bytes},
                 context=context,
             )
         )
@@ -251,16 +232,10 @@ def verify_model_artifact(
                     )
                 )
 
-            actual = _sha256_with_progress(
-                path,
-                cancellation=cancellation,
-                on_chunk=on_chunk,
-            )
+            actual = _sha256_with_progress(path, cancellation=cancellation, on_chunk=on_chunk)
             if actual != expected:
                 if name == manifest.weights_file:
-                    raise ValueError(
-                        "模型权重 SHA-256 校验失败，文件可能损坏或被修改"
-                    )
+                    raise ValueError("模型权重 SHA-256 校验失败，文件可能损坏或被修改")
                 raise ValueError(f"artifact 文件 SHA-256 校验失败: {name}")
             files_completed += 1
 
@@ -268,11 +243,7 @@ def verify_model_artifact(
             LifecycleEvent(
                 "artifact_verify",
                 "completed",
-                details={
-                    "directory": source,
-                    "bytes_verified": completed_bytes,
-                    "files_verified": files_completed,
-                },
+                details={"directory": source, "bytes_verified": completed_bytes, "files_verified": files_completed},
                 context=context,
             )
         )
@@ -282,11 +253,7 @@ def verify_model_artifact(
             LifecycleEvent(
                 "artifact_verify",
                 "cancelled",
-                details={
-                    "directory": source,
-                    "bytes_verified": completed_bytes,
-                    "files_verified": files_completed,
-                },
+                details={"directory": source, "bytes_verified": completed_bytes, "files_verified": files_completed},
                 context=context,
             )
         )
@@ -339,8 +306,7 @@ def load_model_artifact(
         state = torch.load(weights, map_location="cpu", weights_only=True)
     else:
         raise ValueError(
-            "旧 PyTorch artifact 可能包含 pickle；"
-            "仅可信文件可设置 allow_legacy_pickle=True"
+            "旧 PyTorch artifact 可能包含 pickle；仅可信文件可设置 allow_legacy_pickle=True"
         )
     if not isinstance(state, dict) or not all(
         isinstance(key, str) and isinstance(value, torch.Tensor)
