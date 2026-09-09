@@ -8,7 +8,7 @@ from typing import Any, TypeVar
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from ser_lib.core.exceptions import ConfigurationError
+from ser_lib.core.exceptions import ConfigurationError, SchemaMigrationError
 
 
 class StrictConfig(BaseModel):
@@ -66,10 +66,39 @@ def load_versioned_config(
     model: type[ConfigT],
     *,
     supported_versions: set[int] | frozenset[int] | tuple[int, ...] = (1,),
+    schema_domain: str | None = None,
+    target_version: int | None = None,
 ) -> ConfigT:
-    """读取版本化 YAML 并用给定 Pydantic 模型执行严格校验。"""
+    """读取版本化 YAML，按需迁移后用当前 Pydantic 模型严格校验。
+
+    ``schema_domain`` 未提供时保持旧行为，仅校验 ``supported_versions``。
+    提供 domain 时执行 read-time migration，不回写源文件；migration 错误仍通过
+    ``ConfigurationError.code`` 保留稳定的机器可读原因。
+    """
     raw, source = load_yaml_mapping(path)
-    require_schema_version(raw, supported=supported_versions, source=source)
+    if schema_domain is None:
+        require_schema_version(raw, supported=supported_versions, source=source)
+    else:
+        from ser_lib.core.migrations import migrate_schema_payload
+
+        resolved_target = target_version
+        if resolved_target is None:
+            versions = frozenset(supported_versions)
+            if not versions:
+                raise ValueError("supported_versions 不能为空")
+            resolved_target = max(versions)
+        try:
+            raw = migrate_schema_payload(
+                schema_domain,
+                raw,
+                target_version=resolved_target,
+            )
+        except SchemaMigrationError as exc:
+            raise ConfigurationError(
+                f"配置 schema 迁移失败: {source}: {exc}",
+                code=exc.code,
+                details={**exc.details, "source": source.as_posix()},
+            ) from exc
     try:
         return model.model_validate(raw)
     except ValidationError as exc:
