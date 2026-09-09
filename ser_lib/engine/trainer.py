@@ -8,7 +8,6 @@ from typing import cast
 
 import torch
 
-from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.engine._trainer_core import (
     EpochResult,
     ObservabilityConfig,
@@ -22,6 +21,7 @@ from ser_lib.engine._trainer_core import (
 from ser_lib.engine.config import ExperimentConfig
 from ser_lib.engine.lineage import TrainingRunMetadata
 from ser_lib.engine.optim import AdamWConfig, build_optimizer
+from ser_lib.foundation.events import CancellationCheck, EventCallback
 from ser_lib.models.base import SERModel
 
 
