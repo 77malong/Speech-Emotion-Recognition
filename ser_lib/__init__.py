@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-from ser_lib._version import __version__
+from ser_lib._version import __version__ as __version__
 
 _MODULE_EXPORTS: dict[str, tuple[str, ...]] = {
     "ser_lib.foundation": ("Diagnostic", "DiagnosticSeverity"),

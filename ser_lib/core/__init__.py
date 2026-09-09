@@ -45,6 +45,9 @@ from ser_lib.foundation.errors import (
 )
 from ser_lib.foundation.logging import configure_library_logging, get_logger
 
+CheckpointEvent: Any
+PredictionEvent: Any
+
 
 def __getattr__(name: str) -> Any:
     if name == "CheckpointEvent":

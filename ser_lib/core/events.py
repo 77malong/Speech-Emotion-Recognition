@@ -25,6 +25,11 @@ from ser_lib.foundation.events import (
 # foundation 反向 import engine/inference 即可继续被旧 callback 注解接受。
 LibraryEvent = EventLike
 
+# Annotation-only 声明让静态工具识别惰性导出；运行时没有创建绑定，
+# 所以 getattr/import 仍会进入 __getattr__，不会提前加载领域包。
+CheckpointEvent: Any
+PredictionEvent: Any
+
 
 def __getattr__(name: str) -> Any:
     if name == "CheckpointEvent":
