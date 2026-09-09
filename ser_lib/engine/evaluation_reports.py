@@ -1,4 +1,4 @@
-"""已落盘评估报告的轻量检查接口。"""
+"""已落盘评估报告的轻量检查与预测分页查询接口。"""
 
 from __future__ import annotations
 
@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from ser_lib.engine.evaluator import ClassMetrics
+from ser_lib.core.events import CancellationCheck
+from ser_lib.engine.evaluator import ClassMetrics, PredictionRecord
 
 
 class _ClassMetricsModel(BaseModel):
@@ -59,6 +60,27 @@ class _EvaluationMetricsModel(BaseModel):
         return self
 
 
+class _PredictionRecordModel(BaseModel):
+    """``predictions.jsonl`` 单行的严格 schema。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    uid: str = Field(min_length=1)
+    target: int = Field(ge=0)
+    predicted: int = Field(ge=0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    probabilities: list[float] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def _validate_probabilities(self) -> "_PredictionRecordModel":
+        if any(value < 0.0 or value > 1.0 for value in self.probabilities):
+            raise ValueError("probabilities 必须位于 [0, 1]")
+        classes = len(self.probabilities)
+        if self.target >= classes or self.predicted >= classes:
+            raise ValueError("target/predicted 必须落在 probabilities 类别范围内")
+        return self
+
+
 @dataclass(frozen=True, slots=True)
 class EvaluationReportInfo:
     """无需读取预测明细即可展示的评估报告信息。"""
@@ -100,6 +122,35 @@ class EvaluationReportInfo:
             "per_class": [metric.to_dict() for metric in self.per_class],
             "predictions_file": self.predictions_file,
             "predictions_bytes": self.predictions_bytes,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EvaluationPredictionPage:
+    """对 ``predictions.jsonl`` 的一次有界内存分页查询结果。"""
+
+    source_file: str
+    offset: int
+    limit: int
+    matched_count: int
+    records: tuple[PredictionRecord, ...]
+    has_more: bool
+    next_offset: int | None
+
+    @property
+    def returned_count(self) -> int:
+        return len(self.records)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source_file": self.source_file,
+            "offset": self.offset,
+            "limit": self.limit,
+            "matched_count": self.matched_count,
+            "returned_count": self.returned_count,
+            "has_more": self.has_more,
+            "next_offset": self.next_offset,
+            "records": [record.to_dict() for record in self.records],
         }
 
 
@@ -149,4 +200,84 @@ def inspect_evaluation_report(directory: Path | str) -> EvaluationReportInfo:
     )
 
 
-__all__ = ["EvaluationReportInfo", "inspect_evaluation_report"]
+def query_evaluation_predictions(
+    directory: Path | str,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+    incorrect_only: bool = False,
+    target: int | None = None,
+    predicted: int | None = None,
+    cancellation: CancellationCheck | None = None,
+) -> EvaluationPredictionPage:
+    """顺序扫描预测 JSONL，并按过滤后的结果执行 offset/limit 分页。
+
+    整个文件只扫描一次，内存中最多保留 ``limit`` 条记录。``matched_count`` 是
+    满足过滤条件的总记录数，因此调用方无需再次扫描即可渲染分页信息。
+    """
+    if offset < 0:
+        raise ValueError("offset 必须 >= 0")
+    if limit < 1 or limit > 1000:
+        raise ValueError("limit 必须位于 [1, 1000]")
+    if target is not None and target < 0:
+        raise ValueError("target 必须 >= 0")
+    if predicted is not None and predicted < 0:
+        raise ValueError("predicted 必须 >= 0")
+
+    predictions_path = Path(directory) / "predictions.jsonl"
+    if not predictions_path.is_file():
+        raise FileNotFoundError(f"评估 predictions.jsonl 不存在: {predictions_path}")
+
+    records: list[PredictionRecord] = []
+    matched_count = 0
+    with predictions_path.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            if not line.strip():
+                raise ValueError(f"predictions.jsonl 第 {line_number} 行为空")
+            try:
+                raw = json.loads(line)
+                item = _PredictionRecordModel.model_validate(raw)
+            except (json.JSONDecodeError, ValidationError) as exc:
+                raise ValueError(
+                    f"predictions.jsonl 第 {line_number} 行无效: {exc}"
+                ) from exc
+
+            if incorrect_only and item.target == item.predicted:
+                continue
+            if target is not None and item.target != target:
+                continue
+            if predicted is not None and item.predicted != predicted:
+                continue
+
+            if matched_count >= offset and len(records) < limit:
+                records.append(
+                    PredictionRecord(
+                        uid=item.uid,
+                        target=item.target,
+                        predicted=item.predicted,
+                        confidence=item.confidence,
+                        probabilities=tuple(item.probabilities),
+                    )
+                )
+            matched_count += 1
+
+    has_more = matched_count > offset + len(records)
+    return EvaluationPredictionPage(
+        source_file=predictions_path.as_posix(),
+        offset=offset,
+        limit=limit,
+        matched_count=matched_count,
+        records=tuple(records),
+        has_more=has_more,
+        next_offset=offset + len(records) if has_more else None,
+    )
+
+
+__all__ = [
+    "EvaluationReportInfo",
+    "EvaluationPredictionPage",
+    "inspect_evaluation_report",
+    "query_evaluation_predictions",
+]

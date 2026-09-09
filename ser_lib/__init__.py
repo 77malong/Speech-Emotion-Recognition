@@ -25,6 +25,7 @@ from ser_lib.artifacts import (
 )
 from ser_lib.engine import (
     RUN_RECORD_SCHEMA_VERSION,
+    EvaluationPredictionPage,
     EvaluationReportInfo,
     ExperimentConfig,
     ExperimentValidationResult,
@@ -43,6 +44,7 @@ from ser_lib.engine import (
     evaluate,
     inspect_evaluation_report,
     load_training_run_info,
+    query_evaluation_predictions,
     scan_training_runs,
     validate_experiment,
     write_evaluation_report,
@@ -105,7 +107,8 @@ __all__ = [
     "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunScanFailure",
     "TrainingRunCatalog", "write_training_run_info", "load_training_run_info",
     "scan_training_runs",
-    "EvaluationReportInfo", "inspect_evaluation_report",
+    "EvaluationReportInfo", "EvaluationPredictionPage",
+    "inspect_evaluation_report", "query_evaluation_predictions",
     "evaluate", "write_evaluation_report",
     "ExperimentConfig", "ExperimentValidationResult", "validate_experiment",
     "ModelConfig", "build_experiment_components",

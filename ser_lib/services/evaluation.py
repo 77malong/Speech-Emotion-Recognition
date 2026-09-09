@@ -9,7 +9,12 @@ import torch
 
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.types import SERBatch
-from ser_lib.engine.evaluation_reports import EvaluationReportInfo, inspect_evaluation_report
+from ser_lib.engine.evaluation_reports import (
+    EvaluationPredictionPage,
+    EvaluationReportInfo,
+    inspect_evaluation_report,
+    query_evaluation_predictions,
+)
 from ser_lib.engine.evaluator import (
     EvaluationResult,
     PredictionSink,
@@ -20,7 +25,7 @@ from ser_lib.models.base import SERModel
 
 
 class EvaluationService:
-    """统一 standalone/Web evaluation 的运行、落盘与轻量检查入口。"""
+    """统一 standalone/Web evaluation 的运行、落盘与查询入口。"""
 
     @staticmethod
     def run(
@@ -60,6 +65,27 @@ class EvaluationService:
     @staticmethod
     def inspect_report(directory: Path | str) -> EvaluationReportInfo:
         return inspect_evaluation_report(directory)
+
+    @staticmethod
+    def query_predictions(
+        directory: Path | str,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+        incorrect_only: bool = False,
+        target: int | None = None,
+        predicted: int | None = None,
+        cancellation: CancellationCheck | None = None,
+    ) -> EvaluationPredictionPage:
+        return query_evaluation_predictions(
+            directory,
+            offset=offset,
+            limit=limit,
+            incorrect_only=incorrect_only,
+            target=target,
+            predicted=predicted,
+            cancellation=cancellation,
+        )
 
 
 __all__ = ["EvaluationService"]

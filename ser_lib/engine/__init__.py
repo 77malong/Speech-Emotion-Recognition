@@ -8,7 +8,12 @@ from ser_lib.engine.config import (
     build_experiment_components,
     load_experiment_config,
 )
-from ser_lib.engine.evaluation_reports import EvaluationReportInfo, inspect_evaluation_report
+from ser_lib.engine.evaluation_reports import (
+    EvaluationPredictionPage,
+    EvaluationReportInfo,
+    inspect_evaluation_report,
+    query_evaluation_predictions,
+)
 from ser_lib.engine.evaluator import (
     ClassMetrics,
     EvaluationResult,
@@ -69,7 +74,8 @@ __all__ = [
     "LossConfig", "SamplingConfig", "ClassificationLoss", "build_weighted_sampler",
     "Trainer", "EpochResult", "TrainingResult", "TrainingStatus", "seed_everything",
     "ClassMetrics", "PredictionRecord", "PredictionSink", "JsonlPredictionSink",
-    "EvaluationResult", "EvaluationReportInfo", "inspect_evaluation_report",
+    "EvaluationResult", "EvaluationReportInfo", "EvaluationPredictionPage",
+    "inspect_evaluation_report", "query_evaluation_predictions",
     "evaluate", "write_evaluation_report",
     "save_checkpoint", "load_checkpoint",
 ]
