@@ -1,11 +1,4 @@
-"""JSONL importer：校验标准或近似标准 manifest（设计文档 §6.3 #3）。
-
-近似标准（legacy）记录兼容规则：
-- 缺少 ``uid`` 时用 ``{uid_prefix}-{index:06d}`` 确定性生成；
-- ``start_time_ms`` / ``end_time_ms`` 映射为 ``start_ms`` / ``end_ms``；
-- ``sample_rate`` / ``sr`` 映射为 ``sample_rate_hint``；
-- 其余未识别字段原样保留进 ``metadata``。
-"""
+"""JSONL importer：校验标准或近似标准 manifest。"""
 
 from __future__ import annotations
 
@@ -15,16 +8,16 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.errors import ManifestError
-from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
+from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest, parse_record, write_jsonl
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
 STANDARD_FIELDS = frozenset(
-    {"uid", "audio_path", "label", "start_ms", "end_ms", "speaker_id",
-     "sample_rate_hint", "metadata"}
+    {"uid", "audio_path", "label", "start_ms", "end_ms", "speaker_id", "sample_rate_hint", "metadata"}
 )
 LEGACY_ALIASES = {
     "start_time_ms": "start_ms",
@@ -35,17 +28,12 @@ LEGACY_ALIASES = {
 
 
 class JsonlImportConfig(BaseModel):
-    """jsonl importer 参数。"""
-
     model_config = ConfigDict(extra="forbid")
     uid_prefix: str = Field(default="audio", min_length=1)
     root: Path | None = None
 
 
-def normalize_raw_record(
-    raw: Mapping[str, Any], *, index: int, uid_prefix: str
-) -> dict[str, Any]:
-    """把标准或近似标准记录规范化为标准字段结构。"""
+def normalize_raw_record(raw: Mapping[str, Any], *, index: int, uid_prefix: str) -> dict[str, Any]:
     entry: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
     for key, value in raw.items():
@@ -70,10 +58,7 @@ def normalize_raw_record(
     return entry
 
 
-def normalize_raw_records(
-    raw_records: list[Mapping[str, Any]], *, uid_prefix: str
-) -> list[AudioRecord]:
-    """规范化整批记录并构造 AudioRecord（供兼容层复用）。"""
+def normalize_raw_records(raw_records: list[Mapping[str, Any]], *, uid_prefix: str) -> list[AudioRecord]:
     records: list[AudioRecord] = []
     seen_uids: set[str] = set()
     for index, raw in enumerate(raw_records):
@@ -87,8 +72,6 @@ def normalize_raw_records(
 
 
 class JsonlImporter:
-    """校验并导入标准/近似标准 JSONL manifest。"""
-
     descriptor = ComponentDescriptor(
         id="jsonl",
         display_name="JSONL 导入",
@@ -127,10 +110,27 @@ class JsonlImporter:
                     try:
                         raw = json.loads(line.strip())
                     except json.JSONDecodeError as exc:
-                        preview.issues.append(
-                            ImportIssue(
-                                entry_index=len(raw_records), path=source, stage="scan",
-                                message=f"JSON 解析失败 (第 {line_number} 行): {exc.msg}",
+                        preview.diagnostics.append(
+                            Diagnostic(
+                                "error",
+                                "import_json_parse_error",
+                                f"JSON 解析失败 (第 {line_number} 行): {exc.msg}",
+                                stage="scan",
+                                path=source,
+                                details={"entry_index": len(raw_records), "line_number": line_number},
+                            )
+                        )
+                        raw_records.append({})
+                        continue
+                    if not isinstance(raw, dict):
+                        preview.diagnostics.append(
+                            Diagnostic(
+                                "error",
+                                "import_json_record_invalid",
+                                f"JSONL 第 {line_number} 行顶层必须是对象",
+                                stage="scan",
+                                path=source,
+                                details={"entry_index": len(raw_records), "line_number": line_number},
                             )
                         )
                         raw_records.append({})
@@ -141,7 +141,7 @@ class JsonlImporter:
                         index + 1,
                         total,
                         message=f"line {line_number}",
-                        details={"phase": "parse", "issues": len(preview.issues)},
+                        details={"phase": "parse", "errors": preview.error_count, "diagnostics": len(preview.diagnostics)},
                     )
 
             for index, raw in enumerate(raw_records):
@@ -152,10 +152,14 @@ class JsonlImporter:
                 try:
                     record = parse_record(entry, source=source, line_number=index + 1)
                 except ManifestError as exc:
-                    preview.issues.append(
-                        ImportIssue(
-                            entry_index=index, path=source, stage="validate",
-                            message=str(exc),
+                    preview.diagnostics.append(
+                        Diagnostic(
+                            "error",
+                            "import_record_invalid",
+                            str(exc),
+                            stage="validate",
+                            path=source,
+                            details={"entry_index": index},
                         )
                     )
                     continue
@@ -163,8 +167,9 @@ class JsonlImporter:
 
             task.update_details(
                 records=len(preview.records),
-                issues=len(preview.issues),
-                warnings=len(preview.warnings),
+                errors=preview.error_count,
+                warnings=preview.warning_count,
+                diagnostics=len(preview.diagnostics),
                 entries=total,
             )
             return preview
@@ -192,18 +197,12 @@ class JsonlImporter:
             event_context=event_context,
         ) as task:
             destination.mkdir(parents=True, exist_ok=True)
-            preview = self.scan(
-                source,
-                config,
-                event_callback=event_callback,
-                cancellation=cancellation,
-                event_context=event_context,
-            )
+            preview = self.scan(source, config, event_callback=event_callback, cancellation=cancellation, event_context=event_context)
             task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
             if not preview.ok:
-                issues = "; ".join(str(i) for i in preview.issues[:10])
-                raise ValueError(f"扫描发现 {len(preview.issues)} 个错误，取消导入: {issues}")
-
+                raise ValueError(
+                    f"扫描发现 {preview.error_count} 个错误，取消导入: {preview.format_errors()}"
+                )
             root = cfg.root if cfg.root is not None else source.resolve().parent
             task.check()
             write_jsonl(preview.records, destination / "manifest.jsonl")
@@ -221,19 +220,14 @@ class JsonlImporter:
             )
             task.progress(3, 3, message="dataset manifest written")
             result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(records=len(preview.records), issues=len(preview.issues))
+            task.update_details(records=len(preview.records), errors=preview.error_count, diagnostics=len(preview.diagnostics))
             return result
 
 
 def _simple_yaml(doc: Mapping[str, Any]) -> str:
     import yaml
+
     return yaml.safe_dump(dict(doc), allow_unicode=True, sort_keys=False)
 
 
-__all__ = [
-    "JsonlImportConfig",
-    "JsonlImporter",
-    "normalize_raw_record",
-    "normalize_raw_records",
-    "STANDARD_FIELDS",
-]
+__all__ = ["JsonlImportConfig", "JsonlImporter", "normalize_raw_record", "normalize_raw_records", "STANDARD_FIELDS"]

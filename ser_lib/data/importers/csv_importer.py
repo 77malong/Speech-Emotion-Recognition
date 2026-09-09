@@ -1,4 +1,4 @@
-"""CSV importer：映射音频路径列、标签列与可选元数据列（设计文档 §6.3 #2）。"""
+"""CSV importer：映射音频路径列、标签列与可选元数据列。"""
 
 from __future__ import annotations
 
@@ -8,18 +8,16 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
-from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
+from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest, write_jsonl
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
 
 class CsvImportConfig(BaseModel):
-    """csv importer 参数。"""
-
     model_config = ConfigDict(extra="forbid")
-
     audio_path_column: str = Field(default="audio_path", min_length=1)
     label_column: str | None = Field(default="label")
     label_mapping: dict[str, int] | None = None
@@ -33,8 +31,6 @@ class CsvImportConfig(BaseModel):
 
 
 class CsvImporter:
-    """从 CSV/TSV 导入。"""
-
     descriptor = ComponentDescriptor(
         id="csv",
         display_name="CSV 导入",
@@ -66,30 +62,30 @@ class CsvImporter:
             cancellation=cancellation,
             event_context=event_context,
         ) as task:
-            with open(source, "r", encoding=cfg.encoding, newline="") as f:
-                reader = csv.DictReader(f, delimiter=cfg.delimiter)
+            with open(source, "r", encoding=cfg.encoding, newline="") as stream:
+                reader = csv.DictReader(stream, delimiter=cfg.delimiter)
                 if reader.fieldnames is None:
-                    preview.issues.append(
-                        ImportIssue(entry_index=None, path=source, stage="scan",
-                                    message="CSV 为空或没有表头")
+                    preview.diagnostics.append(
+                        Diagnostic("error", "import_csv_header_missing", "CSV 为空或没有表头", stage="scan", path=source)
                     )
-                    task.update_details(records=0, issues=1, rows=0)
+                    task.update_details(records=0, errors=1, diagnostics=1, rows=0)
                     return preview
-
                 required = [cfg.audio_path_column]
                 if cfg.label_column:
                     required.append(cfg.label_column)
-                missing = [c for c in required if c not in reader.fieldnames]
+                missing = [column for column in required if column not in reader.fieldnames]
                 if missing:
-                    preview.issues.append(
-                        ImportIssue(
-                            entry_index=None, path=source, stage="scan",
-                            message=f"缺少必需列: {missing}，实际表头: {reader.fieldnames}",
+                    preview.diagnostics.append(
+                        Diagnostic(
+                            "error",
+                            "import_csv_columns_missing",
+                            f"缺少必需列: {missing}，实际表头: {reader.fieldnames}",
+                            stage="scan",
+                            path=source,
                         )
                     )
-                    task.update_details(records=0, issues=1, rows=0)
+                    task.update_details(records=0, errors=1, diagnostics=1, rows=0)
                     return preview
-
                 rows = list(reader)
 
             task.check()
@@ -103,9 +99,14 @@ class CsvImporter:
                 label_mapping = dict(cfg.label_mapping)
                 unknown = label_names - set(label_mapping)
                 if unknown:
-                    preview.issues.append(
-                        ImportIssue(entry_index=None, path=source, stage="scan",
-                                    message=f"以下标签值未在 label_mapping 中声明: {sorted(unknown)}")
+                    preview.diagnostics.append(
+                        Diagnostic(
+                            "error",
+                            "import_label_mapping_missing",
+                            f"以下标签值未在 label_mapping 中声明: {sorted(unknown)}",
+                            stage="scan",
+                            path=source,
+                        )
                     )
             elif label_names and all(_is_int(name) for name in label_names):
                 label_mapping = {name: int(name) for name in label_names}
@@ -118,9 +119,15 @@ class CsvImporter:
                 try:
                     path_value = (row.get(cfg.audio_path_column) or "").strip()
                     if not path_value:
-                        preview.issues.append(
-                            ImportIssue(entry_index=index, path=source, stage="validate",
-                                        message="音频路径为空，跳过该行")
+                        preview.diagnostics.append(
+                            Diagnostic(
+                                "error",
+                                "import_audio_path_missing",
+                                "音频路径为空，跳过该行",
+                                stage="validate",
+                                path=source,
+                                details={"entry_index": index},
+                            )
                         )
                         continue
                     audio_path = Path(path_value)
@@ -134,27 +141,28 @@ class CsvImporter:
                             if cfg.label_mapping is not None or not _is_int(raw_label):
                                 label = label_mapping.get(raw_label)
                                 if label is None:
-                                    preview.issues.append(
-                                        ImportIssue(
-                                            entry_index=index,
-                                            path=source,
+                                    preview.diagnostics.append(
+                                        Diagnostic(
+                                            "error",
+                                            "import_unknown_label",
+                                            f"未知标签值 '{raw_label}'，跳过该行",
                                             stage="validate",
-                                            message=f"未知标签值 '{raw_label}'，跳过该行",
+                                            path=source,
+                                            details={"entry_index": index},
                                         )
                                     )
                                     continue
                             else:
                                 label = int(raw_label)
 
-                    if cfg.uid_column and (row.get(cfg.uid_column) or "").strip():
-                        uid = row[cfg.uid_column].strip()
-                    else:
-                        uid = f"{cfg.uid_prefix}-{index:06d}"
-
+                    uid = (
+                        row[cfg.uid_column].strip()
+                        if cfg.uid_column and (row.get(cfg.uid_column) or "").strip()
+                        else f"{cfg.uid_prefix}-{index:06d}"
+                    )
                     speaker = None
                     if cfg.speaker_column and (row.get(cfg.speaker_column) or "").strip():
                         speaker = row[cfg.speaker_column].strip()
-
                     metadata = {
                         column: row[column]
                         for column in cfg.metadata_columns
@@ -176,15 +184,17 @@ class CsvImporter:
                         message=f"row {index + 1}",
                         details={
                             "records_discovered": len(preview.records),
-                            "issues": len(preview.issues),
+                            "errors": preview.error_count,
+                            "diagnostics": len(preview.diagnostics),
                         },
                     )
 
             preview.label_mapping = label_mapping
             task.update_details(
                 records=len(preview.records),
-                issues=len(preview.issues),
-                warnings=len(preview.warnings),
+                errors=preview.error_count,
+                warnings=preview.warning_count,
+                diagnostics=len(preview.diagnostics),
                 rows=total,
             )
             return preview
@@ -212,25 +222,19 @@ class CsvImporter:
             event_context=event_context,
         ) as task:
             destination.mkdir(parents=True, exist_ok=True)
-            preview = self.scan(
-                source,
-                config,
-                event_callback=event_callback,
-                cancellation=cancellation,
-                event_context=event_context,
-            )
+            preview = self.scan(source, config, event_callback=event_callback, cancellation=cancellation, event_context=event_context)
             task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
             if not preview.ok:
-                issues = "; ".join(str(i) for i in preview.issues[:10])
-                raise ValueError(f"扫描发现 {len(preview.issues)} 个错误，取消导入: {issues}")
-
+                raise ValueError(
+                    f"扫描发现 {preview.error_count} 个错误，取消导入: {preview.format_errors()}"
+                )
             task.check()
             write_jsonl(preview.records, destination / "manifest.jsonl")
             task.progress(2, 3, message="manifest written")
             root = cfg.root if cfg.root is not None else source.resolve().parent
             labels_yaml = {
                 str(label_id): {"en": name}
-                for name, label_id in sorted(preview.label_mapping.items(), key=lambda kv: kv[1])
+                for name, label_id in sorted(preview.label_mapping.items(), key=lambda item: item[1])
             }
             (destination / "dataset.yaml").write_text(
                 _simple_yaml(
@@ -246,7 +250,7 @@ class CsvImporter:
             )
             task.progress(3, 3, message="dataset manifest written")
             result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(records=len(preview.records), issues=len(preview.issues))
+            task.update_details(records=len(preview.records), errors=preview.error_count, diagnostics=len(preview.diagnostics))
             return result
 
 
