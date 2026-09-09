@@ -18,6 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
+from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.data.errors import DatasetEditConflictError, DatasetTransactionError
 from ser_lib.data.fingerprint import fingerprint_manifest
 from ser_lib.data.manifest import DatasetManifest
@@ -534,7 +535,14 @@ def _load_revision(path: Path | str) -> tuple[Path, _RevisionRecordModel]:
     raw = json.loads(record_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError("revision.json 顶层必须是映射")
-    return record_path.parent, _RevisionRecordModel.model_validate(raw)
+    payload = dict(raw)
+    payload.setdefault("schema_version", DATASET_REVISION_SCHEMA_VERSION)
+    payload = migrate_schema_payload(
+        "dataset_revision",
+        payload,
+        target_version=DATASET_REVISION_SCHEMA_VERSION,
+    )
+    return record_path.parent, _RevisionRecordModel.model_validate(payload)
 
 
 def _copy_hash(
