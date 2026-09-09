@@ -133,8 +133,14 @@ def build_experiment_components(
 
 
 def load_experiment_config(path: Path | str) -> ExperimentConfig:
-    """加载 schema v1 实验配置。相对输出路径基于配置文件目录。"""
-    config = load_versioned_config(path, ExperimentConfig, supported_versions={1})
+    """读取时迁移到当前 schema v1；相对输出路径基于配置文件目录。"""
+    config = load_versioned_config(
+        path,
+        ExperimentConfig,
+        supported_versions={1},
+        schema_domain="experiment_config",
+        target_version=1,
+    )
     source = Path(path).expanduser().resolve()
     updates: dict[str, Any] = {}
     if not config.output_dir.is_absolute():
