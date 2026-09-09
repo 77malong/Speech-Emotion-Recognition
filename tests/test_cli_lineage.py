@@ -9,7 +9,11 @@ from pathlib import Path
 import torch
 
 from ser_lib.artifacts import inspect_model_artifact
-from ser_lib.cli.workflows import export_checkpoint_artifact, train_experiment
+from ser_lib.cli.workflows import (
+    evaluate_artifact,
+    export_checkpoint_artifact,
+    train_experiment,
+)
 
 
 def _write_wav(path: Path, frequency: float) -> None:
@@ -92,13 +96,36 @@ output_dir: run
     assert checkpoint_lineage["dataset_id"] == "cli-lineage"
     assert checkpoint_lineage["dataset_fingerprint"] == result["dataset_fingerprint"]
 
-    exported = export_checkpoint_artifact(
-        config,
-        checkpoint,
-        tmp_path / "artifact",
-    )
-    manifest = inspect_model_artifact(tmp_path / "artifact")
+    artifact = tmp_path / "artifact"
+    exported = export_checkpoint_artifact(config, checkpoint, artifact)
+    artifact_manifest = inspect_model_artifact(artifact)
     assert exported["source_run_id"] == result["run_id"]
-    assert manifest.metadata["source_run_id"] == result["run_id"]
-    assert manifest.metadata["dataset_id"] == "cli-lineage"
-    assert manifest.metadata["dataset_fingerprint"] == result["dataset_fingerprint"]
+    assert artifact_manifest.metadata["source_run_id"] == result["run_id"]
+    assert artifact_manifest.metadata["dataset_id"] == "cli-lineage"
+    assert artifact_manifest.metadata["dataset_fingerprint"] == result["dataset_fingerprint"]
+
+    evaluation_dir = tmp_path / "evaluation"
+    evaluated = evaluate_artifact(
+        artifact,
+        manifest_path=tmp_path / "dataset.yaml",
+        split="train",
+        batch_size=2,
+        workers=0,
+        device="cpu",
+        output=evaluation_dir,
+    )
+    evaluation_record = Path(evaluated["evaluation_record"])
+    assert evaluation_record.is_file()
+    saved_evaluation = json.loads(evaluation_record.read_text(encoding="utf-8"))
+    assert evaluated["evaluation_id"].startswith("eval_")
+    assert saved_evaluation["evaluation_id"] == evaluated["evaluation_id"]
+    assert saved_evaluation["source_run_id"] == result["run_id"]
+    assert saved_evaluation["source_artifact"] == artifact.as_posix()
+    assert saved_evaluation["dataset_id"] == "cli-lineage"
+    assert saved_evaluation["dataset_fingerprint"] == result["dataset_fingerprint"]
+    assert saved_evaluation["model_name"] == "cnn_baseline"
+    assert saved_evaluation["split"] == "train"
+    assert saved_evaluation["sample_count"] == 2
+    assert saved_evaluation["metrics"]["accuracy"] == evaluated["accuracy"]
+    assert (evaluation_dir / "metrics.json").is_file()
+    assert (evaluation_dir / "predictions.jsonl").is_file()

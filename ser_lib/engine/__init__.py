@@ -14,6 +14,14 @@ from ser_lib.engine.evaluation_reports import (
     inspect_evaluation_report,
     query_evaluation_predictions,
 )
+from ser_lib.engine.evaluation_runs import (
+    EVALUATION_RUN_SCHEMA_VERSION,
+    EvaluationRunInfo,
+    EvaluationRunMetadata,
+    build_evaluation_run_metadata,
+    load_evaluation_run_info,
+    write_evaluation_run_info,
+)
 from ser_lib.engine.evaluator import (
     ClassMetrics,
     EvaluationResult,
@@ -67,6 +75,9 @@ __all__ = [
     "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunScanFailure",
     "TrainingRunCatalog", "write_training_run_info", "load_training_run_info",
     "scan_training_runs",
+    "EVALUATION_RUN_SCHEMA_VERSION", "EvaluationRunMetadata", "EvaluationRunInfo",
+    "build_evaluation_run_metadata", "write_evaluation_run_info",
+    "load_evaluation_run_info",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",

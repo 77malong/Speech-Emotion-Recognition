@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -16,22 +17,21 @@ from ser_lib.artifacts import (
     load_model_artifact,
     verify_model_artifact,
 )
+from ser_lib.core import EventContext
 from ser_lib.data import DatasetManifest, SERDataset, fingerprint_manifest
 from ser_lib.engine import (
     TrainingRunMetadata,
     build_experiment_components,
     build_weighted_sampler,
-    evaluate,
     load_checkpoint,
     load_experiment_config,
-    write_evaluation_report,
 )
 from ser_lib.inference import (
     BatchEmotionPredictor,
     EmotionPredictor,
     write_batch_predictions,
 )
-from ser_lib.services import ArtifactService, TrainingService
+from ser_lib.services import ArtifactService, EvaluationService, TrainingService
 
 
 def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
@@ -162,16 +162,50 @@ def evaluate_artifact(
 ) -> dict[str, Any]:
     loaded = load_model_artifact(artifact, map_location=device)
     manifest = DatasetManifest.load(manifest_path or loaded.manifest.preprocessing["manifest"])
+    dataset_fingerprint = fingerprint_manifest(manifest)
+    raw_source_run_id = loaded.manifest.metadata.get("source_run_id")
+    if raw_source_run_id is not None and (
+        not isinstance(raw_source_run_id, str) or not raw_source_run_id.strip()
+    ):
+        raise ValueError("artifact metadata.source_run_id 必须是非空字符串")
+    source_run_id = cast(str | None, raw_source_run_id)
+    run_metadata = EvaluationService.create_run_metadata(
+        source_artifact=artifact,
+        source_run_id=source_run_id,
+        dataset_id=manifest.meta.dataset_id,
+        dataset_fingerprint=dataset_fingerprint.digest,
+        model_name=loaded.manifest.model_name,
+        split=split,
+        device=device,
+    )
     batches = _loader(manifest, split, loaded, batch_size=batch_size, workers=workers)
-    result = evaluate(
+    started_at = datetime.now(timezone.utc)
+    result = EvaluationService.run(
         loaded.model,
         batches,
         num_classes=len(loaded.manifest.labels),
         device=device,
         labels=loaded.manifest.labels,
+        event_context=EventContext(run_id=run_metadata.evaluation_id, split=split),
     )
-    write_evaluation_report(output, result)
-    return {"output_dir": str(output), **result.summary_dict()}
+    finished_at = datetime.now(timezone.utc)
+    EvaluationService.write_report(output, result)
+    run_info = EvaluationService.save_run(
+        output,
+        run_metadata,
+        result,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    return {
+        "output_dir": str(output),
+        "evaluation_id": run_info.evaluation_id,
+        "evaluation_record": str(output / "evaluation.json"),
+        "source_run_id": run_info.source_run_id,
+        "dataset_id": run_info.dataset_id,
+        "dataset_fingerprint": run_info.dataset_fingerprint,
+        **result.summary_dict(),
+    }
 
 
 def predict_artifact(

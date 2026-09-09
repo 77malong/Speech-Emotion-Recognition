@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -15,6 +16,13 @@ from ser_lib.engine.evaluation_reports import (
     inspect_evaluation_report,
     query_evaluation_predictions,
 )
+from ser_lib.engine.evaluation_runs import (
+    EvaluationRunInfo,
+    EvaluationRunMetadata,
+    build_evaluation_run_metadata,
+    load_evaluation_run_info,
+    write_evaluation_run_info,
+)
 from ser_lib.engine.evaluator import (
     EvaluationResult,
     PredictionSink,
@@ -25,7 +33,35 @@ from ser_lib.models.base import SERModel
 
 
 class EvaluationService:
-    """统一 standalone/Web evaluation 的运行、落盘与查询入口。"""
+    """统一 standalone/Web evaluation 的运行、lineage、落盘与查询入口。"""
+
+    @staticmethod
+    def create_run_metadata(
+        *,
+        source_artifact: Path | str,
+        dataset_id: str,
+        model_name: str,
+        split: str,
+        device: str,
+        source_run_id: str | None = None,
+        dataset_fingerprint: str | None = None,
+        evaluation_id: str | None = None,
+        created_at: datetime | None = None,
+    ) -> EvaluationRunMetadata:
+        from ser_lib import __version__
+
+        return build_evaluation_run_metadata(
+            source_artifact=source_artifact,
+            source_run_id=source_run_id,
+            dataset_id=dataset_id,
+            dataset_fingerprint=dataset_fingerprint,
+            model_name=model_name,
+            split=split,
+            device=device,
+            library_version=__version__,
+            evaluation_id=evaluation_id,
+            created_at=created_at,
+        )
 
     @staticmethod
     def run(
@@ -61,6 +97,30 @@ class EvaluationService:
     @staticmethod
     def write_report(directory: Path | str, result: EvaluationResult) -> Path:
         return write_evaluation_report(directory, result)
+
+    @staticmethod
+    def save_run(
+        directory: Path | str,
+        metadata: EvaluationRunMetadata,
+        result: EvaluationResult,
+        *,
+        started_at: datetime,
+        finished_at: datetime,
+        predictions_file: str | None = "predictions.jsonl",
+    ) -> EvaluationRunInfo:
+        path = write_evaluation_run_info(
+            directory,
+            metadata,
+            result,
+            started_at=started_at,
+            finished_at=finished_at,
+            predictions_file=predictions_file,
+        )
+        return load_evaluation_run_info(path)
+
+    @staticmethod
+    def inspect_run(path: Path | str) -> EvaluationRunInfo:
+        return load_evaluation_run_info(path)
 
     @staticmethod
     def inspect_report(directory: Path | str) -> EvaluationReportInfo:
