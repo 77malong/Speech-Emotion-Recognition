@@ -154,8 +154,8 @@ def test_hf_registration_and_state_dict_key_shape_are_locked(monkeypatch):
 
     assert "hf_audio_classifier" in model_registry.names()
     descriptor = model_registry.descriptor("hf_audio_classifier")
-    assert descriptor.id == "hf_audio_classifier"
-    assert descriptor.status == "optional"
+    assert descriptor["id"] == "hf_audio_classifier"
+    assert descriptor["status"] == "optional"
     assert tuple(model.state_dict()) == (
         "encoder.projection.weight",
         "classifier.weight",
