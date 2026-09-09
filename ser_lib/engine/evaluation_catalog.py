@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ser_lib.core._catalog_scan import scan_catalog_candidates
-from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.engine.evaluation_runs import EvaluationRunInfo, load_evaluation_run_info
+from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 _EVALUATION_RECORD_NAME = "evaluation.json"
 
@@ -61,20 +60,39 @@ def scan_evaluation_runs(
     if not root_path.is_dir():
         raise NotADirectoryError(f"评估运行根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
-    runs, failures = scan_catalog_candidates(
-        candidates,
-        inspect_candidate=load_evaluation_run_info,
-        failure_factory=lambda directory, exc: EvaluationRunScanFailure(
-            directory=directory.as_posix(),
-            error_type=type(exc).__name__,
-            message=str(exc),
-        ),
-        stage="evaluation_run_catalog_scan",
-        candidate_detail_key="directory",
-        fail_fast=fail_fast,
-        event_callback=event_callback,
-        cancellation=cancellation,
-    )
+    runs: list[EvaluationRunInfo] = []
+    failures: list[EvaluationRunScanFailure] = []
+    total = len(candidates)
+
+    for index, directory in enumerate(candidates, start=1):
+        if cancellation is not None:
+            cancellation.raise_if_cancelled()
+        try:
+            runs.append(load_evaluation_run_info(directory))
+        except Exception as exc:
+            if fail_fast:
+                raise
+            failures.append(
+                EvaluationRunScanFailure(
+                    directory=directory.as_posix(),
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                )
+            )
+        if event_callback is not None:
+            event_callback(
+                ProgressEvent(
+                    stage="evaluation_run_catalog_scan",
+                    completed=index,
+                    total=total,
+                    details={
+                        "valid": len(runs),
+                        "failed": len(failures),
+                        "directory": directory,
+                    },
+                )
+            )
+
     runs.sort(key=lambda item: (item.created_at, item.evaluation_id), reverse=True)
     return EvaluationRunCatalog(
         root=root_path.as_posix(),

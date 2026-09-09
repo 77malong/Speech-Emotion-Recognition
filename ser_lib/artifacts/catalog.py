@@ -8,8 +8,7 @@ from typing import Any
 
 from ser_lib.artifacts.loader import inspect_model_artifact
 from ser_lib.artifacts.manifest import ModelArtifactManifest
-from ser_lib.core._catalog_scan import scan_catalog_candidates
-from ser_lib.core.events import CancellationCheck, EventCallback
+from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,25 +173,40 @@ def scan_model_artifacts(
     if not root_path.is_dir():
         raise NotADirectoryError(f"Artifact Catalog 根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
+    artifacts: list[ArtifactInfo] = []
+    failures: list[ArtifactScanFailure] = []
+    total = len(candidates)
 
-    def inspect_candidate(directory: Path) -> ArtifactInfo:
-        manifest = inspect_model_artifact(directory)
-        return _artifact_info(directory, manifest)
+    for index, directory in enumerate(candidates, start=1):
+        if cancellation is not None:
+            cancellation.raise_if_cancelled()
+        try:
+            manifest = inspect_model_artifact(directory)
+            artifacts.append(_artifact_info(directory, manifest))
+        except Exception as exc:
+            if fail_fast:
+                raise
+            failures.append(
+                ArtifactScanFailure(
+                    directory=directory.as_posix(),
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                )
+            )
+        if event_callback is not None:
+            event_callback(
+                ProgressEvent(
+                    stage="artifact_catalog_scan",
+                    completed=index,
+                    total=total,
+                    details={
+                        "valid": len(artifacts),
+                        "failed": len(failures),
+                        "directory": directory,
+                    },
+                )
+            )
 
-    artifacts, failures = scan_catalog_candidates(
-        candidates,
-        inspect_candidate=inspect_candidate,
-        failure_factory=lambda directory, exc: ArtifactScanFailure(
-            directory=directory.as_posix(),
-            error_type=type(exc).__name__,
-            message=str(exc),
-        ),
-        stage="artifact_catalog_scan",
-        candidate_detail_key="directory",
-        fail_fast=fail_fast,
-        event_callback=event_callback,
-        cancellation=cancellation,
-    )
     artifacts.sort(
         key=lambda item: (item.model_name.casefold(), item.artifact_id.casefold())
     )

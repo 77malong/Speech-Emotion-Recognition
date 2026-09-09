@@ -10,14 +10,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ser_lib.core._catalog_scan import scan_catalog_candidates
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback
-from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.engine.checkpoint_catalog import CheckpointCatalog
 from ser_lib.engine.lineage import TrainingRunMetadata
+from ser_lib.engine.migrations import migrate_engine_payload
 from ser_lib.engine.training_history import TrainingHistoryInfo
 from ser_lib.engine.trainer import TrainingResult, TrainingStatus
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 RUN_RECORD_SCHEMA_VERSION = 1
 _RUN_RECORD_NAME = "run.json"
@@ -146,7 +145,7 @@ class TrainingRunInfo:
             and not isinstance(version, bool)
             and version <= RUN_RECORD_SCHEMA_VERSION
         ):
-            payload = migrate_schema_payload(
+            payload = migrate_engine_payload(
                 "training_run",
                 payload,
                 target_version=RUN_RECORD_SCHEMA_VERSION,
@@ -262,20 +261,39 @@ def scan_training_runs(
     if not root_path.is_dir():
         raise NotADirectoryError(f"训练运行根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
-    runs, failures = scan_catalog_candidates(
-        candidates,
-        inspect_candidate=load_training_run_info,
-        failure_factory=lambda directory, exc: TrainingRunScanFailure(
-            directory=directory.as_posix(),
-            error_type=type(exc).__name__,
-            message=str(exc),
-        ),
-        stage="training_run_catalog_scan",
-        candidate_detail_key="directory",
-        fail_fast=fail_fast,
-        event_callback=event_callback,
-        cancellation=cancellation,
-    )
+    runs: list[TrainingRunInfo] = []
+    failures: list[TrainingRunScanFailure] = []
+    total = len(candidates)
+
+    for index, directory in enumerate(candidates, start=1):
+        if cancellation is not None:
+            cancellation.raise_if_cancelled()
+        try:
+            runs.append(load_training_run_info(directory))
+        except Exception as exc:
+            if fail_fast:
+                raise
+            failures.append(
+                TrainingRunScanFailure(
+                    directory=directory.as_posix(),
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                )
+            )
+        if event_callback is not None:
+            event_callback(
+                ProgressEvent(
+                    stage="training_run_catalog_scan",
+                    completed=index,
+                    total=total,
+                    details={
+                        "valid": len(runs),
+                        "failed": len(failures),
+                        "directory": directory,
+                    },
+                )
+            )
+
     runs.sort(key=lambda item: (item.created_at, item.run_id), reverse=True)
     return TrainingRunCatalog(
         root=root_path.as_posix(),
