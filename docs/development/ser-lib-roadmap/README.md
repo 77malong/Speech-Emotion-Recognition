@@ -20,20 +20,22 @@
 6. Linux / Windows / macOS 行为一致，Python 3.10 / 3.12 CI 均需通过。
 7. CLI 与 Service 不维护两套业务逻辑。
 
-## 3. 执行顺序
+## 3. 执行状态
 
-| 编号 | 任务 | 依赖 | 主要交付 |
+| 编号 | 任务 | 状态 | 主要交付 |
 |---|---|---|---|
-| 01 | Training Run Detail | 无 | `TrainingRunDetail`、`inspect_run_detail()` |
-| 02 | Evaluation Run Detail | 01 的设计约定 | `EvaluationRunDetail`、`inspect_run_detail()` |
-| 03 | Experiment Presets | 01-02 可并行后接 | Preset Catalog/Resolver，最终生成 `ExperimentConfig` |
-| 04 | Schema Migration | 03 | 通用 migration framework + 当前 schema 接入 |
-| 05 | CPU / RAM Runtime Metrics | 无硬依赖 | process/system CPU/RAM snapshot |
-| 06 | ETA Estimator v2 | 无硬依赖 | 平滑 ETA、阶段 ETA |
-| 07 | Public API Audit | 01-06 | 公开符号、DTO 序列化、命名统一 |
-| 08 | Service API Audit | 01-07 | Service 覆盖常见领域工作流 |
-| 09 | Docs & Examples Sync | 01-08 | API 文档、示例、迁移说明同步 |
-| 10 | Final CI & Merge Readiness | 01-09 | 全量质量门禁、feature→main review |
+| 01 | Training Run Detail | ✅ 已完成 | `TrainingRunDetail`、`TrainingService.inspect_run_detail()` |
+| 02 | Evaluation Run Detail | ✅ 已完成 | `EvaluationRunDetail`、`EvaluationService.inspect_run_detail()` |
+| 03 | Experiment Presets | ✅ 已完成 | Preset Catalog/Resolver，最终生成 `ExperimentConfig` |
+| 04 | Schema Migration | ✅ 已完成 | migration framework + Config/Dataset/Run/Evaluation/Revision 接入 + Artifact v1/v2 版本门禁 |
+| 05 | CPU / RAM Runtime Metrics | ✅ 已完成 | process/system CPU/RAM snapshot |
+| 06 | ETA Estimator v2 | ✅ 已完成 | recent-window 平滑 ETA、warmup、train/validation 独立 phase |
+| 07 | Public API Audit | ✅ 已完成 | 公开符号、DTO 序列化、命名与导出契约测试 |
+| 08 | Service API Audit | ✅ 已完成 | Service 覆盖常见领域工作流，Preset 通过 `CatalogService` 暴露 |
+| 09 | Docs & Examples Sync | ✅ 已完成 | API 文档、service-first 示例、迁移说明同步 |
+| 10 | Final CI & Merge Readiness | 🔄 最终门禁 | `MERGE_READINESS.md` 已完成 diff review；等待 exact HEAD 全矩阵 CI 全绿 |
+
+完整 merge-readiness 结论见：[`MERGE_READINESS.md`](./MERGE_READINESS.md)。
 
 ## 4. 文档读取/开发规则
 
@@ -62,3 +64,5 @@
 - `pip check`、`compileall`、`pytest`、training smoke、Ruff、mypy、coverage 全通过；
 - Ubuntu / Windows / macOS，Python 3.10 / 3.12 CI 全绿；
 - 完成 feature → main 总体 diff review 后再决定合并。
+
+当前仅第 10 项的 exact-HEAD CI 结果需要最终确认；不以旧 commit 的绿色结果替代当前 HEAD。
