@@ -10,8 +10,9 @@ from pydantic import BaseModel, ConfigDict
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
 from ser_lib.data.importers.base import ImportPreview, ImportTask
-from ser_lib.data.manifest import DatasetManifest, ManifestMeta
+from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
@@ -124,7 +125,6 @@ class CsemotionsImporter:
             raise FileNotFoundError(f"CSEMOTIONS metadata 不存在: {metadata_path}")
         if not audio_root.is_dir():
             raise NotADirectoryError(f"CSEMOTIONS 音频目录不存在: {audio_root}")
-
         preview = ImportPreview(importer_id=self.descriptor.id)
         mapping = dict(cfg.label_mapping or CSEMOTIONS_LABELS)
         seen_uids: set[str] = set()
@@ -143,17 +143,14 @@ class CsemotionsImporter:
                 if missing:
                     preview.diagnostics.append(
                         Diagnostic(
-                            "error",
-                            "csemotions_header_invalid",
+                            "error", "csemotions_header_invalid",
                             f"metadata 缺少列: {sorted(missing)}",
-                            stage="header",
-                            path=metadata_path,
+                            stage="header", path=metadata_path,
                         )
                     )
                     task.update_details(records=0, errors=1, diagnostics=1, rows=0)
                     return preview
                 rows = list(reader)
-
             total = len(rows)
             for offset, row in enumerate(rows):
                 task.check()
@@ -167,24 +164,17 @@ class CsemotionsImporter:
                     if not file_name or not speaker or emotion not in mapping:
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "csemotions_row_invalid",
+                                "error", "csemotions_row_invalid",
                                 f"非法 file_name/speaker/emotion: {file_name!r}/{speaker!r}/{emotion!r}",
-                                stage="row",
-                                path=metadata_path,
-                                details={"entry_index": index},
+                                stage="row", path=metadata_path, details={"entry_index": index},
                             )
                         )
                         continue
                     if not resolved_audio.is_file():
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "csemotions_audio_missing",
-                                "metadata 对应音频不存在",
-                                stage="audio",
-                                path=resolved_audio,
-                                details={"entry_index": index},
+                                "error", "csemotions_audio_missing", "metadata 对应音频不存在",
+                                stage="audio", path=resolved_audio, details={"entry_index": index},
                             )
                         )
                         continue
@@ -192,12 +182,8 @@ class CsemotionsImporter:
                     if uid in seen_uids:
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "csemotions_uid_duplicate",
-                                f"UID 重复: {uid}",
-                                stage="uid",
-                                path=metadata_path,
-                                details={"entry_index": index},
+                                "error", "csemotions_uid_duplicate", f"UID 重复: {uid}",
+                                stage="uid", path=metadata_path, details={"entry_index": index},
                             )
                         )
                         continue
@@ -209,12 +195,9 @@ class CsemotionsImporter:
                     except (TypeError, ValueError):
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "csemotions_duration_invalid",
+                                "error", "csemotions_duration_invalid",
                                 f"非法 duration_sec: {row['duration_sec']!r}",
-                                stage="duration",
-                                path=metadata_path,
-                                details={"entry_index": index},
+                                stage="duration", path=metadata_path, details={"entry_index": index},
                             )
                         )
                         continue
@@ -235,9 +218,7 @@ class CsemotionsImporter:
                     )
                 finally:
                     task.progress(
-                        offset + 1,
-                        total,
-                        message=f"row {index}",
+                        offset + 1, total, message=f"row {index}",
                         details={
                             "records_discovered": len(preview.records),
                             "errors": preview.error_count,
@@ -246,11 +227,8 @@ class CsemotionsImporter:
                     )
             preview.label_mapping = mapping
             task.update_details(
-                records=len(preview.records),
-                errors=preview.error_count,
-                warnings=preview.warning_count,
-                diagnostics=len(preview.diagnostics),
-                rows=total,
+                records=len(preview.records), errors=preview.error_count,
+                warnings=preview.warning_count, diagnostics=len(preview.diagnostics), rows=total,
             )
             return preview
 
@@ -267,50 +245,48 @@ class CsemotionsImporter:
         cfg = CsemotionsImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        with ImportTask(
-            self.descriptor.id,
-            "convert",
-            source=source,
-            destination=destination,
-            event_callback=event_callback,
-            cancellation=cancellation,
-            event_context=event_context,
-        ) as task:
-            preview = self.scan(source, config, event_callback=event_callback, cancellation=cancellation, event_context=event_context)
-            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
-            if not preview.ok or not preview.records:
-                raise ValueError(f"CSEMOTIONS 扫描失败: {preview.format_errors() or '没有记录'}")
+
+        def build(preview: ImportPreview, task: ImportTask):
             speakers = {record.speaker_id for record in preview.records if record.speaker_id}
             split_speakers = _validate_speaker_splits(cfg.speaker_splits, speakers)
-            speaker_to_split = {speaker: split for split, members in split_speakers.items() for speaker in members}
-            task.progress(2, 3, message="speaker splits resolved")
-            task.check()
-            destination.mkdir(parents=True, exist_ok=True)
-            meta = ManifestMeta(
-                dataset_id="csemotions",
-                root=source,
-                yaml_path=destination / "dataset.yaml",
-                splits={name: destination / f"{name}.jsonl" for name in split_speakers},
-                labels={
-                    label: {"en": emotion, "zh": CSEMOTIONS_ZH.get(emotion, emotion)}
-                    for emotion, label in preview.label_mapping.items()
-                },
-            )
-            record_splits = {
+            speaker_to_split = {
+                speaker: split for split, members in split_speakers.items() for speaker in members
+            }
+            assignments = {
                 record.uid: speaker_to_split[record.speaker_id]
                 for record in preview.records
                 if record.speaker_id is not None
             }
-            DatasetManifest(meta, preview.records, record_splits).write()
-            task.progress(3, 3, message="dataset manifest written")
-            result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(
-                records=len(preview.records),
-                errors=preview.error_count,
-                diagnostics=len(preview.diagnostics),
-                splits={name: len(members) for name, members in split_speakers.items()},
+            task.progress(2, 3, message="speaker splits resolved")
+            result = write_partitioned_manifest(
+                destination=destination,
+                dataset_id="csemotions",
+                root=source,
+                split_names=tuple(split_speakers),
+                labels={
+                    label: {"en": emotion, "zh": CSEMOTIONS_ZH.get(emotion, emotion)}
+                    for emotion, label in preview.label_mapping.items()
+                },
+                records=preview.records,
+                assignments=assignments,
+                task=task,
             )
-            return result
+            return result, {"splits": {name: len(members) for name, members in split_speakers.items()}}
+
+        return run_manifest_conversion(
+            importer_id=self.descriptor.id,
+            scan=self.scan,
+            source=source,
+            destination=destination,
+            config=config,
+            build_manifest=build,
+            failure_message=lambda preview: (
+                f"CSEMOTIONS 扫描失败: {preview.format_errors() or '没有记录'}"
+            ),
+            event_callback=event_callback,
+            cancellation=cancellation,
+            event_context=event_context,
+        )
 
 
 __all__ = ["CSEMOTIONS_LABELS", "CSEMOTIONS_ZH", "CsemotionsImportConfig", "CsemotionsImporter"]

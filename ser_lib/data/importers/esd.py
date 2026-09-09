@@ -9,9 +9,10 @@ from pydantic import BaseModel, ConfigDict
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
 from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.importers.csemotions import _automatic_speaker_splits, _validate_speaker_splits
-from ser_lib.data.manifest import DatasetManifest, ManifestMeta
+from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
@@ -63,12 +64,8 @@ def _transcripts(path: Path, encoding: str) -> tuple[dict[str, str], list[Diagno
         if len(fields) < 2 or not fields[0].strip():
             diagnostics.append(
                 Diagnostic(
-                    "error",
-                    "esd_transcript_row_invalid",
-                    "文本行不是制表符分隔格式",
-                    stage="transcript",
-                    path=path,
-                    details={"entry_index": line_number},
+                    "error", "esd_transcript_row_invalid", "文本行不是制表符分隔格式",
+                    stage="transcript", path=path, details={"entry_index": line_number},
                 )
             )
             continue
@@ -76,12 +73,8 @@ def _transcripts(path: Path, encoding: str) -> tuple[dict[str, str], list[Diagno
         if uid in result:
             diagnostics.append(
                 Diagnostic(
-                    "error",
-                    "esd_transcript_uid_duplicate",
-                    f"文本 UID 重复: {uid}",
-                    stage="transcript",
-                    path=path,
-                    details={"entry_index": line_number},
+                    "error", "esd_transcript_uid_duplicate", f"文本 UID 重复: {uid}",
+                    stage="transcript", path=path, details={"entry_index": line_number},
                 )
             )
             continue
@@ -115,7 +108,6 @@ class EsdImporter:
         mapping = dict(cfg.label_mapping or ESD_LABELS)
         selected_languages = set(cfg.languages)
         seen: set[str] = set()
-
         with ImportTask(
             self.descriptor.id,
             "scan",
@@ -132,11 +124,9 @@ class EsdImporter:
                 if language is None:
                     preview.diagnostics.append(
                         Diagnostic(
-                            "warning",
-                            "esd_unknown_speaker_directory",
+                            "warning", "esd_unknown_speaker_directory",
                             f"忽略非 ESD 说话人目录: {speaker_dir}",
-                            stage="scan",
-                            path=speaker_dir,
+                            stage="scan", path=speaker_dir,
                         )
                     )
                     continue
@@ -150,17 +140,13 @@ class EsdImporter:
                     if not emotion_dir.is_dir():
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "esd_emotion_directory_missing",
-                                f"缺少情感目录: {emotion}",
-                                stage="directory",
-                                path=emotion_dir,
+                                "error", "esd_emotion_directory_missing",
+                                f"缺少情感目录: {emotion}", stage="directory", path=emotion_dir,
                             )
                         )
                         continue
                     for audio in sorted(emotion_dir.glob("*.wav")):
                         candidates.append((speaker, language, label, emotion, texts, audio))
-
             total = len(candidates)
             for index, (speaker, language, label, emotion, texts, audio) in enumerate(candidates):
                 task.check()
@@ -175,11 +161,8 @@ class EsdImporter:
                     if not uid.startswith(f"{speaker}_"):
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "esd_filename_speaker_mismatch",
-                                "文件名说话人前缀与目录不一致",
-                                stage="filename",
-                                path=audio,
+                                "error", "esd_filename_speaker_mismatch",
+                                "文件名说话人前缀与目录不一致", stage="filename", path=audio,
                             )
                         )
                         continue
@@ -187,11 +170,8 @@ class EsdImporter:
                     if text is None:
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "esd_transcript_entry_missing",
-                                "音频在文本文件中没有转写",
-                                stage="transcript",
-                                path=audio,
+                                "error", "esd_transcript_entry_missing",
+                                "音频在文本文件中没有转写", stage="transcript", path=audio,
                             )
                         )
                         continue
@@ -206,9 +186,7 @@ class EsdImporter:
                     )
                 finally:
                     task.progress(
-                        index + 1,
-                        total,
-                        message=audio.name,
+                        index + 1, total, message=audio.name,
                         details={
                             "records_discovered": len(preview.records),
                             "errors": preview.error_count,
@@ -221,11 +199,8 @@ class EsdImporter:
                     Diagnostic("error", "esd_no_audio", "未发现符合条件的 ESD WAV", stage="scan", path=source)
                 )
             task.update_details(
-                records=len(preview.records),
-                errors=preview.error_count,
-                warnings=preview.warning_count,
-                diagnostics=len(preview.diagnostics),
-                candidates=total,
+                records=len(preview.records), errors=preview.error_count,
+                warnings=preview.warning_count, diagnostics=len(preview.diagnostics), candidates=total,
             )
             return preview
 
@@ -242,50 +217,46 @@ class EsdImporter:
         cfg = EsdImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        with ImportTask(
-            self.descriptor.id,
-            "convert",
-            source=source,
-            destination=destination,
-            event_callback=event_callback,
-            cancellation=cancellation,
-            event_context=event_context,
-        ) as task:
-            preview = self.scan(source, config, event_callback=event_callback, cancellation=cancellation, event_context=event_context)
-            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
-            if not preview.ok or not preview.records:
-                raise ValueError(f"ESD 扫描失败: {preview.format_errors() or '没有记录'}")
+
+        def build(preview: ImportPreview, task: ImportTask):
             speakers = {record.speaker_id for record in preview.records if record.speaker_id}
             split_speakers = _speaker_splits(cfg.speaker_splits, speakers)
-            speaker_to_split = {speaker: split for split, members in split_speakers.items() for speaker in members}
-            task.progress(2, 3, message="speaker splits resolved")
-            task.check()
-            destination.mkdir(parents=True, exist_ok=True)
-            meta = ManifestMeta(
-                dataset_id="esd",
-                root=source,
-                yaml_path=destination / "dataset.yaml",
-                splits={name: destination / f"{name}.jsonl" for name in split_speakers},
-                labels={
-                    label: {"en": emotion.casefold(), "zh": ESD_ZH.get(emotion, emotion)}
-                    for emotion, label in preview.label_mapping.items()
-                },
-            )
+            speaker_to_split = {
+                speaker: split for split, members in split_speakers.items() for speaker in members
+            }
             assignments = {
                 record.uid: speaker_to_split[record.speaker_id]
                 for record in preview.records
                 if record.speaker_id
             }
-            DatasetManifest(meta, preview.records, assignments).write()
-            task.progress(3, 3, message="dataset manifest written")
-            result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(
-                records=len(preview.records),
-                errors=preview.error_count,
-                diagnostics=len(preview.diagnostics),
-                splits={name: len(members) for name, members in split_speakers.items()},
+            task.progress(2, 3, message="speaker splits resolved")
+            result = write_partitioned_manifest(
+                destination=destination,
+                dataset_id="esd",
+                root=source,
+                split_names=tuple(split_speakers),
+                labels={
+                    label: {"en": emotion.casefold(), "zh": ESD_ZH.get(emotion, emotion)}
+                    for emotion, label in preview.label_mapping.items()
+                },
+                records=preview.records,
+                assignments=assignments,
+                task=task,
             )
-            return result
+            return result, {"splits": {name: len(members) for name, members in split_speakers.items()}}
+
+        return run_manifest_conversion(
+            importer_id=self.descriptor.id,
+            scan=self.scan,
+            source=source,
+            destination=destination,
+            config=config,
+            build_manifest=build,
+            failure_message=lambda preview: f"ESD 扫描失败: {preview.format_errors() or '没有记录'}",
+            event_callback=event_callback,
+            cancellation=cancellation,
+            event_context=event_context,
+        )
 
 
 __all__ = ["ESD_LABELS", "ESD_ZH", "EsdImportConfig", "EsdImporter"]

@@ -10,9 +10,10 @@ from pydantic import BaseModel, ConfigDict
 
 from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
 from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.importers.csemotions import _validate_speaker_splits
-from ser_lib.data.manifest import DatasetManifest, ManifestMeta
+from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
 
@@ -93,13 +94,11 @@ class EmotionTalkImporter:
         if cfg.split_strategy == "official_dialogue":
             preview.diagnostics.append(
                 Diagnostic(
-                    "warning",
-                    "emotiontalk_official_split_speaker_overlap",
+                    "warning", "emotiontalk_official_split_speaker_overlap",
                     "官方对话划分会让部分 speaker_id 跨 split；严格说话人泛化实验请使用默认策略。",
                     stage="scan",
                 )
             )
-
         seen: set[str] = set()
         with ImportTask(
             self.descriptor.id,
@@ -119,11 +118,8 @@ class EmotionTalkImporter:
                     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "emotiontalk_json_invalid",
-                                "无法读取 JSON",
-                                stage="json",
-                                path=annotation,
+                                "error", "emotiontalk_json_invalid", "无法读取 JSON",
+                                stage="json", path=annotation,
                                 details={"entry_index": index, "detail": str(exc)},
                             )
                         )
@@ -134,12 +130,9 @@ class EmotionTalkImporter:
                     if emotion not in mapping or not isinstance(speaker, str) or not speaker or relative_audio is None:
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "emotiontalk_schema_invalid",
+                                "error", "emotiontalk_schema_invalid",
                                 "emotion_result/speaker_id/file_path 非法",
-                                stage="schema",
-                                path=annotation,
-                                details={"entry_index": index},
+                                stage="schema", path=annotation, details={"entry_index": index},
                             )
                         )
                         continue
@@ -147,12 +140,8 @@ class EmotionTalkImporter:
                     if annotation.resolve() != expected_json.resolve():
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "emotiontalk_path_mismatch",
-                                "JSON 路径与 file_path 不对应",
-                                stage="path",
-                                path=annotation,
-                                details={"entry_index": index},
+                                "error", "emotiontalk_path_mismatch", "JSON 路径与 file_path 不对应",
+                                stage="path", path=annotation, details={"entry_index": index},
                             )
                         )
                         continue
@@ -160,12 +149,8 @@ class EmotionTalkImporter:
                     if not audio.is_file():
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "emotiontalk_audio_missing",
-                                "JSON 对应音频不存在",
-                                stage="audio",
-                                path=audio,
-                                details={"entry_index": index},
+                                "error", "emotiontalk_audio_missing", "JSON 对应音频不存在",
+                                stage="audio", path=audio, details={"entry_index": index},
                             )
                         )
                         continue
@@ -173,12 +158,8 @@ class EmotionTalkImporter:
                     if uid in seen:
                         preview.diagnostics.append(
                             Diagnostic(
-                                "error",
-                                "emotiontalk_uid_duplicate",
-                                f"UID 重复: {uid}",
-                                stage="uid",
-                                path=annotation,
-                                details={"entry_index": index},
+                                "error", "emotiontalk_uid_duplicate", f"UID 重复: {uid}",
+                                stage="uid", path=annotation, details={"entry_index": index},
                             )
                         )
                         continue
@@ -207,9 +188,7 @@ class EmotionTalkImporter:
                     )
                 finally:
                     task.progress(
-                        index + 1,
-                        total,
-                        message=annotation.name,
+                        index + 1, total, message=annotation.name,
                         details={
                             "records_discovered": len(preview.records),
                             "errors": preview.error_count,
@@ -222,11 +201,8 @@ class EmotionTalkImporter:
                     Diagnostic("error", "emotiontalk_no_json", "未发现 EmotionTalk JSON", stage="scan", path=json_root)
                 )
             task.update_details(
-                records=len(preview.records),
-                errors=preview.error_count,
-                warnings=preview.warning_count,
-                diagnostics=len(preview.diagnostics),
-                candidates=total,
+                records=len(preview.records), errors=preview.error_count,
+                warnings=preview.warning_count, diagnostics=len(preview.diagnostics), candidates=total,
             )
             return preview
 
@@ -243,28 +219,21 @@ class EmotionTalkImporter:
         cfg = EmotionTalkImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        with ImportTask(
-            self.descriptor.id,
-            "convert",
-            source=source,
-            destination=destination,
-            event_callback=event_callback,
-            cancellation=cancellation,
-            event_context=event_context,
-        ) as task:
-            preview = self.scan(source, config, event_callback=event_callback, cancellation=cancellation, event_context=event_context)
-            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
-            if not preview.ok or not preview.records:
-                raise ValueError(f"EmotionTalk 扫描失败: {preview.format_errors() or '没有记录'}")
+
+        def build(preview: ImportPreview, task: ImportTask):
             if cfg.split_strategy == "official_dialogue":
                 if cfg.speaker_splits is not None:
                     raise ValueError("official_dialogue 策略不能同时配置 speaker_splits")
-                assignments = {}
+                assignments: dict[str, str] = {}
                 for record in preview.records:
                     task.check()
                     dialogue = str(record.metadata["dialogue_id"])
-                    split = "val" if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["val"] else (
-                        "test" if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["test"] else "train"
+                    split = (
+                        "val"
+                        if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["val"]
+                        else "test"
+                        if dialogue in EMOTIONTALK_OFFICIAL_SPLITS["test"]
+                        else "train"
                     )
                     assignments[record.uid] = split
             else:
@@ -274,30 +243,44 @@ class EmotionTalkImporter:
                     if cfg.speaker_splits is not None
                     else _automatic_splits(speakers)
                 )
-                speaker_to_split = {speaker: split for split, members in splits.items() for speaker in members}
+                speaker_to_split = {
+                    speaker: split for split, members in splits.items() for speaker in members
+                }
                 assignments = {
                     record.uid: speaker_to_split[record.speaker_id]
                     for record in preview.records
                     if record.speaker_id
                 }
             task.progress(2, 3, message="splits resolved")
-            task.check()
-            destination.mkdir(parents=True, exist_ok=True)
-            meta = ManifestMeta(
+            result = write_partitioned_manifest(
+                destination=destination,
                 dataset_id="emotiontalk",
                 root=source,
-                yaml_path=destination / "dataset.yaml",
-                splits={name: destination / f"{name}.jsonl" for name in ("train", "val", "test")},
+                split_names=("train", "val", "test"),
                 labels={
                     label: {"en": emotion, "zh": EMOTIONTALK_ZH[emotion]}
                     for emotion, label in preview.label_mapping.items()
                 },
+                records=preview.records,
+                assignments=assignments,
+                task=task,
             )
-            DatasetManifest(meta, preview.records, assignments).write()
-            task.progress(3, 3, message="dataset manifest written")
-            result = DatasetManifest.load(destination / "dataset.yaml")
-            task.update_details(records=len(preview.records), errors=preview.error_count, diagnostics=len(preview.diagnostics))
-            return result
+            return result, None
+
+        return run_manifest_conversion(
+            importer_id=self.descriptor.id,
+            scan=self.scan,
+            source=source,
+            destination=destination,
+            config=config,
+            build_manifest=build,
+            failure_message=lambda preview: (
+                f"EmotionTalk 扫描失败: {preview.format_errors() or '没有记录'}"
+            ),
+            event_callback=event_callback,
+            cancellation=cancellation,
+            event_context=event_context,
+        )
 
 
 __all__ = ["EMOTIONTALK_LABELS", "EmotionTalkImportConfig", "EmotionTalkImporter"]

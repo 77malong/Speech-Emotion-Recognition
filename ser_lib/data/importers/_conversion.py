@@ -10,32 +10,33 @@ import yaml
 
 from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers.base import ImportPreview, ImportTask
-from ser_lib.data.manifest import DatasetManifest, write_jsonl
+from ser_lib.data.manifest import DatasetManifest, ManifestMeta, write_jsonl
 from ser_lib.data.types import AudioRecord
 
 ScanCallable = Callable[..., ImportPreview]
 RecordResolver = Callable[[ImportPreview], Sequence[AudioRecord]]
 LabelResolver = Callable[[ImportPreview], Mapping[Any, Any]]
 FailureFormatter = Callable[[ImportPreview], str]
+BuildManifest = Callable[
+    [ImportPreview, ImportTask],
+    tuple[DatasetManifest, Mapping[str, Any] | None],
+]
 
 
-def run_single_manifest_conversion(
+def run_manifest_conversion(
     *,
     importer_id: str,
     scan: ScanCallable,
     source: Path,
     destination: Path,
     config: Mapping[str, Any],
-    dataset_id: str,
-    root: Path | str,
-    labels: LabelResolver | None = None,
-    records: RecordResolver | None = None,
+    build_manifest: BuildManifest,
     failure_message: FailureFormatter | None = None,
     event_callback: EventCallback | None = None,
     cancellation: CancellationCheck | None = None,
     event_context: EventContext | None = None,
 ) -> DatasetManifest:
-    """执行单 JSONL manifest importer 的唯一标准 convert 流程。"""
+    """统一 convert 生命周期、scan 调用、preview 门禁和终态统计。"""
     source = Path(source)
     destination = Path(destination)
     with ImportTask(
@@ -67,15 +68,47 @@ def run_single_manifest_conversion(
         if not preview.ok or not preview.records:
             if failure_message is not None:
                 raise ValueError(failure_message(preview))
-            detail = preview.format_errors() or "没有记录"
-            raise ValueError(f"{importer_id} 扫描失败: {detail}")
+            raise ValueError(
+                f"{importer_id} 扫描失败: {preview.format_errors() or '没有记录'}"
+            )
 
+        result, extra_details = build_manifest(preview, task)
+        task.progress(3, 3, message="dataset manifest written")
+        task.update_details(
+            records=len(preview.records),
+            errors=preview.error_count,
+            warnings=preview.warning_count,
+            diagnostics=len(preview.diagnostics),
+            **dict(extra_details or {}),
+        )
+        return result
+
+
+def run_single_manifest_conversion(
+    *,
+    importer_id: str,
+    scan: ScanCallable,
+    source: Path,
+    destination: Path,
+    config: Mapping[str, Any],
+    dataset_id: str,
+    root: Path | str,
+    labels: LabelResolver | None = None,
+    records: RecordResolver | None = None,
+    failure_message: FailureFormatter | None = None,
+    event_callback: EventCallback | None = None,
+    cancellation: CancellationCheck | None = None,
+    event_context: EventContext | None = None,
+) -> DatasetManifest:
+    """执行单 JSONL manifest importer 的标准 convert 流程。"""
+    destination = Path(destination)
+
+    def build(preview: ImportPreview, task: ImportTask):
         resolved_records = list(records(preview) if records is not None else preview.records)
         destination.mkdir(parents=True, exist_ok=True)
         task.check()
         write_jsonl(resolved_records, destination / "manifest.jsonl")
         task.progress(2, 3, message="manifest written")
-
         document: dict[str, Any] = {
             "schema_version": 1,
             "dataset_id": dataset_id,
@@ -90,15 +123,50 @@ def run_single_manifest_conversion(
             yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
-        task.progress(3, 3, message="dataset manifest written")
-        result = DatasetManifest.load(destination / "dataset.yaml")
-        task.update_details(
-            records=len(resolved_records),
-            errors=preview.error_count,
-            warnings=preview.warning_count,
-            diagnostics=len(preview.diagnostics),
-        )
-        return result
+        return DatasetManifest.load(destination / "dataset.yaml"), None
+
+    return run_manifest_conversion(
+        importer_id=importer_id,
+        scan=scan,
+        source=source,
+        destination=destination,
+        config=config,
+        build_manifest=build,
+        failure_message=failure_message,
+        event_callback=event_callback,
+        cancellation=cancellation,
+        event_context=event_context,
+    )
 
 
-__all__ = ["run_single_manifest_conversion"]
+def write_partitioned_manifest(
+    *,
+    destination: Path,
+    dataset_id: str,
+    root: Path | str,
+    split_names: Sequence[str],
+    labels: Mapping[int, Mapping[str, str]],
+    records: Sequence[AudioRecord],
+    assignments: Mapping[str, str],
+    task: ImportTask,
+) -> DatasetManifest:
+    """统一写入带显式 record→split 映射的标准 DatasetManifest。"""
+    destination = Path(destination)
+    destination.mkdir(parents=True, exist_ok=True)
+    task.check()
+    meta = ManifestMeta(
+        dataset_id=dataset_id,
+        root=Path(root),
+        yaml_path=destination / "dataset.yaml",
+        splits={name: destination / f"{name}.jsonl" for name in split_names},
+        labels={key: dict(value) for key, value in labels.items()},
+    )
+    DatasetManifest(meta, list(records), dict(assignments)).write()
+    return DatasetManifest.load(destination / "dataset.yaml")
+
+
+__all__ = [
+    "run_manifest_conversion",
+    "run_single_manifest_conversion",
+    "write_partitioned_manifest",
+]
