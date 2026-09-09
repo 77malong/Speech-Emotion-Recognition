@@ -12,7 +12,7 @@ def test_catalog_service_exposes_experiment_preset_workflow():
     json.dumps(catalog.to_dict())
 
     preset = CatalogService.get_preset("cnn_logmel_baseline")
-    assert preset.id == "cnn_logmel_baseline"
+    assert preset.preset_id == "cnn_logmel_baseline"
 
     config = CatalogService.build_experiment(
         "cnn_logmel_baseline",
