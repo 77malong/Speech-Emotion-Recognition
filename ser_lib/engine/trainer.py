@@ -28,6 +28,7 @@ from ser_lib.core.events import (
 from ser_lib.core.exceptions import OperationCancelled
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
+from ser_lib.engine.eta import EtaEstimator
 from ser_lib.engine.optim import (
     SchedulerConfig,
     build_optimizer,
@@ -188,6 +189,11 @@ class Trainer:
         self.event_callback = event_callback
         self.cancellation = cancellation
         self.observability = observability or ObservabilityConfig()
+        self._eta_estimator = EtaEstimator(
+            window_size=self.observability.eta_window_batches,
+            warmup_batches=self.observability.eta_warmup_batches,
+        )
+        self._validation_last_progress_perf: float | None = None
         self._run_id_explicit = run_id is not None
         self.run_id = run_id or f"run_{uuid.uuid4().hex}"
         self._scaler = torch.cuda.amp.GradScaler() if self.config.amp else None
@@ -368,6 +374,7 @@ class Trainer:
         self.optimizer.zero_grad(set_to_none=True)
 
         for batch_index, batch in enumerate(batches, start=1):
+            batch_started = time.perf_counter()
             self._check_cancelled()
             if batch.labels is None:
                 raise ValueError("训练 batch 必须包含 labels")
@@ -406,22 +413,25 @@ class Trainer:
             total_correct += int((output.logits.detach().argmax(-1) == labels).sum())
             self.global_step += 1
 
+            batch_duration = max(time.perf_counter() - batch_started, 0.0)
+            self._eta_estimator.record_batch(batch_duration, count, phase="train")
+            future_batches = (
+                max(self.config.epochs - epoch, 0) * total_batches
+                if total_batches is not None
+                else 0
+            )
+            eta = self._eta_estimator.snapshot(
+                phase="train",
+                completed_batches=batch_index,
+                total_batches=total_batches,
+                future_batches=future_batches,
+            )
             epoch_elapsed = max(time.perf_counter() - epoch_started, 0.0)
             run_elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
             running_loss = total_loss / total_samples
             running_accuracy = total_correct / total_samples
             samples_per_second = total_samples / epoch_elapsed if epoch_elapsed > 0 else 0.0
             batches_per_second = batch_index / epoch_elapsed if epoch_elapsed > 0 else 0.0
-            estimated_epoch_remaining: float | None = None
-            estimated_remaining: float | None = None
-            if total_batches is not None and batch_index > 0:
-                average_batch_seconds = epoch_elapsed / batch_index
-                remaining_in_epoch = max(total_batches - batch_index, 0)
-                estimated_epoch_remaining = remaining_in_epoch * average_batch_seconds
-                future_epochs = max(self.config.epochs - epoch, 0)
-                estimated_remaining = (
-                    remaining_in_epoch + future_epochs * total_batches
-                ) * average_batch_seconds
 
             should_emit_progress = (
                 batch_index % self.observability.progress_interval_batches == 0
@@ -450,10 +460,14 @@ class Trainer:
                             "learning_rate": self._current_learning_rate(),
                             "elapsed_seconds": run_elapsed,
                             "epoch_elapsed_seconds": epoch_elapsed,
-                            "estimated_epoch_remaining_seconds": estimated_epoch_remaining,
-                            "estimated_remaining_seconds": estimated_remaining,
+                            "estimated_epoch_remaining_seconds": eta.phase_remaining_seconds,
+                            "estimated_remaining_seconds": eta.global_remaining_seconds,
                             "samples_per_second": samples_per_second,
                             "batches_per_second": batches_per_second,
+                            "eta_ready": eta.ready,
+                            "eta_window_batches": self.observability.eta_window_batches,
+                            "recent_batches_per_second": eta.batches_per_second,
+                            "recent_samples_per_second": eta.samples_per_second,
                         },
                     )
                 )
@@ -502,9 +516,28 @@ class Trainer:
     ) -> None:
         if isinstance(event, ProgressEvent):
             resolved_total = event.total if event.total is not None else total_batches
+            now = time.perf_counter()
+            if self._validation_last_progress_perf is not None:
+                self._eta_estimator.record_batch(
+                    max(now - self._validation_last_progress_perf, 0.0),
+                    phase="validation",
+                )
+            self._validation_last_progress_perf = now
+            eta = self._eta_estimator.snapshot(
+                phase="validation",
+                completed_batches=event.completed,
+                total_batches=resolved_total,
+            )
             event = replace(
                 event,
                 total=resolved_total,
+                details={
+                    **event.details,
+                    "estimated_validation_remaining_seconds": eta.phase_remaining_seconds,
+                    "eta_ready": eta.ready,
+                    "eta_window_batches": self.observability.eta_window_batches,
+                    "recent_batches_per_second": eta.batches_per_second,
+                },
                 context=self._context(
                     epoch=epoch,
                     batch=event.context.batch or event.completed,
@@ -624,6 +657,8 @@ class Trainer:
         stop_reason: str | None = None
         started_at = datetime.now(timezone.utc)
         self.last_result = None
+        self._eta_estimator.reset()
+        self._validation_last_progress_perf = None
         self._run_started_perf = time.perf_counter()
         self._emit(
             LifecycleEvent(
@@ -692,6 +727,7 @@ class Trainer:
 
                     validation_batches = val_batches() if callable(val_batches) else val_batches
                     validation_total_batches = _safe_len(validation_batches)
+                    self._validation_last_progress_perf = time.perf_counter()
                     self._emit(
                         LifecycleEvent(
                             "validation",
