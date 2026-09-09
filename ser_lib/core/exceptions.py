@@ -42,6 +42,12 @@ class ConfigurationError(SERError):
     default_code = "configuration_error"
 
 
+class SchemaMigrationError(SERError):
+    """持久化 schema 版本非法、缺迁移路径或迁移执行失败。"""
+
+    default_code = "schema_migration_error"
+
+
 class OperationCancelled(SERError):
     """调用方请求取消一个可取消操作。"""
 

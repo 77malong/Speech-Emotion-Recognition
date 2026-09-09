@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from pydantic import Field, model_validator
@@ -97,15 +97,7 @@ class TransformerBaseline(SERModel):
 
     @property
     def model_spec(self) -> ModelSpec:
-        return ModelSpec(
-            model_id="transformer_baseline",
-            required_inputs={
-                "features": TensorSpec(layout="FT", feature_dim=self.feature_dim)
-            },
-            supports_masks=True,
-            supports_variable_length=True,
-            num_classes=self.num_classes,
-        )
+        return _model_spec_from_config(self.model_config)
 
     @property
     def model_config(self) -> dict[str, int | float | bool | str]:
@@ -171,6 +163,18 @@ class TransformerBaseline(SERModel):
         return ModelOutput(logits=self.classifier(embeddings), embeddings=embeddings)
 
 
+def _model_spec_from_config(params: dict[str, Any]) -> ModelSpec:
+    return ModelSpec(
+        model_id="transformer_baseline",
+        required_inputs={
+            "features": TensorSpec(layout="FT", feature_dim=int(params["feature_dim"]))
+        },
+        supports_masks=True,
+        supports_variable_length=True,
+        num_classes=int(params["num_classes"]),
+    )
+
+
 model_registry.register(
     "transformer_baseline",
     TransformerBaseline,
@@ -182,6 +186,7 @@ model_registry.register(
         config_schema=TransformerBaselineConfig.model_json_schema(),
         input_layouts={"features": "FT"},
     ),
+    spec_factory=_model_spec_from_config,
 )
 
 

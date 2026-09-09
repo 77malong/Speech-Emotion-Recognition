@@ -7,7 +7,8 @@ from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict
 
-from ser_lib.data.importers.base import ImportIssue, ImportPreview
+from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
 from ser_lib.data.importers.csemotions import (
     _automatic_speaker_splits,
     _validate_speaker_splits,
@@ -23,7 +24,6 @@ ESD_ZH = {"Neutral": "中性", "Happy": "快乐", "Angry": "愤怒", "Sad": "悲
 
 class EsdImportConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     languages: list[Literal["zh", "en"]] = ["zh", "en"]
     encoding: str = "utf-8-sig"
     label_mapping: dict[str, int] | None = None
@@ -83,7 +83,15 @@ class EsdImporter:
         config_schema=EsdImportConfig.model_json_schema(),
     )
 
-    def scan(self, source: Path, config: Mapping[str, Any]) -> ImportPreview:
+    def scan(
+        self,
+        source: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
+    ) -> ImportPreview:
         cfg = EsdImportConfig(**dict(config))
         source = Path(source).resolve()
         if not source.is_dir():
@@ -93,22 +101,38 @@ class EsdImporter:
         selected_languages = set(cfg.languages)
         seen: set[str] = set()
 
-        for speaker_dir in sorted(path for path in source.iterdir() if path.is_dir()):
-            speaker = speaker_dir.name
-            language = _language(speaker)
-            if language is None:
-                preview.warnings.append(f"忽略非 ESD 说话人目录: {speaker_dir}")
-                continue
-            if language not in selected_languages:
-                continue
-            texts, issues = _transcripts(speaker_dir / f"{speaker}.txt", cfg.encoding)
-            preview.issues.extend(issues)
-            for emotion, label in mapping.items():
-                emotion_dir = speaker_dir / emotion
-                if not emotion_dir.is_dir():
-                    preview.issues.append(ImportIssue(None, emotion_dir, "directory", f"缺少情感目录: {emotion}"))
+        with ImportTask(
+            self.descriptor.id, "scan", source=source,
+            event_callback=event_callback, cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            candidates: list[tuple[str, str, int, str, dict[str, str], Path]] = []
+            for speaker_dir in sorted(path for path in source.iterdir() if path.is_dir()):
+                task.check()
+                speaker = speaker_dir.name
+                language = _language(speaker)
+                if language is None:
+                    preview.warnings.append(f"忽略非 ESD 说话人目录: {speaker_dir}")
                     continue
-                for audio in sorted(emotion_dir.glob("*.wav")):
+                if language not in selected_languages:
+                    continue
+                texts, issues = _transcripts(speaker_dir / f"{speaker}.txt", cfg.encoding)
+                preview.issues.extend(issues)
+                for emotion, label in mapping.items():
+                    task.check()
+                    emotion_dir = speaker_dir / emotion
+                    if not emotion_dir.is_dir():
+                        preview.issues.append(
+                            ImportIssue(None, emotion_dir, "directory", f"缺少情感目录: {emotion}")
+                        )
+                        continue
+                    for audio in sorted(emotion_dir.glob("*.wav")):
+                        candidates.append((speaker, language, label, emotion, texts, audio))
+
+            total = len(candidates)
+            for index, (speaker, language, label, emotion, texts, audio) in enumerate(candidates):
+                task.check()
+                try:
                     uid = audio.stem
                     if uid in seen:
                         preview.issues.append(ImportIssue(None, audio, "uid", f"UID 重复: {uid}"))
@@ -126,35 +150,85 @@ class EsdImporter:
                         audio_path=audio.relative_to(source),
                         label=label,
                         speaker_id=speaker,
-                        metadata={"emotion_text": emotion.casefold(), "text": text, "language": language},
+                        metadata={
+                            "emotion_text": emotion.casefold(),
+                            "text": text,
+                            "language": language,
+                        },
                     ))
-        preview.label_mapping = mapping
-        if not preview.records and not preview.issues:
-            preview.issues.append(ImportIssue(None, source, "scan", "未发现符合条件的 ESD WAV"))
-        return preview
+                finally:
+                    task.progress(
+                        index + 1, total, message=audio.name,
+                        details={
+                            "records_discovered": len(preview.records),
+                            "issues": len(preview.issues),
+                        },
+                    )
+            preview.label_mapping = mapping
+            if not preview.records and not preview.issues:
+                preview.issues.append(ImportIssue(None, source, "scan", "未发现符合条件的 ESD WAV"))
+            task.update_details(
+                records=len(preview.records), issues=len(preview.issues),
+                warnings=len(preview.warnings), candidates=total,
+            )
+            return preview
 
-    def convert(self, source: Path, destination: Path, config: Mapping[str, Any]) -> DatasetManifest:
+    def convert(
+        self,
+        source: Path,
+        destination: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
+    ) -> DatasetManifest:
         cfg = EsdImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        preview = self.scan(source, config)
-        if not preview.ok or not preview.records:
-            issues = "; ".join(str(issue) for issue in preview.issues[:10])
-            raise ValueError(f"ESD 扫描失败: {issues or '没有记录'}")
-        speakers = {record.speaker_id for record in preview.records if record.speaker_id}
-        split_speakers = _speaker_splits(cfg.speaker_splits, speakers)
-        speaker_to_split = {speaker: split for split, members in split_speakers.items() for speaker in members}
-        destination.mkdir(parents=True, exist_ok=True)
-        meta = ManifestMeta(
-            dataset_id="esd",
-            root=source,
-            yaml_path=destination / "dataset.yaml",
-            splits={name: destination / f"{name}.jsonl" for name in split_speakers},
-            labels={label: {"en": emotion.casefold(), "zh": ESD_ZH.get(emotion, emotion)} for emotion, label in preview.label_mapping.items()},
-        )
-        assignments = {record.uid: speaker_to_split[record.speaker_id] for record in preview.records if record.speaker_id}
-        DatasetManifest(meta, preview.records, assignments).write()
-        return DatasetManifest.load(destination / "dataset.yaml")
+        with ImportTask(
+            self.descriptor.id, "convert", source=source, destination=destination,
+            event_callback=event_callback, cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            preview = self.scan(
+                source, config, event_callback=event_callback,
+                cancellation=cancellation, event_context=event_context,
+            )
+            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
+            if not preview.ok or not preview.records:
+                issues = "; ".join(str(issue) for issue in preview.issues[:10])
+                raise ValueError(f"ESD 扫描失败: {issues or '没有记录'}")
+            speakers = {record.speaker_id for record in preview.records if record.speaker_id}
+            split_speakers = _speaker_splits(cfg.speaker_splits, speakers)
+            speaker_to_split = {
+                speaker: split for split, members in split_speakers.items() for speaker in members
+            }
+            task.progress(2, 3, message="speaker splits resolved")
+            task.check()
+            destination.mkdir(parents=True, exist_ok=True)
+            meta = ManifestMeta(
+                dataset_id="esd",
+                root=source,
+                yaml_path=destination / "dataset.yaml",
+                splits={name: destination / f"{name}.jsonl" for name in split_speakers},
+                labels={
+                    label: {"en": emotion.casefold(), "zh": ESD_ZH.get(emotion, emotion)}
+                    for emotion, label in preview.label_mapping.items()
+                },
+            )
+            assignments = {
+                record.uid: speaker_to_split[record.speaker_id]
+                for record in preview.records if record.speaker_id
+            }
+            DatasetManifest(meta, preview.records, assignments).write()
+            task.progress(3, 3, message="dataset manifest written")
+            result = DatasetManifest.load(destination / "dataset.yaml")
+            task.update_details(
+                records=len(preview.records), issues=len(preview.issues),
+                splits={name: len(members) for name, members in split_speakers.items()},
+            )
+            return result
 
 
 __all__ = ["ESD_LABELS", "ESD_ZH", "EsdImportConfig", "EsdImporter"]

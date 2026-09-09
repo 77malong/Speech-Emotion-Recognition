@@ -7,7 +7,8 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ser_lib.data.importers.base import ImportIssue, ImportPreview
+from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest, write_jsonl
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
@@ -55,121 +56,193 @@ class FolderImporter:
         config_schema=FolderImportConfig.model_json_schema(),
     )
 
-    def scan(self, source: Path, config: Mapping[str, Any]) -> ImportPreview:
+    def scan(
+        self,
+        source: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
+    ) -> ImportPreview:
         cfg = FolderImportConfig(**dict(config))
         source = Path(source).resolve()
         if not source.is_dir():
             raise NotADirectoryError(f"导入源不是目录: {source}")
 
         preview = ImportPreview(importer_id=self.descriptor.id)
+        with ImportTask(
+            self.descriptor.id,
+            "scan",
+            source=source,
+            event_callback=event_callback,
+            cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            extensions = set(cfg.audio_extensions)
+            candidates = [
+                path
+                for path in sorted(source.rglob("*"))
+                if path.is_file() and path.suffix.lower() in extensions
+            ]
 
-        # 第一遍：发现标签名
-        found: list[tuple[Path, str, str | None]] = []
-        label_names: set[str] = set()
-        for path in sorted(source.rglob("*")):
-            if not path.is_file() or path.suffix.lower() not in set(cfg.audio_extensions):
-                continue
-            try:
-                label_name = path.relative_to(source).parts[-1 - cfg.label_dir_level]
-            except IndexError:
-                preview.issues.append(
-                    ImportIssue(
-                        entry_index=None, path=path, stage="scan",
-                        message=f"目录层级不足，无法提取标签 (label_dir_level={cfg.label_dir_level})",
-                    )
-                )
-                continue
-            speaker: str | None = None
-            if cfg.speaker_dir_level is not None:
+            # 第一遍：发现标签名
+            found: list[tuple[Path, str, str | None]] = []
+            label_names: set[str] = set()
+            total = len(candidates)
+            for index, path in enumerate(candidates):
+                task.check()
                 try:
-                    speaker = path.relative_to(source).parts[-1 - cfg.speaker_dir_level]
-                except IndexError:
-                    speaker = None
-            found.append((path, label_name, speaker))
-            label_names.add(label_name)
+                    try:
+                        label_name = path.relative_to(source).parts[-1 - cfg.label_dir_level]
+                    except IndexError:
+                        preview.issues.append(
+                            ImportIssue(
+                                entry_index=None, path=path, stage="scan",
+                                message=(
+                                    "目录层级不足，无法提取标签 "
+                                    f"(label_dir_level={cfg.label_dir_level})"
+                                ),
+                            )
+                        )
+                        continue
+                    speaker: str | None = None
+                    if cfg.speaker_dir_level is not None:
+                        try:
+                            speaker = path.relative_to(source).parts[-1 - cfg.speaker_dir_level]
+                        except IndexError:
+                            speaker = None
+                    found.append((path, label_name, speaker))
+                    label_names.add(label_name)
+                finally:
+                    task.progress(
+                        index + 1,
+                        total,
+                        message=path.name,
+                        details={
+                            "phase": "discover",
+                            "records_discovered": len(found),
+                            "issues": len(preview.issues),
+                        },
+                    )
 
-        if cfg.label_mapping is not None:
-            unknown = label_names - set(cfg.label_mapping)
-            if unknown:
-                preview.issues.append(
-                    ImportIssue(
-                        entry_index=None, path=source, stage="scan",
-                        message=f"以下标签目录未在 label_mapping 中声明: {sorted(unknown)}",
+            if cfg.label_mapping is not None:
+                unknown = label_names - set(cfg.label_mapping)
+                if unknown:
+                    preview.issues.append(
+                        ImportIssue(
+                            entry_index=None, path=source, stage="scan",
+                            message=f"以下标签目录未在 label_mapping 中声明: {sorted(unknown)}",
+                        )
                     )
-                )
-            label_mapping = dict(cfg.label_mapping)
-        else:
-            label_mapping = {name: idx for idx, name in enumerate(sorted(label_names))}
-            if not label_mapping:
-                preview.issues.append(
-                    ImportIssue(
-                        entry_index=None, path=source, stage="scan",
-                        message="未发现任何音频文件",
+                label_mapping = dict(cfg.label_mapping)
+            else:
+                label_mapping = {name: idx for idx, name in enumerate(sorted(label_names))}
+                if not label_mapping:
+                    preview.issues.append(
+                        ImportIssue(
+                            entry_index=None, path=source, stage="scan",
+                            message="未发现任何音频文件",
+                        )
+                    )
+
+            # 第二遍：生成记录（不读取音频内容）。该阶段纯内存转换，仅做取消检查。
+            for index, (path, label_name, speaker) in enumerate(found):
+                task.check()
+                label = label_mapping.get(label_name)
+                if label is None:
+                    preview.issues.append(
+                        ImportIssue(
+                            entry_index=index, path=path, stage="scan",
+                            message=f"未知标签 '{label_name}'，跳过该条目",
+                        )
+                    )
+                    continue
+                audio_path = path.relative_to(source) if cfg.relative_paths else path.resolve()
+                metadata: dict[str, Any] = {"label_name": label_name}
+                preview.records.append(
+                    AudioRecord(
+                        uid=f"{cfg.uid_prefix}-{index:06d}",
+                        audio_path=Path(audio_path),
+                        label=label,
+                        speaker_id=speaker,
+                        metadata=metadata,
                     )
                 )
 
-        # 第二遍：生成记录（不读取音频内容）
-        for index, (path, label_name, speaker) in enumerate(found):
-            label = label_mapping.get(label_name)
-            if label is None:
-                preview.issues.append(
-                    ImportIssue(
-                        entry_index=index, path=path, stage="scan",
-                        message=f"未知标签 '{label_name}'，跳过该条目",
-                    )
-                )
-                continue
-            audio_path = path.relative_to(source) if cfg.relative_paths else path.resolve()
-            metadata: dict[str, Any] = {"label_name": label_name}
-            preview.records.append(
-                AudioRecord(
-                    uid=f"{cfg.uid_prefix}-{index:06d}",
-                    audio_path=Path(audio_path),
-                    label=label,
-                    speaker_id=speaker,
-                    metadata=metadata,
-                )
+            preview.label_mapping = label_mapping
+            task.update_details(
+                records=len(preview.records),
+                issues=len(preview.issues),
+                warnings=len(preview.warnings),
+                candidates=total,
             )
-
-        preview.label_mapping = label_mapping
-        return preview
+            return preview
 
     def convert(
-        self, source: Path, destination: Path, config: Mapping[str, Any]
+        self,
+        source: Path,
+        destination: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
     ) -> DatasetManifest:
         cfg = FolderImportConfig(**dict(config))
+        source = Path(source)
         destination = Path(destination)
-        destination.mkdir(parents=True, exist_ok=True)
+        with ImportTask(
+            self.descriptor.id,
+            "convert",
+            source=source,
+            destination=destination,
+            event_callback=event_callback,
+            cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            destination.mkdir(parents=True, exist_ok=True)
+            preview = self.scan(
+                source,
+                config,
+                event_callback=event_callback,
+                cancellation=cancellation,
+                event_context=event_context,
+            )
+            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
+            if not preview.ok:
+                issues = "; ".join(str(i) for i in preview.issues[:10])
+                raise ValueError(f"扫描发现 {len(preview.issues)} 个错误，取消导入: {issues}")
 
-        preview = self.scan(source, config)
-        if not preview.ok:
-            issues = "; ".join(str(i) for i in preview.issues[:10])
-            raise ValueError(f"扫描发现 {len(preview.issues)} 个错误，取消导入: {issues}")
+            records = preview.records
+            if not cfg.relative_paths:
+                records = [
+                    AudioRecord(
+                        uid=r.uid,
+                        audio_path=source / r.audio_path,
+                        label=r.label,
+                        speaker_id=r.speaker_id,
+                        metadata=dict(r.metadata),
+                    )
+                    for r in records
+                ]
+            task.check()
+            write_jsonl(records, destination / "manifest.jsonl")
+            task.progress(2, 3, message="manifest written")
 
-        records = preview.records
-        if not cfg.relative_paths:
-            records = [
-                AudioRecord(
-                    uid=r.uid,
-                    audio_path=Path(source) / r.audio_path,
-                    label=r.label,
-                    speaker_id=r.speaker_id,
-                    metadata=dict(r.metadata),
-                )
-                for r in records
-            ]
-        write_jsonl(records, destination / "manifest.jsonl")
-
-        labels_yaml = {
-            str(label_id): {"en": name}
-            for name, label_id in sorted(preview.label_mapping.items(), key=lambda kv: kv[1])
-        }
-        root = source.resolve() if cfg.relative_paths else "."
-        (destination / "dataset.yaml").write_text(
-            _dataset_yaml(self.descriptor.id, root, {"default": "manifest.jsonl"}, labels_yaml),
-            encoding="utf-8",
-        )
-        return DatasetManifest.load(destination / "dataset.yaml")
+            labels_yaml = {
+                str(label_id): {"en": name}
+                for name, label_id in sorted(preview.label_mapping.items(), key=lambda kv: kv[1])
+            }
+            root = source.resolve() if cfg.relative_paths else "."
+            (destination / "dataset.yaml").write_text(
+                _dataset_yaml(self.descriptor.id, root, {"default": "manifest.jsonl"}, labels_yaml),
+                encoding="utf-8",
+            )
+            task.progress(3, 3, message="dataset manifest written")
+            result = DatasetManifest.load(destination / "dataset.yaml")
+            task.update_details(records=len(preview.records), issues=len(preview.issues))
+            return result
 
 
 def _dataset_yaml(dataset_id: str, root: Any, splits: Mapping[str, str],

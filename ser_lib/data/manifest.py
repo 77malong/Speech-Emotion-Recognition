@@ -5,22 +5,6 @@
 - manifest 内部音频相对路径相对于 ``dataset.yaml`` 声明的 ``root`` 解析；
 - ``dataset.yaml`` 的 ``root`` 与 splits 文件名相对于 ``dataset.yaml`` 所在目录解析；
 - 数据集根目录内部尽量保存相对路径，外部引用保存规范化绝对路径。
-
-标准记录格式（JSONL，一行一条）::
-
-    {"uid":"casia-000001","audio_path":"neutral/001.wav","label":0,
-     "speaker_id":"speaker-a","metadata":{"language":"zh"}}
-
-dataset.yaml::
-
-    schema_version: 1
-    dataset_id: casia
-    root: D:/datasets/CASIA
-    splits:
-      train: train.jsonl
-      val: val.jsonl
-    labels:
-      0: {en: neutral, zh: 平静}
 """
 
 from __future__ import annotations
@@ -33,6 +17,8 @@ from typing import Any, Iterator, Mapping
 
 import yaml
 
+from ser_lib.core.exceptions import SchemaMigrationError
+from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.data.errors import ManifestError
 from ser_lib.data.types import AudioRecord
 
@@ -63,11 +49,7 @@ def parse_record(
     source: Path,
     line_number: int | None = None,
 ) -> AudioRecord:
-    """解析并校验一条标准 manifest 记录。
-
-    Raises:
-        ManifestError: 必填字段缺失、类型错误或片段时间非法。
-    """
+    """解析并校验一条标准 manifest 记录。"""
     where = f"{source.name}" + (f":{line_number}" if line_number is not None else "")
     uid = raw.get("uid")
     if not isinstance(uid, str) or not uid:
@@ -169,10 +151,7 @@ def read_jsonl(path: Path) -> list[AudioRecord]:
 
 
 def load_meta(yaml_path: Path) -> ManifestMeta:
-    """加载并校验 dataset.yaml。
-
-    ``root`` 与 splits 文件名均相对于 yaml 所在目录解析；不依赖进程 cwd。
-    """
+    """加载、read-time migrate 并校验 dataset.yaml。"""
     yaml_path = Path(yaml_path)
     if not yaml_path.exists():
         raise ManifestError(f"dataset.yaml 不存在: {yaml_path}", path=yaml_path)
@@ -184,18 +163,24 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
     if not isinstance(raw, dict):
         raise ManifestError(f"dataset.yaml 必须是映射: {yaml_path}", path=yaml_path)
 
-    schema_version = raw.get("schema_version", MANIFEST_SCHEMA_VERSION)
-    if schema_version != MANIFEST_SCHEMA_VERSION:
-        raise ManifestError(
-            f"不支持的 manifest schema_version: {schema_version}，"
-            f"当前支持 {MANIFEST_SCHEMA_VERSION}",
-            path=yaml_path,
+    payload = dict(raw)
+    # 历史 manifest 允许省略版本；保持兼容并统一归一到 v1 migration 入口。
+    payload.setdefault("schema_version", MANIFEST_SCHEMA_VERSION)
+    try:
+        payload = migrate_schema_payload(
+            "dataset_manifest",
+            payload,
+            target_version=MANIFEST_SCHEMA_VERSION,
         )
-    dataset_id = raw.get("dataset_id")
+    except SchemaMigrationError as exc:
+        raise ManifestError(str(exc), path=yaml_path) from exc
+
+    schema_version = payload["schema_version"]
+    dataset_id = payload.get("dataset_id")
     if not dataset_id:
         raise ManifestError(f"dataset.yaml 缺少 dataset_id: {yaml_path}", path=yaml_path)
 
-    root_raw = raw.get("root")
+    root_raw = payload.get("root")
     root = Path(str(root_raw)) if root_raw else yaml_path.parent
     if not root.is_absolute():
         root = (yaml_path.parent / root).resolve()
@@ -203,14 +188,14 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
         root = root.resolve()
 
     splits: dict[str, Path] = {}
-    for split_name, split_file in (raw.get("splits") or {}).items():
+    for split_name, split_file in (payload.get("splits") or {}).items():
         split_path = Path(str(split_file))
         if not split_path.is_absolute():
             split_path = yaml_path.parent / split_path
         splits[str(split_name)] = split_path.resolve()
 
     labels: dict[int, dict[str, Any]] = {}
-    for key, value in (raw.get("labels") or {}).items():
+    for key, value in (payload.get("labels") or {}).items():
         try:
             label_id = int(key)
         except (TypeError, ValueError) as exc:
@@ -236,12 +221,7 @@ class DatasetManifest:
                  record_splits: dict[str, str] | None = None) -> None:
         self.meta = meta
         self.records = records
-        # uid -> split 名
         self.record_splits = record_splits or {}
-
-    # ------------------------------------------------------------------
-    # 构造
-    # ------------------------------------------------------------------
 
     @classmethod
     def load(cls, yaml_path: Path | str) -> "DatasetManifest":
@@ -264,23 +244,13 @@ class DatasetManifest:
         _validate_label_range(records, meta, yaml_path)
         return cls(meta, records, record_splits)
 
-    # ------------------------------------------------------------------
-    # 路径解析
-    # ------------------------------------------------------------------
-
     def resolve_audio_path(self, record: AudioRecord) -> Path:
-        """把记录的音频路径解析为确定路径：绝对路径保持，相对路径基于 root。"""
         path = record.audio_path
         if path.is_absolute():
             return path
         return (self.meta.root / path).resolve()
 
-    # ------------------------------------------------------------------
-    # 访问
-    # ------------------------------------------------------------------
-
     def iter_records(self, split: str | None = None) -> Iterator[AudioRecord]:
-        """迭代全部记录或指定 split 的记录。"""
         for record in self.records:
             if split is None or self.record_splits.get(record.uid) == split:
                 yield record
@@ -289,7 +259,6 @@ class DatasetManifest:
         return list(self.iter_records(split))
 
     def resolved_records(self, split: str | None = None) -> list[AudioRecord]:
-        """返回音频路径已解析为绝对路径的记录列表。"""
         resolved = []
         for record in self.iter_records(split):
             resolved.append(
@@ -306,12 +275,7 @@ class DatasetManifest:
             )
         return resolved
 
-    # ------------------------------------------------------------------
-    # 轻量统计（不执行音频解码）
-    # ------------------------------------------------------------------
-
     def stats(self) -> dict[str, Any]:
-        """返回记录数量与标签分布统计。"""
         split_counts: dict[str, int] = {}
         label_counts: dict[str, int] = {}
         for record in self.records:
@@ -328,7 +292,6 @@ class DatasetManifest:
         }
 
     def write(self, yaml_path: Path | None = None) -> None:
-        """把 manifest 写回 dataset.yaml + splits JSONL（splits 按记录归属分组）。"""
         yaml_path = Path(yaml_path or self.meta.yaml_path)
         meta = self.meta
         by_split: dict[str, list[AudioRecord]] = {}
@@ -357,9 +320,7 @@ class DatasetManifest:
             "splits": splits_section,
         }
         if meta.labels:
-            doc["labels"] = {
-                str(k): v for k, v in sorted(meta.labels.items())
-            }
+            doc["labels"] = {str(k): v for k, v in sorted(meta.labels.items())}
         tmp = yaml_path.with_suffix(yaml_path.suffix + ".tmp")
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             yaml.safe_dump(doc, f, allow_unicode=True, sort_keys=False)
@@ -368,7 +329,6 @@ class DatasetManifest:
 
 def _validate_label_range(records: list[AudioRecord], meta: ManifestMeta,
                           yaml_path: Path) -> None:
-    """校验记录 label 在 labels 表范围内（有标签表时）。"""
     if not meta.labels:
         return
     valid = set(meta.labels)

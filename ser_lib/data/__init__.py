@@ -14,8 +14,8 @@ import 本包即完成组件注册（注册表操作轻量，不扫描文件、�
 """
 
 from ser_lib.data.audio import AudioLoader, AudioLoaderConfig
-from ser_lib.data.collate import CollateStrategy, SERCollator, build_collator
 from ser_lib.data.cache import CachedRepresentation
+from ser_lib.data.collate import CollateStrategy, SERCollator, build_collator
 from ser_lib.data.config import (
     AudioSettings,
     BatchingConfig,
@@ -25,17 +25,32 @@ from ser_lib.data.config import (
     load_data_config,
 )
 from ser_lib.data.dataset import SERDataset
+from ser_lib.data.editor import DatasetEditor
 from ser_lib.data.errors import (
     AudioDecodeError,
     AudioNotFoundError,
     CollationError,
     CompatibilityError,
+    DatasetEditConflictError,
+    DatasetEditError,
+    DatasetTransactionError,
     InvalidAudioSegmentError,
     ManifestError,
     RegistryError,
     RepresentationError,
     SERDataError,
     TransformError,
+)
+from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
+from ser_lib.data.history import (
+    DATASET_REVISION_SCHEMA_VERSION,
+    DatasetRevisionCatalog,
+    DatasetRevisionInfo,
+    DatasetRevisionScanFailure,
+    create_dataset_revision,
+    inspect_dataset_revision,
+    restore_dataset_revision,
+    scan_dataset_revisions,
 )
 from ser_lib.data.importers import (
     CasiaImporter,
@@ -57,13 +72,15 @@ from ser_lib.data.pipeline import SamplePipeline, build_components, build_pipeli
 from ser_lib.data.profiling import (
     AudioProbeFailure,
     DatasetAudioProfile,
+    DatasetProfile,
+    DatasetSummary,
+    DurationHistogramBin,
+    profile_dataset,
     profile_manifest_audio,
+    summarize_manifest,
 )
-from ser_lib.data.registry import (
-    ComponentDescriptor,
-    Registry,
-    default_registry,
-)
+from ser_lib.data.query import RecordPage, RecordView, query_records
+from ser_lib.data.registry import ComponentDescriptor, Registry, default_registry
 from ser_lib.data.representations import register_representations
 from ser_lib.data.transforms import register_transforms
 from ser_lib.data.types import (
@@ -75,7 +92,12 @@ from ser_lib.data.types import (
     TensorSpec,
     validate_sample_contract,
 )
-from ser_lib.data.validation import ModelSpec, validate_compatibility
+from ser_lib.data.validation import (
+    CompatibilityReport,
+    ModelSpec,
+    inspect_compatibility,
+    validate_compatibility,
+)
 
 # 注册全部内置组件（import 即可用，代价为常数时间字典操作）
 register_importers()
@@ -94,6 +116,9 @@ __all__ = [
     # 异常
     "SERDataError",
     "ManifestError",
+    "DatasetEditError",
+    "DatasetEditConflictError",
+    "DatasetTransactionError",
     "AudioNotFoundError",
     "AudioDecodeError",
     "InvalidAudioSegmentError",
@@ -107,6 +132,17 @@ __all__ = [
     "ManifestMeta",
     "read_jsonl",
     "write_jsonl",
+    # Dataset editor
+    "DatasetEditor",
+    # Dataset history
+    "DATASET_REVISION_SCHEMA_VERSION",
+    "DatasetRevisionInfo",
+    "DatasetRevisionScanFailure",
+    "DatasetRevisionCatalog",
+    "create_dataset_revision",
+    "inspect_dataset_revision",
+    "scan_dataset_revisions",
+    "restore_dataset_revision",
     # Audio
     "AudioLoader",
     "AudioLoaderConfig",
@@ -144,6 +180,23 @@ __all__ = [
     "load_data_config",
     # Validation
     "ModelSpec",
+    "CompatibilityReport",
+    "inspect_compatibility",
     "validate_compatibility",
-    "AudioProbeFailure", "DatasetAudioProfile", "profile_manifest_audio",
+    # Dataset summary / profiling
+    "AudioProbeFailure",
+    "DurationHistogramBin",
+    "DatasetAudioProfile",
+    "DatasetSummary",
+    "DatasetProfile",
+    "profile_manifest_audio",
+    "summarize_manifest",
+    "profile_dataset",
+    # Dataset query
+    "RecordView",
+    "RecordPage",
+    "query_records",
+    # Dataset fingerprint
+    "DatasetFingerprint",
+    "fingerprint_manifest",
 ]

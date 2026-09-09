@@ -1,6 +1,8 @@
 from ser_lib.inference.batch import (
     BatchEmotionPredictor,
     BatchPredictionResult,
+    BatchPredictionSink,
+    JsonlBatchPredictionSink,
     PredictionFailure,
     write_batch_predictions,
 )
@@ -14,8 +16,8 @@ from ser_lib.inference.streaming import (
 
 __all__ = [
     "EmotionPredictor", "PredictionResult",
-    "PredictionFailure", "BatchPredictionResult", "BatchEmotionPredictor",
-    "write_batch_predictions",
+    "PredictionFailure", "BatchPredictionSink", "JsonlBatchPredictionSink",
+    "BatchPredictionResult", "BatchEmotionPredictor", "write_batch_predictions",
     "StreamingConfig", "StreamingPrediction", "StreamingLatency",
     "StreamingEmotionRecognizer",
 ]

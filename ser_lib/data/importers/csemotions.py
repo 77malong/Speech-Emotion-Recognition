@@ -8,7 +8,8 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict
 
-from ser_lib.data.importers.base import ImportIssue, ImportPreview
+from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
+from ser_lib.data.importers.base import ImportIssue, ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest, ManifestMeta
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
@@ -31,7 +32,6 @@ CSEMOTIONS_ZH = {
 
 class CsemotionsImportConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     metadata_file: str = "csemotions_metadata.csv"
     audio_directory: str = "wav_data"
     encoding: str = "utf-8-sig"
@@ -67,7 +67,6 @@ def _automatic_speaker_splits(speakers: set[str]) -> dict[str, list[str]]:
             result["val"].extend(members[train_count:train_count + val_count])
             result["test"].extend(members[train_count + val_count:])
         else:
-            # Small/unknown demographic groups are distributed deterministically.
             for index, speaker in enumerate(members):
                 result[("train", "val", "test")[index % 3]].append(speaker)
     if any(not result[name] for name in result):
@@ -105,7 +104,15 @@ class CsemotionsImporter:
         config_schema=CsemotionsImportConfig.model_json_schema(),
     )
 
-    def scan(self, source: Path, config: Mapping[str, Any]) -> ImportPreview:
+    def scan(
+        self,
+        source: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
+    ) -> ImportPreview:
         cfg = CsemotionsImportConfig(**dict(config))
         source = Path(source).resolve()
         if not source.is_dir():
@@ -120,94 +127,142 @@ class CsemotionsImporter:
         preview = ImportPreview(importer_id=self.descriptor.id)
         mapping = dict(cfg.label_mapping or CSEMOTIONS_LABELS)
         seen_uids: set[str] = set()
-        with metadata_path.open("r", encoding=cfg.encoding, newline="") as stream:
-            reader = csv.DictReader(stream)
-            required = {"file_name", "text", "emotion", "speaker", "duration_sec"}
-            missing = required - set(reader.fieldnames or [])
-            if missing:
-                preview.issues.append(ImportIssue(
-                    None, metadata_path, "header", f"metadata 缺少列: {sorted(missing)}"
-                ))
-                return preview
-            for index, row in enumerate(reader, start=2):
-                file_name = (row.get("file_name") or "").strip()
-                emotion = (row.get("emotion") or "").strip().casefold()
-                speaker = (row.get("speaker") or "").strip()
-                audio_path = Path(cfg.audio_directory) / file_name
-                resolved_audio = source / audio_path
-                if not file_name or not speaker or emotion not in mapping:
+        with ImportTask(
+            self.descriptor.id, "scan", source=source,
+            event_callback=event_callback, cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            with metadata_path.open("r", encoding=cfg.encoding, newline="") as stream:
+                reader = csv.DictReader(stream)
+                required = {"file_name", "text", "emotion", "speaker", "duration_sec"}
+                missing = required - set(reader.fieldnames or [])
+                if missing:
                     preview.issues.append(ImportIssue(
-                        index, metadata_path, "row",
-                        f"非法 file_name/speaker/emotion: {file_name!r}/{speaker!r}/{emotion!r}",
+                        None, metadata_path, "header", f"metadata 缺少列: {sorted(missing)}"
                     ))
-                    continue
-                if not resolved_audio.is_file():
-                    preview.issues.append(ImportIssue(
-                        index, resolved_audio, "audio", "metadata 对应音频不存在"
-                    ))
-                    continue
-                uid = f"csemotions-{Path(file_name).stem}"
-                if uid in seen_uids:
-                    preview.issues.append(ImportIssue(index, metadata_path, "uid", f"UID 重复: {uid}"))
-                    continue
-                seen_uids.add(uid)
+                    task.update_details(records=0, issues=1, rows=0)
+                    return preview
+                rows = list(reader)
+
+            total = len(rows)
+            for offset, row in enumerate(rows):
+                task.check()
+                index = offset + 2
                 try:
-                    duration = float(row["duration_sec"])
-                    if duration <= 0:
-                        raise ValueError
-                except (TypeError, ValueError):
-                    preview.issues.append(ImportIssue(
-                        index, metadata_path, "duration", f"非法 duration_sec: {row['duration_sec']!r}"
+                    file_name = (row.get("file_name") or "").strip()
+                    emotion = (row.get("emotion") or "").strip().casefold()
+                    speaker = (row.get("speaker") or "").strip()
+                    audio_path = Path(cfg.audio_directory) / file_name
+                    resolved_audio = source / audio_path
+                    if not file_name or not speaker or emotion not in mapping:
+                        preview.issues.append(ImportIssue(
+                            index, metadata_path, "row",
+                            f"非法 file_name/speaker/emotion: {file_name!r}/{speaker!r}/{emotion!r}",
+                        ))
+                        continue
+                    if not resolved_audio.is_file():
+                        preview.issues.append(ImportIssue(
+                            index, resolved_audio, "audio", "metadata 对应音频不存在"
+                        ))
+                        continue
+                    uid = f"csemotions-{Path(file_name).stem}"
+                    if uid in seen_uids:
+                        preview.issues.append(ImportIssue(index, metadata_path, "uid", f"UID 重复: {uid}"))
+                        continue
+                    seen_uids.add(uid)
+                    try:
+                        duration = float(row["duration_sec"])
+                        if duration <= 0:
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        preview.issues.append(ImportIssue(
+                            index, metadata_path, "duration", f"非法 duration_sec: {row['duration_sec']!r}"
+                        ))
+                        continue
+                    preview.records.append(AudioRecord(
+                        uid=uid,
+                        audio_path=audio_path,
+                        label=mapping[emotion],
+                        speaker_id=speaker,
+                        metadata={
+                            "emotion_text": emotion,
+                            "text": row["text"],
+                            "duration_sec": duration,
+                            "language": "zh",
+                            "gender": _gender(speaker),
+                        },
                     ))
-                    continue
-                preview.records.append(AudioRecord(
-                    uid=uid,
-                    audio_path=audio_path,
-                    label=mapping[emotion],
-                    speaker_id=speaker,
-                    metadata={
-                        "emotion_text": emotion,
-                        "text": row["text"],
-                        "duration_sec": duration,
-                        "language": "zh",
-                        "gender": _gender(speaker),
-                    },
-                ))
-        preview.label_mapping = mapping
-        return preview
+                finally:
+                    task.progress(
+                        offset + 1, total, message=f"row {index}",
+                        details={
+                            "records_discovered": len(preview.records),
+                            "issues": len(preview.issues),
+                        },
+                    )
+            preview.label_mapping = mapping
+            task.update_details(
+                records=len(preview.records), issues=len(preview.issues),
+                warnings=len(preview.warnings), rows=total,
+            )
+            return preview
 
     def convert(
-        self, source: Path, destination: Path, config: Mapping[str, Any]
+        self,
+        source: Path,
+        destination: Path,
+        config: Mapping[str, Any],
+        *,
+        event_callback: EventCallback | None = None,
+        cancellation: CancellationCheck | None = None,
+        event_context: EventContext | None = None,
     ) -> DatasetManifest:
         cfg = CsemotionsImportConfig(**dict(config))
         source = Path(source).resolve()
         destination = Path(destination).resolve()
-        preview = self.scan(source, config)
-        if not preview.ok or not preview.records:
-            issues = "; ".join(str(issue) for issue in preview.issues[:10])
-            raise ValueError(f"CSEMOTIONS 扫描失败: {issues or '没有记录'}")
-        speakers = {record.speaker_id for record in preview.records if record.speaker_id}
-        split_speakers = _validate_speaker_splits(cfg.speaker_splits, speakers)
-        speaker_to_split = {
-            speaker: split for split, members in split_speakers.items() for speaker in members
-        }
-        destination.mkdir(parents=True, exist_ok=True)
-        meta = ManifestMeta(
-            dataset_id="csemotions",
-            root=source,
-            yaml_path=destination / "dataset.yaml",
-            splits={name: destination / f"{name}.jsonl" for name in split_speakers},
-            labels={
-                label: {"en": emotion, "zh": CSEMOTIONS_ZH.get(emotion, emotion)}
-                for emotion, label in preview.label_mapping.items()
-            },
-        )
-        record_splits = {
-            record.uid: speaker_to_split[record.speaker_id]
-            for record in preview.records if record.speaker_id is not None
-        }
-        DatasetManifest(meta, preview.records, record_splits).write()
-        return DatasetManifest.load(destination / "dataset.yaml")
+        with ImportTask(
+            self.descriptor.id, "convert", source=source, destination=destination,
+            event_callback=event_callback, cancellation=cancellation,
+            event_context=event_context,
+        ) as task:
+            preview = self.scan(
+                source, config, event_callback=event_callback,
+                cancellation=cancellation, event_context=event_context,
+            )
+            task.progress(1, 3, message="scan completed", details={"records": len(preview.records)})
+            if not preview.ok or not preview.records:
+                issues = "; ".join(str(issue) for issue in preview.issues[:10])
+                raise ValueError(f"CSEMOTIONS 扫描失败: {issues or '没有记录'}")
+            speakers = {record.speaker_id for record in preview.records if record.speaker_id}
+            split_speakers = _validate_speaker_splits(cfg.speaker_splits, speakers)
+            speaker_to_split = {
+                speaker: split for split, members in split_speakers.items() for speaker in members
+            }
+            task.progress(2, 3, message="speaker splits resolved")
+            task.check()
+            destination.mkdir(parents=True, exist_ok=True)
+            meta = ManifestMeta(
+                dataset_id="csemotions",
+                root=source,
+                yaml_path=destination / "dataset.yaml",
+                splits={name: destination / f"{name}.jsonl" for name in split_speakers},
+                labels={
+                    label: {"en": emotion, "zh": CSEMOTIONS_ZH.get(emotion, emotion)}
+                    for emotion, label in preview.label_mapping.items()
+                },
+            )
+            record_splits = {
+                record.uid: speaker_to_split[record.speaker_id]
+                for record in preview.records if record.speaker_id is not None
+            }
+            DatasetManifest(meta, preview.records, record_splits).write()
+            task.progress(3, 3, message="dataset manifest written")
+            result = DatasetManifest.load(destination / "dataset.yaml")
+            task.update_details(
+                records=len(preview.records), issues=len(preview.issues),
+                splits={name: len(members) for name, members in split_speakers.items()},
+            )
+            return result
 
 
 __all__ = [

@@ -12,11 +12,16 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "SER contributors" }]
 dependencies = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
+    # Keep TorchAudio below 2.9 while legacy configurations may still request its I/O backend.
+    # New configurations use SoundFile for portable header probing and decoding.
+    "torch>=2.0,<2.9",
+    "torchaudio>=2.0,<2.9",
+    "numpy>=1.26",
+    "soundfile>=0.12",
     "pydantic>=2.5",
     "PyYAML>=6.0",
     "safetensors>=0.4",
+    "psutil>=5.9",
 ]
 
 [project.scripts]
@@ -25,6 +30,8 @@ ser = "ser_lib.cli.main:main"
 [project.optional-dependencies]
 test = [
     "pytest>=7.4",
+    # Repository data-processing tests import data.base_processor, which uses tqdm.
+    "tqdm>=4.66",
 ]
 dev = [
     "build>=1.2",

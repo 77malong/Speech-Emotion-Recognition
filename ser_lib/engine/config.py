@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from ser_lib.core.config import StrictConfig, load_versioned_config
 from ser_lib.data.config import DataConfig
@@ -24,6 +24,21 @@ class ModelConfig(StrictConfig):
 
     type: str = Field(min_length=1)
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ObservabilityConfig(StrictConfig):
+    """训练运行时事件频率与轻量 ETA 参数。"""
+
+    progress_interval_batches: int = Field(default=1, ge=1)
+    metric_interval_batches: int = Field(default=10, ge=1)
+    eta_window_batches: int = Field(default=20, ge=1)
+    eta_warmup_batches: int = Field(default=3, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_eta_window(self) -> "ObservabilityConfig":
+        if self.eta_warmup_batches > self.eta_window_batches:
+            raise ValueError("eta_warmup_batches 不能大于 eta_window_batches")
+        return self
 
 
 class TrainerConfig(StrictConfig):
@@ -118,8 +133,14 @@ def build_experiment_components(
 
 
 def load_experiment_config(path: Path | str) -> ExperimentConfig:
-    """加载 schema v1 实验配置。相对输出路径基于配置文件目录。"""
-    config = load_versioned_config(path, ExperimentConfig, supported_versions={1})
+    """读取时迁移到当前 schema v1；相对输出路径基于配置文件目录。"""
+    config = load_versioned_config(
+        path,
+        ExperimentConfig,
+        supported_versions={1},
+        schema_domain="experiment_config",
+        target_version=1,
+    )
     source = Path(path).expanduser().resolve()
     updates: dict[str, Any] = {}
     if not config.output_dir.is_absolute():
@@ -137,6 +158,6 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
 
 
 __all__ = [
-    "ModelConfig", "TrainerConfig", "ExperimentConfig", "ExperimentComponents",
-    "load_experiment_config", "build_experiment_components",
+    "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
+    "ExperimentComponents", "load_experiment_config", "build_experiment_components",
 ]

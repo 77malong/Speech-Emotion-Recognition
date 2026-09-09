@@ -1,10 +1,19 @@
 """模型注册表。"""
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
 from pydantic import BaseModel
+
 from ser_lib.data.errors import RegistryError
 from ser_lib.models.base import SERModel
+
+if TYPE_CHECKING:
+    from ser_lib.data.validation import ModelSpec
+
+ModelSpecFactory = Callable[[dict[str, Any]], "ModelSpec"]
+
 
 @dataclass(frozen=True)
 class ModelDescriptor:
@@ -24,20 +33,29 @@ class ModelDescriptor:
             "status": self.status,
         }
 
+
 @dataclass(frozen=True)
 class _ModelEntry:
     factory: Callable[..., SERModel]
     config_model: type[BaseModel] | None
     descriptor: ModelDescriptor
+    spec_factory: ModelSpecFactory | None = None
+
 
 class ModelRegistry:
     def __init__(self) -> None:
         self._entries: dict[str, _ModelEntry] = {}
 
-    def register(self, name: str, factory: Callable[..., SERModel], *,
-                 config_model: type[BaseModel] | None = None,
-                 descriptor: ModelDescriptor | None = None,
-                 replace: bool = False) -> None:
+    def register(
+        self,
+        name: str,
+        factory: Callable[..., SERModel],
+        *,
+        config_model: type[BaseModel] | None = None,
+        descriptor: ModelDescriptor | None = None,
+        spec_factory: ModelSpecFactory | None = None,
+        replace: bool = False,
+    ) -> None:
         if not name:
             raise RegistryError("模型名称不能为空")
         if name in self._entries and not replace:
@@ -45,7 +63,7 @@ class ModelRegistry:
         descriptor = descriptor or ModelDescriptor(name, name, "", {}, {})
         if descriptor.id != name:
             raise RegistryError("模型 descriptor.id 必须与注册名称一致")
-        self._entries[name] = _ModelEntry(factory, config_model, descriptor)
+        self._entries[name] = _ModelEntry(factory, config_model, descriptor, spec_factory)
 
     def create(self, name: str, **params: Any) -> SERModel:
         if name not in self._entries:
@@ -73,8 +91,35 @@ class ModelRegistry:
         except Exception as exc:
             raise RegistryError(f"模型 {name!r} 配置校验失败: {exc}") from exc
 
+    def inspect_spec(self, name: str, params: dict[str, Any]) -> "ModelSpec":
+        """仅根据配置生成 ModelSpec，不实例化模型、不加载权重。"""
+        if name not in self._entries:
+            raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
+        entry = self._entries[name]
+        if entry.spec_factory is None:
+            raise RegistryError(
+                f"模型 {name!r} 未声明静态 ModelSpec，无法执行无实例化 dry-run"
+            )
+        normalized = self.validate_config(name, params)
+        try:
+            spec = entry.spec_factory(normalized)
+        except Exception as exc:
+            raise RegistryError(f"模型 {name!r} ModelSpec 生成失败: {exc}") from exc
+        from ser_lib.data.validation import ModelSpec
+
+        if not isinstance(spec, ModelSpec):
+            raise RegistryError(
+                f"模型 {name!r} spec_factory 返回了非 ModelSpec: {type(spec)!r}"
+            )
+        return spec
+
+    def supports_static_spec(self, name: str) -> bool:
+        """模型是否支持不实例化模型的静态 ModelSpec 查询。"""
+        if name not in self._entries:
+            raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
+        return self._entries[name].spec_factory is not None
+
     def descriptor(self, name: str) -> dict[str, Any]:
-        """按名称返回单个模型 descriptor。"""
         if name not in self._entries:
             raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
         return self._entries[name].descriptor.to_json_safe()
@@ -84,5 +129,6 @@ class ModelRegistry:
 
     def descriptors(self) -> list[dict[str, Any]]:
         return [self._entries[name].descriptor.to_json_safe() for name in self.names()]
+
 
 model_registry = ModelRegistry()

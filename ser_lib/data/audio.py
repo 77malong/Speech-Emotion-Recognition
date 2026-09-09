@@ -6,7 +6,9 @@
     → 只读取目标片段 → 校验非空且有限值 → 声道转换 → 重采样
     → 可选确定性归一化 → 返回 [C, T] float32
 
-Loader 不做 ``squeeze()``、不了解 label、不理解 split，也不负责 GPU 搬运。
+文件 I/O 默认使用 SoundFile。旧配置中的 ``backend='torchaudio'`` 仍然受支持，
+并在 TorchAudio I/O backend 不可用时自动回退到 SoundFile。重采样继续使用
+TorchAudio，不依赖其文件解码 backend。
 """
 
 from __future__ import annotations
@@ -15,7 +17,9 @@ import logging
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+import soundfile as sf
 import torch
 import torchaudio
 import torchaudio.transforms as T
@@ -30,6 +34,126 @@ from ser_lib.data.types import AudioData, AudioRecord
 
 logger = logging.getLogger(__name__)
 
+AudioBackend = Literal["soundfile", "torchaudio"]
+
+
+@dataclass(frozen=True, slots=True)
+class AudioFileInfo:
+    """与具体解码库无关的稳定音频 header 信息。"""
+
+    sample_rate: int
+    num_frames: int
+    num_channels: int
+    backend: AudioBackend
+
+
+def _probe_soundfile(path: Path) -> AudioFileInfo:
+    info = sf.info(str(path))
+    return AudioFileInfo(
+        sample_rate=int(info.samplerate),
+        num_frames=int(info.frames),
+        num_channels=int(info.channels),
+        backend="soundfile",
+    )
+
+
+def _probe_torchaudio(path: Path) -> AudioFileInfo:
+    info = torchaudio.info(str(path))
+    return AudioFileInfo(
+        sample_rate=int(info.sample_rate),
+        num_frames=int(info.num_frames),
+        num_channels=int(info.num_channels),
+        backend="torchaudio",
+    )
+
+
+def probe_audio(
+    path: Path | str,
+    *,
+    preferred_backend: AudioBackend = "soundfile",
+) -> AudioFileInfo:
+    """读取音频 header；TorchAudio 不可用时透明回退到 SoundFile。
+
+    该函数只读取元信息，不解码整段音频，可供数据扫描和 profiling 共用。
+    """
+    resolved = Path(path)
+    if preferred_backend == "soundfile":
+        return _probe_soundfile(resolved)
+    if preferred_backend != "torchaudio":
+        raise ValueError(f"不支持的音频后端: {preferred_backend!r}")
+    try:
+        return _probe_torchaudio(resolved)
+    except Exception as torchaudio_exc:  # noqa: BLE001 - backend 异常类型不稳定
+        try:
+            return _probe_soundfile(resolved)
+        except Exception as soundfile_exc:  # noqa: BLE001
+            raise RuntimeError(
+                "TorchAudio 与 SoundFile 均无法读取音频元信息；"
+                f"torchaudio={torchaudio_exc}; soundfile={soundfile_exc}"
+            ) from soundfile_exc
+
+
+def _decode_soundfile(
+    path: Path,
+    *,
+    frame_offset: int,
+    num_frames: int,
+) -> tuple[torch.Tensor, int]:
+    frames = -1 if num_frames < 0 else num_frames
+    data, sample_rate = sf.read(
+        str(path),
+        start=frame_offset,
+        frames=frames,
+        dtype="float32",
+        always_2d=True,
+    )
+    # SoundFile 输出 [T, C]；库内统一为 [C, T]。copy() 保证转 Tensor 时连续。
+    waveform = torch.from_numpy(data.T.copy())
+    return waveform, int(sample_rate)
+
+
+def _decode_torchaudio(
+    path: Path,
+    *,
+    frame_offset: int,
+    num_frames: int,
+) -> tuple[torch.Tensor, int]:
+    waveform, sample_rate = torchaudio.load(
+        str(path), frame_offset=frame_offset, num_frames=num_frames
+    )
+    return waveform, int(sample_rate)
+
+
+def decode_audio(
+    path: Path | str,
+    *,
+    frame_offset: int = 0,
+    num_frames: int = -1,
+    preferred_backend: AudioBackend = "soundfile",
+) -> tuple[torch.Tensor, int]:
+    """按 frame 范围解码音频并返回 ``([C,T], sample_rate)``。"""
+    resolved = Path(path)
+    if preferred_backend == "soundfile":
+        return _decode_soundfile(
+            resolved, frame_offset=frame_offset, num_frames=num_frames
+        )
+    if preferred_backend != "torchaudio":
+        raise ValueError(f"不支持的音频后端: {preferred_backend!r}")
+    try:
+        return _decode_torchaudio(
+            resolved, frame_offset=frame_offset, num_frames=num_frames
+        )
+    except Exception as torchaudio_exc:  # noqa: BLE001
+        try:
+            return _decode_soundfile(
+                resolved, frame_offset=frame_offset, num_frames=num_frames
+            )
+        except Exception as soundfile_exc:  # noqa: BLE001
+            raise RuntimeError(
+                "TorchAudio 与 SoundFile 均无法解码音频；"
+                f"torchaudio={torchaudio_exc}; soundfile={soundfile_exc}"
+            ) from soundfile_exc
+
 
 @dataclass(frozen=True)
 class AudioLoaderConfig:
@@ -38,7 +162,7 @@ class AudioLoaderConfig:
     target_sample_rate: int = 16000
     mono: bool = True
     normalize_peak: bool = False
-    backend: str = "torchaudio"
+    backend: AudioBackend = "soundfile"
 
 
 class AudioLoader:
@@ -50,9 +174,10 @@ class AudioLoader:
 
     def __init__(self, config: AudioLoaderConfig | None = None) -> None:
         config = config or AudioLoaderConfig()
-        if config.backend != "torchaudio":
+        if config.backend not in ("soundfile", "torchaudio"):
             raise SERDataError(
-                f"不支持的音频后端: {config.backend!r}，当前仅支持 'torchaudio'"
+                f"不支持的音频后端: {config.backend!r}，"
+                "当前支持 'soundfile' 与 'torchaudio'"
             )
         if config.target_sample_rate <= 0:
             raise SERDataError(
@@ -93,23 +218,26 @@ class AudioLoader:
             )
 
         try:
-            info = torchaudio.info(str(path))
-        except Exception as exc:  # noqa: BLE001 - torchaudio 抛出的异常类型因后端而异
+            info = probe_audio(path, preferred_backend=self.config.backend)
+        except Exception as exc:  # noqa: BLE001 - 解码库异常类型因格式而异
             raise AudioDecodeError(
                 "读取音频元信息失败", uid=uid, path=path,
                 component="audio_loader", stage="probe",
             ) from exc
 
-        original_sr = int(info.sample_rate)
-        total_frames = int(info.num_frames)
+        original_sr = info.sample_rate
+        total_frames = info.num_frames
 
         frame_offset, num_frames = self._segment_to_frames(
             record, original_sr=original_sr, total_frames=total_frames, uid=uid, path=path,
         )
 
         try:
-            waveform, sr = torchaudio.load(
-                str(path), frame_offset=frame_offset, num_frames=num_frames,
+            waveform, sr = decode_audio(
+                path,
+                frame_offset=frame_offset,
+                num_frames=num_frames,
+                preferred_backend=self.config.backend,
             )
         except Exception as exc:  # noqa: BLE001
             raise AudioDecodeError(
@@ -227,3 +355,9 @@ class AudioLoader:
             resampler = T.Resample(orig_freq=orig_sr, new_freq=self.config.target_sample_rate)
             self._resamplers[key] = resampler
         return resampler(waveform)
+
+
+__all__ = [
+    "AudioBackend", "AudioFileInfo", "AudioLoaderConfig", "AudioLoader",
+    "probe_audio", "decode_audio",
+]
