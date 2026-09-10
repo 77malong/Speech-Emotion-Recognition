@@ -19,7 +19,7 @@ from ser_lib.data import (
     default_registry,
     profile_manifest_audio,
 )
-from ser_lib.foundation.errors import ConfigurationError, SERError
+from ser_lib.foundation import ConfigurationError, SERError
 from ser_lib.models import model_registry
 from ser_lib.cli.workflows import (
     evaluate_artifact,
