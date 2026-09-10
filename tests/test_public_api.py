@@ -54,6 +54,10 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert models.TORCH_ADAPTER_MODEL_ID == "torch_model_adapter"
     assert "torch_model_adapter" in models.model_registry.names()
     assert models.model_registry.supports_static_spec("torch_model_adapter") is True
+    assert models.HFAudioClassifier.__module__ == "ser_lib.models.adapters.huggingface"
+    assert "hf_audio_classifier" in models.model_registry.names()
+    assert config.HFProcessorConfig.__module__ == "ser_lib.config.model"
+    assert config.HFAudioClassifierConfig.__module__ == "ser_lib.config.model"
     assert config.TorchModelAdapterConfig.__module__ == "ser_lib.config.model"
     assert config.TorchTensorSpecConfig.__module__ == "ser_lib.config.model"
     assert engine.CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
@@ -105,6 +109,11 @@ def test_internal_modules_are_not_required_for_stable_imports():
 
 
 def test_retired_internal_namespaces_are_not_importable():
-    for module_name in ("ser_lib.core", "ser_lib.services", "ser_lib.catalog"):
+    for module_name in (
+        "ser_lib.core",
+        "ser_lib.services",
+        "ser_lib.catalog",
+        "ser_lib.models.pretrained",
+    ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(module_name)
