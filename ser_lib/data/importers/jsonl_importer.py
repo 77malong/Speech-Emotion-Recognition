@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ser_lib.config.importers import JsonlImportConfig
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.errors import ManifestError
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
 from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest, parse_record
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.events import CancellationCheck, EventCallback, EventContext
 
 STANDARD_FIELDS = frozenset(
     {"uid", "audio_path", "label", "start_ms", "end_ms", "speaker_id", "sample_rate_hint", "metadata"}
