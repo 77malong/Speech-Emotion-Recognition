@@ -283,13 +283,19 @@ class Trainer(_TrainerCore):
             resolved_metadata["sampling_generator_state"] = (
                 self._sampling_generator.get_state().cpu()
             )
-        return super()._save_checkpoint_with_event(
+        previous_last_checkpoint = self._last_checkpoint
+        saved = super()._save_checkpoint_with_event(
             path,
             kind=kind,
             epoch=epoch,
             metrics=metrics,
             metadata=resolved_metadata,
         )
+        if kind == "epoch":
+            # ``last_checkpoint`` denotes the opt-in ``last.pt`` artifact, while
+            # epoch-NNNN.pt remains independently available for explicit resume.
+            self._last_checkpoint = previous_last_checkpoint
+        return saved
 
     def resume_from(self, path, *, restore_rng: bool = True) -> dict:
         payload = super().resume_from(path, restore_rng=restore_rng)
