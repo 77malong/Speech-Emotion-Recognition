@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from ser_lib.config.training import SamplingConfig
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.engine import (
@@ -16,6 +17,7 @@ from ser_lib.engine import (
     load_checkpoint,
     save_checkpoint,
 )
+from ser_lib.engine.objectives import build_weighted_sampler
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken
 from ser_lib.models import CNNBaseline
@@ -125,6 +127,42 @@ def test_cancel_after_epoch_then_resume_matches_continuous_training(tmp_path: Pa
     assert continuous.optimizer.param_groups[0]["lr"] == pytest.approx(
         resumed.optimizer.param_groups[0]["lr"]
     )
+
+
+def test_weighted_sampler_generator_state_is_restored_on_resume(tmp_path: Path):
+    config = TrainerConfig(epochs=1, seed=7, checkpoint_dir=tmp_path / "checkpoints")
+    source = Trainer(
+        CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0),
+        config,
+    )
+    sampler = build_weighted_sampler(
+        [0, 0, 0, 1],
+        num_classes=2,
+        config=SamplingConfig(type="weighted", num_samples=8),
+        seed=123,
+    )
+    assert sampler is not None
+    source.attach_sampling_generator(sampler.generator)
+    list(sampler)
+    source.fit([_batch()])
+    checkpoint = config.checkpoint_dir / "epoch-0001.pt"
+    expected_next_indices = list(sampler)
+
+    resumed_sampler = build_weighted_sampler(
+        [0, 0, 0, 1],
+        num_classes=2,
+        config=SamplingConfig(type="weighted", num_samples=8),
+        seed=123,
+    )
+    assert resumed_sampler is not None
+    resumed = Trainer(
+        CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0),
+        config,
+    )
+    resumed.attach_sampling_generator(resumed_sampler.generator)
+    resumed.resume_from(checkpoint)
+
+    assert list(resumed_sampler) == expected_next_indices
 
 
 def test_checkpoint_rejects_model_or_trainer_config_before_loading(tmp_path: Path):
