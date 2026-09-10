@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.core import CancellationToken, OperationCancelled
 from ser_lib.engine import EvaluationPredictionPage, query_evaluation_predictions
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken
 from ser_lib.services import EvaluationService
 
 
