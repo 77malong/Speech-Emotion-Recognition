@@ -53,7 +53,7 @@
 
 ## 实施记录
 
-Stage 10 开始前重新读取了 `doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md`、`doc/dev/SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划。实现严格限定为普通 `torch.nn.Module` 到既有 `SERModel`、`ModelSpec`、`ModelRegistry`、checkpoint 与 artifact 契约的适配，没有新增 Trainer、第二套 adapter registry，也没有修改 checkpoint format 或提前进入 Stage 11 的 Hugging Face processor 持久化工作。
+Stage 10 开始前重新读取了 `docs/development/review/SER_LIB_CORE_BOUNDARY_AUDIT.md`、`docs/development/review/SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划。实现严格限定为普通 `torch.nn.Module` 到既有 `SERModel`、`ModelSpec`、`ModelRegistry`、checkpoint 与 artifact 契约的适配，没有新增 Trainer、第二套 adapter registry，也没有修改 checkpoint format 或提前进入 Stage 11 的 Hugging Face processor 持久化工作。
 
 本阶段从 Stage 09 closure `d02ad52988de0194df612213c423bcb64c4b27ce` 推进到代码验收 HEAD `f400a86f817768fe36e4f2f3facced32e5a4b993`，共 13 个提交：`0fe93707a194c87144cef360e73a1e5663f5dab0`、`3960f754226a97dcfec64e11b718b809ef1d569a`、`c1e0762da3e4900b4e3b04155db4696ccdcef466`、`19947d7301614222791aaca07892965474b8d9b4`、`18054e1680200d6eb5a797f0a9d52a972b33b89c`、`a2bc35b76441797c641c113db6884114c9180928`、`e4e592e87b106fd11f9b812882c598bdba545cbb`、`45d897f9f3aa62ceb0c69dcef0d5391dc8b46188`、`a43301f0190af5356c932f002bd185fe6f2bbe91`、`3b2b6710182a5e226c3ea951e69d2937b13304ba`、`67acadff7667f059fa6ceb85b1efdc0e25f1ae55`、`53a8af37f49132033ca08dc9794e6f722abde46a`、`f400a86f817768fe36e4f2f3facced32e5a4b993`。
 
