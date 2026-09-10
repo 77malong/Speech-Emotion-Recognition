@@ -57,11 +57,7 @@ from ser_lib.engine.experiment import (
     evaluate_artifact,
     train_experiment,
 )
-from ser_lib.engine.lineage import (
-    TrainingRunMetadata,
-    artifact_provenance_from_training_run,
-    build_training_run_metadata,
-)
+from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.engine.optim import (
     AdamConfig,
     AdamWConfig,
@@ -107,7 +103,6 @@ __all__ = [
     "TrainingExperimentResult", "EvaluationExperimentResult",
     "train_experiment", "evaluate_artifact",
     "TrainingRunMetadata", "build_training_run_metadata",
-    "artifact_provenance_from_training_run",
     "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo",
     "TrainingRunScanFailure", "TrainingRunCatalog", "write_training_run_info",
     "load_training_run_info", "scan_training_runs",
