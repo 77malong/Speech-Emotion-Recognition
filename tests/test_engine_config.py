@@ -111,8 +111,8 @@ def test_trainer_accumulates_gradients_emits_events_and_steps_scheduler(tmp_path
     experiment = _experiment(tmp_path, gradient_accumulation_steps=2)
     trainer = Trainer.from_experiment(model, experiment, event_callback=events.append)
     initial_lr = trainer.optimizer.param_groups[0]["lr"]
-    history = trainer.fit([_batch(), _batch(), _batch()])
-    assert history[0].optimizer_steps == 2
+    result = trainer.fit([_batch(), _batch(), _batch()])
+    assert result.epochs[0].optimizer_steps == 2
     assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(initial_lr * 0.5)
     assert sum(isinstance(item, ProgressEvent) for item in events) == 3
     assert sum(isinstance(item, MetricEvent) for item in events) == 2
@@ -183,7 +183,8 @@ def test_trainer_validation_best_last_and_early_stopping(tmp_path: Path):
         optimizer=optimizer,
     )
 
-    history = trainer.fit([_batch()], val_batches=[_batch()])
+    result = trainer.fit([_batch()], val_batches=[_batch()])
+    history = result.epochs
 
     assert [item.epoch for item in history] == [1, 2, 3]
     assert all(item.validation is not None for item in history)
