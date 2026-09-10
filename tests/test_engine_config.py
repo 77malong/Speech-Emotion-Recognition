@@ -87,6 +87,9 @@ def test_load_experiment_config_resolves_paths_from_config_file(tmp_path: Path):
 data:
   schema_version: 1
   manifest: ../dataset.yaml
+  cache:
+    enabled: true
+    directory: cache/features
   representation:
     type: log_mel
     params: {sample_rate: 16000, n_mels: 16}
@@ -101,8 +104,32 @@ output_dir: run
     )
     config = load_experiment_config(path)
     assert config.data.manifest == (path.parent / "../dataset.yaml").resolve()
+    assert config.data.cache.directory == (path.parent / "cache/features").resolve()
     assert config.output_dir == (path.parent / "run").resolve()
     assert config.trainer.checkpoint_dir == (path.parent / "checkpoints").resolve()
+
+
+def test_load_experiment_config_resolves_default_cache_from_config_file(tmp_path: Path):
+    path = tmp_path / "configs" / "experiment.yaml"
+    path.parent.mkdir()
+    path.write_text(
+        """schema_version: 1
+data:
+  schema_version: 1
+  manifest: dataset.yaml
+  representation:
+    type: log_mel
+    params: {sample_rate: 16000, n_mels: 16}
+model:
+  type: cnn_baseline
+  params: {feature_dim: 16, num_classes: 2}
+""",
+        encoding="utf-8",
+    )
+
+    config = load_experiment_config(path)
+
+    assert config.data.cache.directory == (path.parent / ".ser-cache/features").resolve()
 
 
 def test_trainer_accumulates_gradients_emits_events_and_steps_scheduler(tmp_path: Path):

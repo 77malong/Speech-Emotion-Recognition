@@ -103,13 +103,16 @@ def test_audio_config_preserves_payload_defaults_and_strict_validation():
         AudioConfig(target_sample_rate=999)
 
 
-def test_data_config_round_trip_and_manifest_relative_path_are_preserved(tmp_path: Path):
+def test_data_config_round_trip_and_relative_paths_are_based_on_yaml(tmp_path: Path):
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     path = config_dir / "demo.yaml"
     path.write_text(
         "schema_version: 1\n"
         "manifest: ../data/dataset.yaml\n"
+        "cache:\n"
+        "  enabled: true\n"
+        "  directory: ../cache/features\n"
         "representation:\n"
         "  type: waveform\n",
         encoding="utf-8",
@@ -117,11 +120,29 @@ def test_data_config_round_trip_and_manifest_relative_path_are_preserved(tmp_pat
 
     loaded = load_data_config(path)
     assert loaded.manifest == (config_dir / "../data/dataset.yaml").resolve()
+    assert loaded.cache.directory == (config_dir / "../cache/features").resolve()
     dumped = loaded.model_dump(mode="json")
     assert DataConfig.model_validate(dumped).model_dump(mode="json") == dumped
     assert loaded.audio is not None
     assert isinstance(loaded.audio, AudioConfig)
     assert isinstance(loaded.cache, CacheConfig)
+
+
+def test_data_config_default_cache_path_is_also_based_on_yaml(tmp_path: Path):
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    path = config_dir / "demo.yaml"
+    path.write_text(
+        "schema_version: 1\n"
+        "manifest: dataset.yaml\n"
+        "representation:\n"
+        "  type: waveform\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_data_config(path)
+
+    assert loaded.cache.directory == (config_dir / ".ser-cache/features").resolve()
 
 
 def test_batching_and_label_validation_remain_strict():

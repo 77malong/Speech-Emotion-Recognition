@@ -104,7 +104,7 @@ class BatchingConfig(StrictConfig):
 
 
 class DataConfig(StrictConfig):
-    """数据模块顶层配置；manifest 相对配置文件目录解析。"""
+    """数据模块顶层配置；从 YAML 加载时所有路径均相对配置文件目录解析。"""
 
     schema_version: int = 1
     manifest: Path
@@ -141,11 +141,24 @@ class DataConfig(StrictConfig):
 
 
 def load_data_config(path: Path | str) -> DataConfig:
-    """加载 DataConfig，并保持 manifest 相对配置文件目录的旧解释语义。"""
+    """加载 DataConfig；manifest 与 cache 目录均相对配置文件目录解析。"""
     raw, source = load_yaml_mapping(path)
     if "manifest" in raw and raw["manifest"] is not None:
         raw["manifest"] = resolve_config_path(raw["manifest"], base_dir=source.parent)
-    return DataConfig.model_validate(raw)
+    config = DataConfig.model_validate(raw)
+    if config.cache.directory.is_absolute():
+        return config
+    return config.model_copy(
+        update={
+            "cache": config.cache.model_copy(
+                update={
+                    "directory": resolve_config_path(
+                        config.cache.directory, base_dir=source.parent
+                    )
+                }
+            )
+        }
+    )
 
 
 # 0.2.x 读兼容：旧名称只指向同一正式 schema，不再维护独立定义。

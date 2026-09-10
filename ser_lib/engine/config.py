@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ser_lib.config.experiment import ExperimentConfig
-from ser_lib.config.loader import load_versioned_config
+from ser_lib.config.loader import load_versioned_config, resolve_config_path
 from ser_lib.config.model import ModelConfig
 from ser_lib.config.training import ObservabilityConfig, TrainerConfig
 from ser_lib.engine._seed import seed_experiment_rng
@@ -59,7 +59,7 @@ def build_experiment_components(
 
 
 def load_experiment_config(path: Path | str) -> ExperimentConfig:
-    """读取时迁移到当前 schema v1；相对输出路径基于配置文件目录。"""
+    """读取时迁移到当前 schema v1；所有相对路径均基于配置文件目录。"""
     config = load_versioned_config(
         path,
         ExperimentConfig,
@@ -70,20 +70,36 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
     source = Path(path).expanduser().resolve()
     updates: dict[str, Any] = {}
     if not config.output_dir.is_absolute():
-        updates["output_dir"] = (source.parent / config.output_dir).resolve()
+        updates["output_dir"] = resolve_config_path(
+            config.output_dir, base_dir=source.parent
+        )
     if (
         config.trainer.checkpoint_dir is not None
         and not config.trainer.checkpoint_dir.is_absolute()
     ):
         updates["trainer"] = config.trainer.model_copy(
             update={
-                "checkpoint_dir": (source.parent / config.trainer.checkpoint_dir).resolve()
+                "checkpoint_dir": resolve_config_path(
+                    config.trainer.checkpoint_dir, base_dir=source.parent
+                )
             }
         )
+
+    data_updates: dict[str, Any] = {}
     if not config.data.manifest.is_absolute():
-        updates["data"] = config.data.model_copy(
-            update={"manifest": (source.parent / config.data.manifest).resolve()}
+        data_updates["manifest"] = resolve_config_path(
+            config.data.manifest, base_dir=source.parent
         )
+    if not config.data.cache.directory.is_absolute():
+        data_updates["cache"] = config.data.cache.model_copy(
+            update={
+                "directory": resolve_config_path(
+                    config.data.cache.directory, base_dir=source.parent
+                )
+            }
+        )
+    if data_updates:
+        updates["data"] = config.data.model_copy(update=data_updates)
     return config.model_copy(update=updates)
 
 
