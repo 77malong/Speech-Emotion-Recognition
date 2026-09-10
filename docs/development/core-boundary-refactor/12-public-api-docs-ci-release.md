@@ -87,7 +87,7 @@ Stage 12 以本阶段计划和前 11 个阶段已经锁定的领域边界为基�
 
 ### Strict review 后续修复
 
-Stage 12 初次收口后又执行了 `docs/development/SER_LIB_STRICT_REVIEW_2026-09-10.md` 的逐模块严格审计。该审计是问题发现基线，不因后续修复而改写原结论；本节记录在同一分支上的后续 remediation：
+Stage 12 初次收口后又执行了 `doc/dev/SER_LIB_STRICT_REVIEW_2026-09-10.md` 的逐模块严格审计。该审计是问题发现基线，不因后续修复而改写原结论；本节记录在同一分支上的后续 remediation：
 
 - 梯度累积改为按一个逻辑大 batch 的实际归约分母归一化，覆盖尾组、不同 microbatch 大小和 weighted cross-entropy，不再固定除以 `gradient_accumulation_steps`。
 - 实验 seed 移到随机模型/组件创建之前，同时覆盖 Python、NumPy 与 Torch RNG；同一 experiment seed 不再受调用前全局 RNG 状态影响模型初始化。

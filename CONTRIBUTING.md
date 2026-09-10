@@ -2,7 +2,7 @@
 
 本仓库只维护可复用的 SER Python 能力，不接受桌面端、Web UI、本地 HTTP
 服务或产品工作区代码。提交前请阅读
-[`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`](docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md)，
+[`doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md`](doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md)，
 并结合对应领域文档确认公开 API、持久化格式和安全边界。
 
 ## 开发环境

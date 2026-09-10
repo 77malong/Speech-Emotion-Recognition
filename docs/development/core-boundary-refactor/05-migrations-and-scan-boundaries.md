@@ -60,7 +60,7 @@
 
 ## 实施记录
 
-- 开始本阶段实现前重新读取了 `docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md` 与 `docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`，并以两者作为 migration 归域、扫描解耦和 `ser_lib/core` 退役的设计/证据依据。
+- 开始本阶段实现前重新读取了 `doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md` 与 `doc/dev/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`，并以两者作为 migration 归域、扫描解耦和 `ser_lib/core` 退役的设计/证据依据。
 - Migration 已按持久化格式归属拆分到 `ser_lib/config/migrations.py`、`ser_lib/data/migrations.py`、`ser_lib/engine/migrations.py` 与 `ser_lib/artifacts/migrations.py`；未建立新的 foundation migration 总线。当前版本、future version、缺少迁移链和非法版本等既有错误语义继续由各领域入口保持。
 - `core/_catalog_scan.py` 的跨领域扫描抽象已退出；Dataset revision、checkpoint、training run、evaluation run 与 artifact catalog 使用各自领域内的最小扫描控制流，继续保留 cancellation、坏文件隔离、稳定排序、scan failure 信息与 no-load 性质，没有重新抽象新的跨领域 Catalog 框架。
 - `data/history.py` 已直接使用 data migration，并将 revision Catalog 扫描控制流归回 data 域；Services、Importer 家族与 Trainer 等剩余调用方均已切到 `foundation`、`config` 或领域事件的 canonical import。

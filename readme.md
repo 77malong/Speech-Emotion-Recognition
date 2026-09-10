@@ -251,7 +251,7 @@ Speech-Emotion-Recognition/
 - [模型扩展](docs/MODEL_DEVELOPMENT.md)
 - [Artifact 与安全](docs/ARTIFACTS_AND_SECURITY.md)
 - [公共 API](docs/API_REFERENCE.md)
-- [核心边界审计](docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md)
+- [核心边界审计](doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md)
 - [教程状态](docs/TUTORIAL_STATUS.md)
 - [变更记录](CHANGELOG.md)
 

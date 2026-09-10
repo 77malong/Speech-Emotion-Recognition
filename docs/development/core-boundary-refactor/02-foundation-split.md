@@ -67,8 +67,8 @@
 
 本阶段开始前重新读取并以以下两份文件作为直接依据：
 
-- 设计依据：`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`
-- 证据依据：`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
+- 设计依据：`doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md`
+- 证据依据：`doc/dev/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
 
 同时先复核 Stage 01。`1022a329` 的第一次 CI 暴露了测试自身把
 `ModelRegistry.descriptor()` 的 `dict` 返回误当成对象的问题；修复提交

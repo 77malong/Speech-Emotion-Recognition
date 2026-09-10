@@ -65,7 +65,7 @@
 
 ## 实施记录
 
-Stage 11 开始前重新读取并以 `docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`、`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划作为实现依据。实现严格限定在 HF adapter、processor、artifact 和依赖验证范围，没有新增 HF 专用 Trainer，也没有提前进入 Stage 12 的最终发布整理。
+Stage 11 开始前重新读取并以 `doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md`、`doc/dev/SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划作为实现依据。实现严格限定在 HF adapter、processor、artifact 和依赖验证范围，没有新增 HF 专用 Trainer，也没有提前进入 Stage 12 的最终发布整理。
 
 实际完成：
 

@@ -7,8 +7,8 @@
 ## 基线
 
 - 源码基线：`main@7018e05dbbfd5e40207ac8ccfd886cbaedbebfe6`
-- 设计依据：`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`
-- 证据依据：`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
+- 设计依据：`doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md`
+- 证据依据：`doc/dev/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
 
 ## 修改范围
 

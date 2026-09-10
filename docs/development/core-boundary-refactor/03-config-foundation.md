@@ -62,8 +62,8 @@
 
 本阶段开始前再次读取：
 
-- 设计依据：`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`
-- 证据依据：`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
+- 设计依据：`doc/dev/SER_LIB_CORE_BOUNDARY_AUDIT.md`
+- 证据依据：`doc/dev/SER_LIB_CORE_BOUNDARY_EVIDENCE.md`
 
 Stage 02 的最终 exact HEAD `1621caabdc9bed5e1a658c0b1fc9005ceaedc153` 对应 CI #217 已全部通过，包含 Ruff、mypy、coverage 与 Windows/macOS/Linux × Python 3.10/3.12 矩阵，因此本阶段在稳定 foundation 基线上开始。
 
