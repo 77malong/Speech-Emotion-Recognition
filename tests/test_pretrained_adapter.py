@@ -45,7 +45,7 @@ class FakeEncoder(nn.Module):
         return SimpleNamespace(last_hidden_state=self.projection(input_values.unsqueeze(-1)))
 
 
-class FakeWav2Vec2FeatureExtractor:
+class Wav2Vec2FeatureExtractor:
     def __init__(self, config):
         self._config = dict(config)
 
@@ -81,7 +81,7 @@ def fake_transformers(monkeypatch):
     module = SimpleNamespace(
         AutoConfig=AutoConfig,
         AutoModel=AutoModel,
-        Wav2Vec2FeatureExtractor=FakeWav2Vec2FeatureExtractor,
+        Wav2Vec2FeatureExtractor=Wav2Vec2FeatureExtractor,
     )
     monkeypatch.setattr("ser_lib.models.adapters.huggingface._transformers", lambda: module)
     return calls
