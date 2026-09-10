@@ -186,6 +186,26 @@ def _validate_labels(labels: Mapping[int, str] | None, num_classes: int) -> dict
     return normalized
 
 
+def _loss_reduction_denominator(
+    loss_fn: torch.nn.Module | None,
+    targets: torch.Tensor,
+) -> float:
+    """返回可跨 batch 组合 scalar loss 的归约分母。
+
+    自定义 loss 默认按当前 batch 的 sample mean 解释；如果 loss 对象公开
+    ``reduction_denominator(targets)``，则使用该值。内置 ClassificationLoss
+    通过该协议为 weighted cross entropy 返回目标类别权重质量。
+    """
+    denominator_fn = getattr(loss_fn, "reduction_denominator", None)
+    if callable(denominator_fn):
+        denominator = float(denominator_fn(targets))
+    else:
+        denominator = float(targets.numel())
+    if denominator <= 0:
+        raise ValueError("loss reduction denominator 必须大于 0")
+    return denominator
+
+
 def _resolve_event_context(
     context: EventContext | None,
     *,
@@ -246,6 +266,10 @@ def evaluate(
     ``retain_predictions=False`` 后，``EvaluationResult.predictions`` 保持为空，
     可将百万级评估的预测内存从 O(N) 降为 O(1)。默认值完全保持旧行为。
 
+    ``loss_fn`` 的 scalar 输出默认按当前 batch 的 sample mean 解释。需要不同归约
+    质量的 loss 可以实现 ``reduction_denominator(targets)``；评估器会按
+    ``Σ(loss_i × denominator_i) / Σ denominator_i`` 汇总，从而保持 batch 划分不变性。
+
     ``event_context`` 是与 Web/传输无关的运行上下文，可原生携带 ``run_id``、
     ``epoch``、``total_epochs``、``global_step`` 等字段；``split`` 用于 standalone
     evaluation 的便捷覆盖。能获取 ``len(batches)`` 时进度事件会提供 ``total``，
@@ -285,7 +309,8 @@ def evaluate(
     model.eval()
     confusion = torch.zeros(num_classes, num_classes, dtype=torch.long)
     records: list[PredictionRecord] = []
-    total_loss = 0.0
+    total_loss_numerator = 0.0
+    total_loss_denominator = 0.0
     total_samples = 0
     started = time.perf_counter()
 
@@ -336,7 +361,9 @@ def evaluate(
             confusion += counts.reshape(num_classes, num_classes).cpu()
             count = int(labels_tensor.shape[0])
             batch_loss = float(loss)
-            total_loss += batch_loss * count
+            loss_denominator = _loss_reduction_denominator(loss_fn, labels_tensor)
+            total_loss_numerator += batch_loss * loss_denominator
+            total_loss_denominator += loss_denominator
             total_samples += count
             for index, uid in enumerate(batch.uids):
                 record = PredictionRecord(
@@ -365,7 +392,7 @@ def evaluate(
                         "batch_samples": count,
                         "samples_processed": total_samples,
                         "batch_loss": batch_loss,
-                        "running_loss": total_loss / total_samples,
+                        "running_loss": total_loss_numerator / total_loss_denominator,
                         "elapsed_seconds": elapsed,
                         "samples_per_second": (
                             total_samples / elapsed if elapsed > 0 else 0.0
@@ -439,7 +466,7 @@ def evaluate(
             uar=float(recall[present].mean()),
             confusion_matrix=confusion,
             sample_count=total,
-            loss=total_loss / total_samples,
+            loss=total_loss_numerator / total_loss_denominator,
             war=war,
             per_class=per_class,
             predictions=tuple(records),
