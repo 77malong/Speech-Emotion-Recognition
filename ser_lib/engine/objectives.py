@@ -49,6 +49,24 @@ class ClassificationLoss(nn.Module):
             ((1.0 - target_probability) ** self.config.focal_gamma) * per_sample
         ).mean()
 
+    def reduction_denominator(self, targets: torch.Tensor) -> float:
+        """Return the denominator used by this loss' scalar mean reduction.
+
+        Gradient accumulation must combine microbatches as one logical batch. For
+        weighted cross entropy, PyTorch's ``mean`` reduction divides by the sum
+        of target-class weights rather than by the number of samples. Focal loss
+        in this module explicitly calls ``mean()`` on its per-sample values, so
+        its denominator remains the sample count even when class weights are used.
+        """
+        if self.config.type == "cross_entropy" and self.class_weights is not None:
+            weights = self.class_weights.to(targets.device)
+            denominator = float(weights[targets].sum().detach().cpu())
+        else:
+            denominator = float(targets.numel())
+        if denominator <= 0:
+            raise ValueError("loss reduction denominator 必须大于 0")
+        return denominator
+
 
 def build_weighted_sampler(
     labels: Sequence[int | None],
