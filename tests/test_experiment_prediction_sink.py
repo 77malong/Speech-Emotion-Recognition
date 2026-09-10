@@ -52,7 +52,13 @@ def test_evaluate_artifact_forwards_streaming_sink_without_retaining_predictions
         model=object(),
         manifest=SimpleNamespace(
             labels={0: "neutral", 1: "happy"},
-            preprocessing={"manifest": "unused.yaml"},
+            preprocessing={
+                "manifest": "unused.yaml",
+                "batching": {
+                    "type": "sliding",
+                    "sliding": {"window_size": 100, "stride": 50},
+                },
+            },
             metadata={},
             model_name="tiny",
         ),
@@ -119,7 +125,16 @@ def test_evaluate_artifact_forwards_streaming_sink_without_retaining_predictions
     assert captured["prediction_sink"] is sink
     assert captured["retain_predictions"] is False
     assert result.evaluation.predictions == ()
+    assert result.metric_unit == "window"
+    assert result.to_dict()["metric_unit"] == "window"
     assert [record.uid for record in sink.records] == ["sample-1"]
     assert not (output_dir / "predictions.jsonl").exists()
     metrics = json.loads((output_dir / "metrics.json").read_text(encoding="utf-8"))
     assert metrics["sample_count"] == 2
+    assert metrics["metric_unit"] == "window"
+
+
+def test_evaluation_metric_unit_does_not_guess_legacy_artifacts():
+    assert experiment._evaluation_metric_unit({}) == "batch_row"
+    assert experiment._evaluation_metric_unit({"batching": {"type": "dynamic"}}) == "sample"
+    assert experiment._evaluation_metric_unit({"batching": {"type": "fixed"}}) == "sample"
