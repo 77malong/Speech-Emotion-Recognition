@@ -77,13 +77,12 @@ class SpectrogramRepresentation(_SpectralRepresentationBase):
     def __init__(self, **params) -> None:
         config = SpectrogramConfig(**params)
         super().__init__(config)
+        # ``torchaudio.transforms.Spectrogram`` operates directly on waveform
+        # samples and does not accept Mel-only frequency-range/sample-rate args.
         self.transform = T.Spectrogram(
-            sample_rate=config.sample_rate,
             n_fft=config.n_fft,
             win_length=config.win_length,
             hop_length=config.hop_length,
-            f_min=config.f_min,
-            f_max=config.f_max,
             power=config.power,
             center=config.center,
             pad_mode=config.pad_mode,
