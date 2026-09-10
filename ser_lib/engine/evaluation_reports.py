@@ -9,8 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from ser_lib.core.events import CancellationCheck
 from ser_lib.engine.evaluator import ClassMetrics, PredictionRecord
+from ser_lib.foundation.events import CancellationCheck
 
 
 class _ClassMetricsModel(BaseModel):
