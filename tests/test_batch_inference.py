@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from ser_lib.core import CancellationToken, OperationCancelled, ProgressEvent
 from ser_lib.data import (
     AudioRecord,
     BatchingConfig,
@@ -18,6 +17,8 @@ from ser_lib.data import (
     TensorSpec,
 )
 from ser_lib.data.validation import ModelSpec
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.inference import (
     BatchEmotionPredictor,
     EmotionPredictor,
