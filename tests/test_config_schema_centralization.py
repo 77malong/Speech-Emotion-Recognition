@@ -86,10 +86,11 @@ def test_transform_config_legacy_paths_are_identity_aliases():
     assert all(current is legacy for current, legacy in pairs)
 
 
-def test_migrated_component_configs_preserve_mutability_and_strict_fields():
+def test_migrated_component_configs_are_frozen_and_strict():
     config = LogMelConfig()
-    config.n_mels = 96
-    assert config.n_mels == 96
+    with pytest.raises(ValidationError, match="frozen"):
+        config.n_mels = 96
+    assert config.n_mels == 80
     with pytest.raises(ValidationError):
         RawWaveformConfig(unknown=True)
     with pytest.raises(ValidationError):
