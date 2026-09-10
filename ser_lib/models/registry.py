@@ -1,16 +1,19 @@
 """模型注册表。"""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from pydantic import BaseModel
+from torch import nn
 
 from ser_lib.foundation.errors import RegistryError
 from ser_lib.models.base import SERModel
 from ser_lib.models.specs import ModelSpec
 
 ModelSpecFactory = Callable[[dict[str, Any]], ModelSpec]
+ReconstructibilityCheck = Callable[[dict[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -38,11 +41,21 @@ class _ModelEntry:
     config_model: type[BaseModel] | None
     descriptor: ModelDescriptor
     spec_factory: ModelSpecFactory | None = None
+    reconstructibility_check: ReconstructibilityCheck | None = None
+
+
+@dataclass(frozen=True)
+class _TorchFactoryEntry:
+    factory: Callable[..., nn.Module]
+    config_model: type[BaseModel] | None
 
 
 class ModelRegistry:
     def __init__(self) -> None:
         self._entries: dict[str, _ModelEntry] = {}
+        # 普通 nn.Module factory 与 SERModel 共用同一个 registry owner；这里只是
+        # adapter 重建所需的私有子表，不创建第二套 Registry 类型或全局实例。
+        self._torch_factories: dict[str, _TorchFactoryEntry] = {}
 
     def register(
         self,
@@ -52,6 +65,7 @@ class ModelRegistry:
         config_model: type[BaseModel] | None = None,
         descriptor: ModelDescriptor | None = None,
         spec_factory: ModelSpecFactory | None = None,
+        reconstructibility_check: ReconstructibilityCheck | None = None,
         replace: bool = False,
     ) -> None:
         if not name:
@@ -61,7 +75,13 @@ class ModelRegistry:
         descriptor = descriptor or ModelDescriptor(name, name, "", {}, {})
         if descriptor.id != name:
             raise RegistryError("模型 descriptor.id 必须与注册名称一致")
-        self._entries[name] = _ModelEntry(factory, config_model, descriptor, spec_factory)
+        self._entries[name] = _ModelEntry(
+            factory,
+            config_model,
+            descriptor,
+            spec_factory,
+            reconstructibility_check,
+        )
 
     def create(self, name: str, **params: Any) -> SERModel:
         if name not in self._entries:
@@ -89,6 +109,18 @@ class ModelRegistry:
         except Exception as exc:
             raise RegistryError(f"模型 {name!r} 配置校验失败: {exc}") from exc
 
+    def validate_reconstructible(self, name: str, params: dict[str, Any]) -> dict[str, Any]:
+        """验证模型配置可由注册 ID 重建，但不实例化模型或加载权重。"""
+        normalized = self.validate_config(name, params)
+        entry = self._entries[name]
+        if entry.reconstructibility_check is None:
+            return normalized
+        try:
+            entry.reconstructibility_check(normalized)
+        except Exception as exc:
+            raise RegistryError(f"模型 {name!r} 不可重建: {exc}") from exc
+        return normalized
+
     def inspect_spec(self, name: str, params: dict[str, Any]) -> ModelSpec:
         """仅根据配置生成 ModelSpec，不实例化模型、不加载权重。"""
         if name not in self._entries:
@@ -114,6 +146,72 @@ class ModelRegistry:
         if name not in self._entries:
             raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
         return self._entries[name].spec_factory is not None
+
+    def register_torch_factory(
+        self,
+        factory_id: str,
+        factory: Callable[..., nn.Module],
+        *,
+        config_model: type[BaseModel] | None = None,
+        replace: bool = False,
+    ) -> None:
+        """登记普通 nn.Module 的可重建 factory。
+
+        callable 只存在于当前 Python 进程的 registry；artifact 永远只持久化
+        ``factory_id`` 与 JSON-safe 参数，不序列化或动态导入 callable。
+        """
+        if not factory_id:
+            raise RegistryError("Torch factory ID 不能为空")
+        if factory_id in self._torch_factories and not replace:
+            raise RegistryError(f"Torch factory 重复注册: {factory_id!r}")
+        if not callable(factory):
+            raise RegistryError("Torch factory 必须可调用")
+        self._torch_factories[factory_id] = _TorchFactoryEntry(factory, config_model)
+
+    def has_torch_factory(self, factory_id: str) -> bool:
+        return factory_id in self._torch_factories
+
+    def torch_factory_names(self) -> list[str]:
+        return sorted(self._torch_factories)
+
+    def validate_torch_factory_config(
+        self,
+        factory_id: str,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        if factory_id not in self._torch_factories:
+            raise RegistryError(
+                f"未知 Torch factory {factory_id!r}，可用: {sorted(self._torch_factories)}"
+            )
+        entry = self._torch_factories[factory_id]
+        if entry.config_model is not None:
+            try:
+                return entry.config_model(**params).model_dump(mode="json")
+            except Exception as exc:
+                raise RegistryError(
+                    f"Torch factory {factory_id!r} 配置校验失败: {exc}"
+                ) from exc
+        try:
+            json.dumps(params, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise RegistryError(
+                f"Torch factory {factory_id!r} 参数必须是 JSON-safe 数据"
+            ) from exc
+        return dict(params)
+
+    def create_torch_module(self, factory_id: str, **params: Any) -> nn.Module:
+        """由已注册 ID 重建普通 nn.Module。"""
+        normalized = self.validate_torch_factory_config(factory_id, dict(params))
+        entry = self._torch_factories[factory_id]
+        try:
+            module = entry.factory(**normalized)
+        except Exception as exc:
+            raise RegistryError(f"Torch factory {factory_id!r} 构建失败: {exc}") from exc
+        if not isinstance(module, nn.Module):
+            raise RegistryError(
+                f"Torch factory {factory_id!r} 返回了非 nn.Module: {type(module)!r}"
+            )
+        return module
 
     def descriptor(self, name: str) -> dict[str, Any]:
         if name not in self._entries:
