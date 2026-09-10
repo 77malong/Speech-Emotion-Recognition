@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -32,15 +32,25 @@ jobs:
       - name: Build distributions
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python -m pip install build && python -m build
-      - name: Smoke-test built wheel
+      - name: Smoke-test built wheel in isolated environment
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: |
-          python -m venv --system-site-packages .wheel-smoke
-          .wheel-smoke/bin/python -m pip install --no-deps dist/*.whl
-          cd .wheel-smoke
-          bin/python - <<'PY'
+          python -m venv ../ser-lib-wheel-smoke
+          ../ser-lib-wheel-smoke/bin/python -m pip install --upgrade pip
+          ../ser-lib-wheel-smoke/bin/python -m pip install dist/*.whl
+          ../ser-lib-wheel-smoke/bin/python -m pip check
+          cd ..
+          ser-lib-wheel-smoke/bin/python - <<'PY'
+          import importlib.metadata
           import importlib.util
+          from pathlib import Path
+
           import ser_lib
+
+          repo = Path("Speech-Emotion-Recognition").resolve()
+          imported = Path(ser_lib.__file__).resolve()
+          assert repo not in imported.parents, imported
+          assert importlib.util.find_spec("transformers") is None
 
           retired = (
               "ser_lib.core",
@@ -52,6 +62,19 @@ jobs:
           )
           for module_name in retired:
               assert importlib.util.find_spec(module_name) is None, module_name
+
+          required = (
+              "ser_lib.config",
+              "ser_lib.foundation",
+              "ser_lib.models.adapters.torch",
+              "ser_lib.models.adapters.huggingface",
+          )
+          for module_name in required:
+              assert importlib.util.find_spec(module_name) is not None, module_name
+
+          distribution = importlib.metadata.distribution("ser-lib")
+          entries = {entry.name: entry.value for entry in distribution.entry_points}
+          assert entries.get("ser") == "ser_lib.cli.main:main"
           print(ser_lib.__version__)
           PY
       - name: Run tests
