@@ -32,6 +32,7 @@ class ModelArtifactManifest(StrictConfig):
     weights_sha256: str
     files_sha256: dict[str, str] = Field(default_factory=dict)
     preprocessing: dict[str, Any]
+    processor: dict[str, Any] | None = None
     labels: dict[int, str]
     metrics: dict[str, float] = Field(default_factory=dict)
     model_card: ModelCard = Field(default_factory=ModelCard)
