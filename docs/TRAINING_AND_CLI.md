@@ -41,7 +41,21 @@ Loss 的 `class_weights` 改变各类别损失贡献，sampling 的 `class_weigh
 
 评估报告除 accuracy/WAR、UAR 和 macro-F1 外，还包含 weighted precision、
 weighted recall、weighted F1、balanced accuracy、Matthews correlation coefficient
-和 Cohen's kappa。
+和 Cohen's kappa。高层 `evaluate_artifact()` 的机器可读结果和 `metrics.json` 还会
+写出 `metric_unit`：`dynamic/fixed` 为 `sample`，`sliding` 为 `window`；旧 artifact
+无法证明 batching 语义时标为 `batch_row`，不得把窗口级指标误读为原始样本级指标。
+
+## Event callback 失败语义
+
+训练、评估等核心执行路径中的 `event_callback` 是同步的 **fail-fast hook**，不是由
+核心库隔离异常的 best-effort observer。callback 抛出的异常会终止当前操作并继续向
+调用方传播；核心执行路径仍负责通过 `finally` 等机制恢复自身已经改变的运行状态，
+例如评估过程中临时切换的模型 train/eval mode。
+
+如果 Web/Desktop Worker 希望某个遥测、日志或 UI observer 失败后任务仍继续，应在
+宿主边界自行包装 callback，明确决定记录、重试或丢弃策略，而不是依赖核心库静默吞掉
+异常。`prediction_sink` 等同步持久化 hook 同样遵循失败即传播原则，避免任务表面成功但
+关键输出已经丢失。
 
 ## 真实数据验收记录
 
