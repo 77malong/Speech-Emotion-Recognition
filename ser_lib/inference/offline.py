@@ -95,6 +95,8 @@ class EmotionPredictor:
             logits = self.model(batch).logits
         finally:
             self.model.train(was_training)
+        if not torch.isfinite(logits).all():
+            raise FloatingPointError("模型 logits 包含 NaN/Inf，拒绝生成无效预测概率")
         if batch.window_map is None:
             if logits.shape[0] != len(records):
                 raise ValueError("模型输出行数与输入记录数不一致")
@@ -119,6 +121,8 @@ class EmotionPredictor:
     def _aggregate(self, logits: torch.Tensor) -> torch.Tensor:
         if logits.dim() != 2 or logits.shape[0] < 1:
             raise ValueError(f"模型 logits 必须是非空 [N,C]，实际 {tuple(logits.shape)}")
+        if not torch.isfinite(logits).all():
+            raise FloatingPointError("模型 logits 包含 NaN/Inf，拒绝生成无效预测概率")
         if logits.shape[0] == 1:
             return torch.softmax(logits[0], -1)
         if self.window_aggregation is None:

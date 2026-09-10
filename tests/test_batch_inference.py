@@ -74,6 +74,15 @@ class CountingModel(SERModel):
         return ModelOutput(torch.stack((-mean, mean), dim=-1))
 
 
+class NonFiniteModel(CountingModel):
+    def forward(self, batch):
+        self.forward_calls += 1
+        batch_size = int(batch.inputs["features"].shape[0])
+        logits = torch.zeros((batch_size, 2), dtype=torch.float32)
+        logits[:, 1] = float("nan")
+        return ModelOutput(logits)
+
+
 def test_batch_predict_records_collects_failures_and_progress(tmp_path: Path):
     valid = tmp_path / "valid.wav"
     valid.write_bytes(b"not decoded by fake")
@@ -176,6 +185,19 @@ def test_real_batching_uses_one_forward_and_groups_sliding_windows():
     assert model.forward_calls == 1
     assert [result.uid for result in results] == ["neutral-1", "positive-1"]
     assert [result.label_id for result in results] == [0, 1]
+
+
+def test_predictor_rejects_non_finite_logits_before_softmax():
+    predictor = EmotionPredictor(
+        NonFiniteModel(),
+        PassThroughLoader(),
+        UIDPipeline(),
+        SERCollator(UIDPipeline.output_specs, BatchingConfig(type="dynamic")),
+        labels={0: "neutral", 1: "happy"},
+    )
+
+    with pytest.raises(FloatingPointError, match="logits.*NaN/Inf"):
+        predictor.predict_records([AudioRecord("positive-1", Path("unused.wav"))])
 
 
 def test_batch_wrapper_respects_batch_size_for_real_predictor():
