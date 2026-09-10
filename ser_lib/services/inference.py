@@ -6,9 +6,9 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.events import CancellationCheck, EventCallback
 from ser_lib.inference.batch import (
     BatchEmotionPredictor,
     BatchPredictionResult,
