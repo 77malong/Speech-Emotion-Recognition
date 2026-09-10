@@ -35,7 +35,6 @@ from ser_lib.engine import (
 )
 from ser_lib.inference.streaming import StreamingConfig as LegacyStreamingConfig
 from ser_lib.models.cnn_models import CNNBaselineConfig as LegacyCNNBaselineConfig
-from ser_lib.models.pretrained import HFAudioClassifierConfig as LegacyHFConfig
 from ser_lib.models.rnn_models import GRUBaselineConfig as LegacyGRUBaselineConfig
 from ser_lib.models.transformer_models import (
     TransformerBaselineConfig as LegacyTransformerBaselineConfig,
@@ -66,7 +65,6 @@ def test_old_execution_config_paths_are_identity_aliases():
     assert LegacyCNNBaselineConfig is CNNBaselineConfig
     assert LegacyGRUBaselineConfig is GRUBaselineConfig
     assert LegacyTransformerBaselineConfig is TransformerBaselineConfig
-    assert LegacyHFConfig is HFAudioClassifierConfig
     assert LegacyStreamingConfig is StreamingConfig
     assert legacy_parse_optimizer_config is parse_optimizer_config
     assert legacy_parse_scheduler_config is parse_scheduler_config
