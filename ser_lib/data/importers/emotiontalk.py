@@ -7,14 +7,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from ser_lib.config.importers import EmotionTalkImportConfig
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
 from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.importers.csemotions import _validate_speaker_splits
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.events import CancellationCheck, EventCallback, EventContext
 
 EMOTIONTALK_LABELS = {
     "neutral": 0, "happy": 1, "angry": 2, "sad": 3,
