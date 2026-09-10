@@ -50,9 +50,10 @@ class _MaskedBatchNorm1d(nn.BatchNorm1d):
 class CNNBaseline(SERModel):
     """保持时间分辨率的一维卷积分类器。
 
-    输入 ``features`` 为 ``[B,F,T]``。当提供 mask 时，无效时间步在每个卷积块
-    之间都被清零，并从 BatchNorm 统计中排除，因此同一有效序列的输出不依赖右侧
-    padding 长度或同 batch 中最长样本。随后根据 mask 做 masked mean pooling。
+    输入 ``features`` 为 ``[B,F,T]``。优先使用显式 mask；当 collator 只提供
+    ``lengths`` 时会据此构造连续前缀 mask。无效时间步在每个卷积块之间都被清零，
+    并从 BatchNorm 统计中排除，因此同一有效序列的输出不依赖右侧 padding 长度或
+    同 batch 中最长样本。随后根据有效位置做 masked mean pooling。
     """
 
     def __init__(
@@ -110,6 +111,25 @@ class CNNBaseline(SERModel):
         hidden = self.encoder[5](hidden)
         return hidden * weights
 
+    def _resolve_mask(self, batch: SERBatch, features: torch.Tensor) -> torch.Tensor | None:
+        mask = batch.masks.get("features")
+        if mask is not None:
+            return mask
+        lengths = batch.lengths.get("features")
+        if lengths is None:
+            return None
+        if lengths.shape != (features.shape[0],):
+            raise ValueError(
+                f"features lengths 期望 {(features.shape[0],)}，实际 {tuple(lengths.shape)}"
+            )
+        lengths = lengths.to(device=features.device)
+        if torch.any(lengths <= 0):
+            raise ValueError("CNNBaseline 的每个样本必须至少包含一个有效时间步")
+        if torch.any(lengths > features.shape[-1]):
+            raise ValueError("CNNBaseline features lengths 不能超过时间轴长度")
+        positions = torch.arange(features.shape[-1], device=features.device).unsqueeze(0)
+        return positions < lengths.unsqueeze(1)
+
     def forward(self, batch: SERBatch) -> ModelOutput:
         try:
             features = batch.inputs["features"]
@@ -123,7 +143,7 @@ class CNNBaseline(SERModel):
             raise ValueError("CNNBaseline 不接受空 batch 或零长度时间轴")
         if not features.is_floating_point():
             raise ValueError(f"CNNBaseline features 必须是浮点 tensor，实际 {features.dtype}")
-        mask = batch.masks.get("features")
+        mask = self._resolve_mask(batch, features)
         if mask is None:
             encoded = self.encoder(features)
             embeddings = encoded.mean(dim=-1)
