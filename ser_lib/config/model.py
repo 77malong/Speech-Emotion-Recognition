@@ -1,4 +1,4 @@
-"""内置 SER 模型与通用 Torch adapter 的用户配置 schema。
+"""内置 SER 模型、Hugging Face 与通用 Torch adapter 的用户配置 schema。
 
 本模块只定义可序列化配置，不导入 torch、模型实现或 transformers。
 """
@@ -62,8 +62,29 @@ class TransformerBaselineConfig(StrictConfig):
         return self
 
 
+class HFProcessorConfig(StrictConfig):
+    """可离线重建的 HF waveform feature extractor 快照。"""
+
+    class_name: Literal["Wav2Vec2FeatureExtractor"]
+    config: dict[str, Any]
+
+    @model_validator(mode="after")
+    def _validate_json_snapshot(self) -> "HFProcessorConfig":
+        try:
+            json.dumps(self.config, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("processor config 必须是有限数值组成的 JSON-safe 数据") from exc
+        sampling_rate = self.config.get("sampling_rate")
+        if not isinstance(sampling_rate, int) or sampling_rate < 1000:
+            raise ValueError("processor config 必须包含合法 sampling_rate")
+        feature_size = self.config.get("feature_size", 1)
+        if feature_size != 1:
+            raise ValueError("首期 HF waveform processor 只支持 feature_size=1")
+        return self
+
+
 class HFAudioClassifierConfig(StrictConfig):
-    """Hugging Face 音频编码器分类器配置；定义本身不依赖 transformers。"""
+    """Hugging Face 音频模型配置；定义本身不依赖 transformers。"""
 
     num_classes: int = Field(ge=2)
     pretrained_model_name_or_path: str | None = None
@@ -74,9 +95,15 @@ class HFAudioClassifierConfig(StrictConfig):
     dropout: float = Field(default=0.1, ge=0, lt=1)
     pooling: Literal["mean", "max"] = "mean"
     expected_sample_rate: int = Field(default=16000, ge=1000, le=192000)
+    strategy: Literal["encoder_head", "audio_classification"] = "encoder_head"
+    reset_classifier_head: bool = False
+    label_names: dict[int, str] | None = None
+    processor_name_or_path: str | None = None
+    processor_config: HFProcessorConfig | None = None
+    processor_revision: str | None = None
 
     @model_validator(mode="after")
-    def _exactly_one_encoder_source(self) -> "HFAudioClassifierConfig":
+    def _validate_sources_and_head(self) -> "HFAudioClassifierConfig":
         supplied = sum(
             value is not None
             for value in (self.pretrained_model_name_or_path, self.encoder_config)
@@ -87,6 +114,36 @@ class HFAudioClassifierConfig(StrictConfig):
             )
         if self.pretrained_model_name_or_path == "":
             raise ValueError("pretrained_model_name_or_path 不能为空")
+
+        processor_sources = sum(
+            value is not None
+            for value in (self.processor_name_or_path, self.processor_config)
+        )
+        if processor_sources > 1:
+            raise ValueError("processor_name_or_path 与 processor_config 最多提供一个")
+        if self.processor_name_or_path == "":
+            raise ValueError("processor_name_or_path 不能为空")
+        if self.processor_config is not None:
+            sampling_rate = int(self.processor_config.config["sampling_rate"])
+            if sampling_rate != self.expected_sample_rate:
+                raise ValueError(
+                    "processor sampling_rate 与 expected_sample_rate 不一致: "
+                    f"{sampling_rate} != {self.expected_sample_rate}"
+                )
+
+        if self.label_names is not None:
+            if sorted(self.label_names) != list(range(self.num_classes)):
+                raise ValueError("label_names 必须从 0 开始连续并覆盖 num_classes")
+            if any(not value for value in self.label_names.values()):
+                raise ValueError("label_names 不允许空标签")
+            if len(set(self.label_names.values())) != len(self.label_names):
+                raise ValueError("label_names 必须唯一")
+
+        if self.strategy == "audio_classification":
+            if self.label_names is None:
+                raise ValueError("audio_classification strategy 必须显式提供 label_names")
+        elif self.reset_classifier_head:
+            raise ValueError("reset_classifier_head 仅适用于 audio_classification strategy")
         return self
 
 
@@ -195,6 +252,7 @@ __all__ = [
     "CNNBaselineConfig",
     "GRUBaselineConfig",
     "TransformerBaselineConfig",
+    "HFProcessorConfig",
     "HFAudioClassifierConfig",
     "TorchDTypeName",
     "TorchLayoutName",
