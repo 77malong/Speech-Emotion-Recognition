@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn.functional as F
@@ -27,6 +27,57 @@ from ser_lib.engine.objectives import ClassificationLoss
 from ser_lib.engine.optim import AdamWConfig, build_optimizer
 from ser_lib.foundation.events import CancellationCheck, EventCallback
 from ser_lib.models.base import ModelOutput, SERModel
+
+
+_RUNTIME_ONLY_EXPERIMENT_FIELDS = {"output_dir"}
+_RUNTIME_ONLY_EXPERIMENT_TRAINER_FIELDS = {
+    "epochs",
+    "checkpoint_dir",
+    "save_best",
+    "save_last",
+}
+
+
+def _resume_experiment_signature(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove fields that may legitimately change when continuing the same run."""
+    normalized = {
+        key: value for key, value in config.items() if key not in _RUNTIME_ONLY_EXPERIMENT_FIELDS
+    }
+    trainer = normalized.get("trainer")
+    if isinstance(trainer, Mapping):
+        normalized["trainer"] = {
+            key: value
+            for key, value in trainer.items()
+            if key not in _RUNTIME_ONLY_EXPERIMENT_TRAINER_FIELDS
+        }
+    return normalized
+
+
+def _validate_run_resume_compatibility(
+    current: TrainingRunMetadata,
+    saved: TrainingRunMetadata,
+) -> None:
+    if current.model_id != saved.model_id:
+        raise ValueError("checkpoint lineage 的 model_id 与当前实验不一致")
+    if (
+        saved.dataset_id is not None
+        and current.dataset_id is not None
+        and current.dataset_id != saved.dataset_id
+    ):
+        raise ValueError("checkpoint lineage 的 dataset_id 与当前实验不一致")
+    if (
+        saved.dataset_fingerprint is not None
+        and current.dataset_fingerprint is not None
+        and current.dataset_fingerprint != saved.dataset_fingerprint
+    ):
+        raise ValueError("checkpoint lineage 的 dataset fingerprint 与当前实验不一致")
+    if _resume_experiment_signature(saved.config) != _resume_experiment_signature(
+        current.config
+    ):
+        raise ValueError(
+            "checkpoint experiment config 与当前实验不兼容；仅允许修改 "
+            "output_dir、epochs、checkpoint_dir、save_best、save_last"
+        )
 
 
 class _AccumulationState:
@@ -81,12 +132,9 @@ class _AccumulationState:
         # contribution is denominator / combined_denominator. The resulting
         # gradient scale is bounded and does not turn a mean loss back into a
         # potentially large numerator before GradScaler sees it.
-        gradient_scale = (
-            denominator * self.accumulation_steps / combined_denominator
-        )
+        gradient_scale = denominator * self.accumulation_steps / combined_denominator
         scaled = loss * gradient_scale
         self.pending_denominator = combined_denominator
-        # Preserve the user-visible scalar loss while changing only its gradient scale.
         return loss.detach() + scaled - scaled.detach()
 
     def finish_step(self) -> None:
@@ -114,10 +162,10 @@ class _AccumulationAwareLoss(torch.nn.Module):
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         loss = self.base_loss(logits, targets)
-        if isinstance(self.base_loss, ClassificationLoss):
-            denominator = self.base_loss.reduction_denominator(targets)
+        denominator_fn = getattr(self.base_loss, "reduction_denominator", None)
+        if callable(denominator_fn):
+            denominator = float(denominator_fn(targets))
         else:
-            # Public custom scalar losses are interpreted as a mean over samples.
             denominator = float(targets.numel())
         return self.state.scale_loss(loss, denominator)
 
@@ -132,10 +180,9 @@ class Trainer(_TrainerCore):
 
     梯度累积按一个逻辑大 batch 的归约语义执行：不同大小 microbatch 与尾部不足
     ``gradient_accumulation_steps`` 的分组都会按实际有效归约分母重新归一化。显式
-    自定义标量 ``loss_fn`` 约定为“对当前 microbatch 样本取 mean”；内置带类别权重
-    的 ``ClassificationLoss`` 会使用与 PyTorch weighted cross-entropy 一致的权重
-    质量作为分母。累积梯度采用在线加权平均，不会先在 AMP 反向路径中放大为 loss
-    numerator；epoch loss 也使用同一 reduction denominator 口径汇总。
+    自定义标量 ``loss_fn`` 默认约定为“对当前 microbatch 样本取 mean”；需要其他
+    归约质量时可提供 ``reduction_denominator(targets)``。累积梯度采用在线加权平均，
+    不会先在 AMP 反向路径中放大为 loss numerator；epoch loss 也使用同一 denominator。
     """
 
     run_metadata: TrainingRunMetadata | None
@@ -256,8 +303,6 @@ class Trainer(_TrainerCore):
             scale_before = float(self._scaler.get_scale())
             self._scaler.step(self.optimizer)
             self._scaler.update()
-            # GradScaler lowers its scale whenever non-finite gradients cause
-            # optimizer.step() to be skipped. Successful steps keep or grow it.
             applied = float(self._scaler.get_scale()) >= scale_before
 
         self.optimizer.zero_grad(set_to_none=True)
@@ -347,31 +392,81 @@ class Trainer(_TrainerCore):
             metadata=resolved_metadata,
         )
         if kind == "epoch":
-            # ``last_checkpoint`` denotes the opt-in ``last.pt`` artifact, while
-            # epoch-NNNN.pt remains independently available for explicit resume.
             self._last_checkpoint = previous_last_checkpoint
         return saved
 
     def resume_from(self, path, *, restore_rng: bool = True) -> dict:
-        payload = super().resume_from(path, restore_rng=restore_rng)
-        raw_checkpoint_metadata = payload.get("metadata")
+        """在应用训练状态前校验完整实验 lineage，并保留当前有效配置。"""
+        from ser_lib.engine.checkpoint import load_checkpoint
+
+        current_run_metadata = self.run_metadata
         saved_run_metadata: TrainingRunMetadata | None = None
-        if isinstance(raw_checkpoint_metadata, Mapping):
-            raw_lineage = raw_checkpoint_metadata.get("run_metadata")
+
+        def validate_metadata(metadata: dict[str, Any]) -> None:
+            nonlocal saved_run_metadata
+            raw_lineage = metadata.get("run_metadata")
             if isinstance(raw_lineage, Mapping):
                 saved_run_metadata = TrainingRunMetadata.from_dict(raw_lineage)
-            sampling_state = raw_checkpoint_metadata.get("sampling_generator_state")
-            if (
-                restore_rng
-                and self._sampling_generator is not None
-                and isinstance(sampling_state, torch.Tensor)
-            ):
-                self._sampling_generator.set_state(sampling_state.cpu())
+                if current_run_metadata is not None:
+                    _validate_run_resume_compatibility(
+                        current_run_metadata,
+                        saved_run_metadata,
+                    )
 
-        if not self._run_id_explicit and saved_run_metadata is not None:
-            self.run_metadata = saved_run_metadata.with_run_id(self.run_id)
-        elif self.run_metadata is not None:
-            self.run_metadata = self.run_metadata.with_run_id(self.run_id)
+        payload = load_checkpoint(
+            path,
+            self.model,
+            self.optimizer,
+            scheduler=self.scheduler,
+            scaler=self._scaler,
+            map_location=self.device,
+            restore_rng=restore_rng,
+            expected_trainer_config=self.config.model_dump(mode="json"),
+            metadata_validator=validate_metadata,
+        )
+
+        epoch = payload.get("epoch")
+        if not isinstance(epoch, int) or epoch < 0:
+            raise ValueError("checkpoint epoch 非法")
+        self.last_completed_epoch = epoch
+        self._last_checkpoint = Path(path)
+        metadata = payload.get("metadata") or {}
+        if metadata.get("monitor") in (None, self.config.monitor):
+            best_metric = metadata.get("best_metric")
+            best_epoch = metadata.get("best_epoch")
+            without_improvement = metadata.get("epochs_without_improvement", 0)
+            self.best_metric = float(best_metric) if best_metric is not None else None
+            self.best_epoch = int(best_epoch) if best_epoch is not None else None
+            self.epochs_without_improvement = int(without_improvement)
+        saved_run_id = metadata.get("run_id")
+        if not self._run_id_explicit and isinstance(saved_run_id, str) and saved_run_id:
+            self.run_id = saved_run_id
+        saved_global_step = metadata.get("global_step")
+        saved_optimizer_step = metadata.get("optimizer_step")
+        if isinstance(saved_global_step, int) and saved_global_step >= 0:
+            self.global_step = saved_global_step
+        if isinstance(saved_optimizer_step, int) and saved_optimizer_step >= 0:
+            self.optimizer_step = saved_optimizer_step
+
+        sampling_state = metadata.get("sampling_generator_state")
+        if (
+            restore_rng
+            and self._sampling_generator is not None
+            and isinstance(sampling_state, torch.Tensor)
+        ):
+            self._sampling_generator.set_state(sampling_state.cpu())
+
+        if current_run_metadata is not None:
+            created_at = (
+                saved_run_metadata.created_at
+                if saved_run_metadata is not None
+                else current_run_metadata.created_at
+            )
+            self.run_metadata = replace(
+                current_run_metadata,
+                run_id=self.run_id,
+                created_at=created_at,
+            )
         elif saved_run_metadata is not None:
             self.run_metadata = saved_run_metadata.with_run_id(self.run_id)
         return payload
