@@ -10,15 +10,15 @@ from itertools import islice
 from pathlib import Path
 from typing import Literal, Protocol
 
-from ser_lib.core.events import (
+from ser_lib.data.manifest import DatasetManifest
+from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
     EventContext,
-    PredictionEvent,
     ProgressEvent,
 )
-from ser_lib.data.manifest import DatasetManifest
-from ser_lib.data.types import AudioRecord
+from ser_lib.inference.events import PredictionEvent
 from ser_lib.inference.offline import EmotionPredictor, PredictionResult
 
 
