@@ -8,7 +8,6 @@ import pytest
 from ser_lib.engine import inspect_checkpoint_file, scan_checkpoints
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
-from ser_lib.services import TrainingService
 
 checkpoint_catalog = importlib.import_module("ser_lib.engine.checkpoint_catalog")
 
@@ -53,7 +52,7 @@ def test_scan_checkpoints_is_lightweight_recursive_and_observable(tmp_path: Path
     assert progress[-1].completed == 2
     assert progress[-1].total == 2
 
-    recursive = TrainingService.scan_checkpoints(root, recursive=True)
+    recursive = scan_checkpoints(root, recursive=True)
     assert {item.name for item in recursive.checkpoints} == {
         "epoch-0001.pt",
         "epoch-0002.pt",
