@@ -12,7 +12,6 @@ import ser_lib.engine as engine
 import ser_lib.foundation as foundation
 import ser_lib.inference as inference
 import ser_lib.models as models
-import ser_lib.services as services
 
 
 def _assert_explicit_public_surface(module) -> None:
@@ -33,7 +32,6 @@ def test_package_public_surfaces_are_resolvable_and_unique():
         artifacts,
         inference,
         models,
-        services,
     ):
         _assert_explicit_public_surface(module)
     assert ser_lib.__version__ == "0.2.0"
@@ -58,20 +56,6 @@ def test_new_stabilization_types_have_intentional_public_paths():
     assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors"
 
 
-def test_services_are_public_only_from_service_facade_not_root_package():
-    expected = {
-        "DatasetService",
-        "TrainingService",
-        "EvaluationService",
-        "InferenceService",
-        "ArtifactService",
-        "CatalogService",
-        "RuntimeService",
-    }
-    assert expected <= set(services.__all__)
-    assert expected.isdisjoint(ser_lib.__all__)
-
-
 def test_internal_modules_are_not_required_for_stable_imports():
     for module_name in (
         "ser_lib",
@@ -82,12 +66,12 @@ def test_internal_modules_are_not_required_for_stable_imports():
         "ser_lib.artifacts",
         "ser_lib.inference",
         "ser_lib.models",
-        "ser_lib.services",
     ):
         module = importlib.import_module(module_name)
         assert module.__all__
 
 
-def test_retired_core_namespace_is_not_importable():
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("ser_lib.core")
+def test_retired_internal_namespaces_are_not_importable():
+    for module_name in ("ser_lib.core", "ser_lib.services"):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module_name)
