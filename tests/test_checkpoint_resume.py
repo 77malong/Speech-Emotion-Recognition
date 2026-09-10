@@ -117,8 +117,8 @@ def test_cancel_after_epoch_then_resume_matches_continuous_training(tmp_path: Pa
     resumed_model = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
     resumed = Trainer.from_experiment(resumed_model, interrupted_config)
     resumed.resume_from(checkpoint)
-    history = resumed.fit(batches)
-    assert [item.epoch for item in history] == [2]
+    training_result = resumed.fit(batches)
+    assert [item.epoch for item in training_result.epochs] == [2]
     assert resumed.last_completed_epoch == 2
     for key, value in continuous_model.state_dict().items():
         assert torch.allclose(value, resumed_model.state_dict()[key], atol=1e-7)
