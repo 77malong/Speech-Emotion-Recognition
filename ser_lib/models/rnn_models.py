@@ -89,8 +89,12 @@ class GRUBaseline(SERModel):
         if mask is not None:
             if mask.shape != (features.shape[0], features.shape[-1]):
                 raise ValueError("features mask 必须是 [B,T]")
-            if not torch.equal(mask.sum(dim=-1).to(lengths.device), lengths):
-                raise ValueError("features mask 的有效数量必须与 lengths 一致")
+            mask = mask.to(device=features.device, dtype=torch.bool)
+            expected_mask = torch.arange(
+                features.shape[-1], device=features.device
+            ).unsqueeze(0) < lengths.to(features.device).unsqueeze(1)
+            if not torch.equal(mask, expected_mask):
+                raise ValueError("features mask 必须是由 lengths 定义的连续前缀 mask")
         return lengths
 
     def forward(self, batch: SERBatch) -> ModelOutput:

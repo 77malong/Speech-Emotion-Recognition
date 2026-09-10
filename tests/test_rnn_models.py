@@ -76,7 +76,18 @@ def test_gru_rejects_mask_length_disagreement():
     batch = _batch()
     batch.masks["features"][0, 0] = False
     model = GRUBaseline(feature_dim=4, num_classes=2, hidden_dim=5)
-    with pytest.raises(ValueError, match="lengths"):
+    with pytest.raises(ValueError, match="lengths|连续前缀"):
+        model(batch)
+
+
+def test_gru_rejects_non_contiguous_mask_with_matching_count():
+    batch = _batch((5, 3))
+    mask = batch.masks["features"]
+    mask[1] = torch.tensor([True, False, True, True, False])
+    assert int(mask[1].sum()) == int(batch.lengths["features"][1]) == 3
+
+    model = GRUBaseline(feature_dim=4, num_classes=2, hidden_dim=5)
+    with pytest.raises(ValueError, match="连续前缀"):
         model(batch)
 
 
