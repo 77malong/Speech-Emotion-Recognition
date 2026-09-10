@@ -17,7 +17,6 @@ from ser_lib.engine import (
     load_evaluation_run_info,
     write_evaluation_run_info,
 )
-from ser_lib.services import EvaluationService
 
 
 def _result() -> EvaluationResult:
@@ -96,9 +95,9 @@ def test_evaluation_run_record_round_trip_and_directory_relocation(tmp_path: Pat
     assert relocated.evaluation_id == loaded.evaluation_id
 
 
-def test_evaluation_service_creates_metadata_and_saves_run(tmp_path: Path):
+def test_evaluation_metadata_defaults_library_version_and_run_can_be_saved(tmp_path: Path):
     created = datetime.now(timezone.utc)
-    metadata = EvaluationService.create_run_metadata(
+    metadata = build_evaluation_run_metadata(
         source_artifact=tmp_path / "artifact",
         source_run_id="run_123",
         dataset_id="dataset",
@@ -113,14 +112,15 @@ def test_evaluation_service_creates_metadata_and_saves_run(tmp_path: Path):
 
     started = created + timedelta(milliseconds=1)
     finished = started + timedelta(milliseconds=5)
-    saved = EvaluationService.save_run(
+    path = write_evaluation_run_info(
         tmp_path / "evaluation",
         metadata,
         _result(),
         started_at=started,
         finished_at=finished,
     )
-    assert EvaluationService.inspect_run(tmp_path / "evaluation") == saved
+    saved = load_evaluation_run_info(path)
+    assert load_evaluation_run_info(tmp_path / "evaluation") == saved
 
 
 def test_evaluation_run_record_rejects_invalid_timeline_and_schema(tmp_path: Path):
