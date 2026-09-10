@@ -8,6 +8,7 @@ from typing import cast
 
 import torch
 
+from ser_lib.data.types import move_batch_to_device
 from ser_lib.engine._trainer_core import (
     EpochResult,
     ObservabilityConfig,
@@ -15,7 +16,6 @@ from ser_lib.engine._trainer_core import (
     TrainerConfig,
     TrainingResult,
     TrainingStatus,
-    move_batch_to_device,
     seed_everything,
 )
 from ser_lib.engine.config import ExperimentConfig

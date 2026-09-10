@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -416,6 +416,18 @@ class SERBatch:
                 )
             if torch.any(self.window_map < 0):
                 raise ValueError("window_map 不允许包含负索引")
+
+
+def move_batch_to_device(batch: SERBatch, device: torch.device) -> SERBatch:
+    """将 batch 中的 tensor 移动到目标设备，保留元数据。"""
+    return replace(
+        batch,
+        inputs={key: value.to(device) for key, value in batch.inputs.items()},
+        lengths={key: value.to(device) for key, value in batch.lengths.items()},
+        masks={key: value.to(device) for key, value in batch.masks.items()},
+        labels=batch.labels.to(device) if batch.labels is not None else None,
+        window_map=batch.window_map.to(device) if batch.window_map is not None else None,
+    )
 
 
 def validate_sample_contract(sample: SERSample, specs: Mapping[str, TensorSpec]) -> None:

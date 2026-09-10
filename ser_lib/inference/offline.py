@@ -8,8 +8,7 @@ import torch
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator
 from ser_lib.data.pipeline import SamplePipeline
-from ser_lib.data.types import AudioData, AudioRecord
-from ser_lib.engine.trainer import move_batch_to_device
+from ser_lib.data.types import AudioData, AudioRecord, move_batch_to_device
 from ser_lib.models.base import SERModel
 
 @dataclass(frozen=True, slots=True)

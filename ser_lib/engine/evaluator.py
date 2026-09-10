@@ -12,8 +12,7 @@ from typing import Protocol
 import torch
 import torch.nn.functional as F
 
-from ser_lib.data.types import SERBatch
-from ser_lib.engine.trainer import move_batch_to_device
+from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,

@@ -15,7 +15,7 @@ from typing import Any, Literal
 import torch
 import torch.nn.functional as F
 
-from ser_lib.data.types import SERBatch
+from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
 from ser_lib.engine.eta import EtaEstimator
 from ser_lib.engine.events import CheckpointEvent
@@ -112,18 +112,6 @@ def seed_everything(seed: int, *, deterministic: bool = True) -> None:
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = deterministic
     torch.backends.cudnn.benchmark = not deterministic
-
-
-def move_batch_to_device(batch: SERBatch, device: torch.device) -> SERBatch:
-    """将 batch 中的 tensor 移动到目标设备，保留元数据。"""
-    return replace(
-        batch,
-        inputs={key: value.to(device) for key, value in batch.inputs.items()},
-        lengths={key: value.to(device) for key, value in batch.lengths.items()},
-        masks={key: value.to(device) for key, value in batch.masks.items()},
-        labels=batch.labels.to(device) if batch.labels is not None else None,
-        window_map=batch.window_map.to(device) if batch.window_map is not None else None,
-    )
 
 
 def _safe_len(value: object) -> int | None:
@@ -1011,5 +999,5 @@ class Trainer:
 
 __all__ = [
     "TrainerConfig", "ObservabilityConfig", "EpochResult", "TrainingResult",
-    "TrainingStatus", "Trainer", "move_batch_to_device", "seed_everything",
+    "TrainingStatus", "Trainer", "seed_everything",
 ]
