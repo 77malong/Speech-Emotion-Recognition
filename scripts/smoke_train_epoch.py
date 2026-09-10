@@ -117,7 +117,8 @@ def run_smoke_test(device: str) -> None:
             ),
             optimizer=optimizer,
         )
-        history = trainer.fit(batches)
+        training_result = trainer.fit(batches)
+        history = training_result.epochs
 
         if len(history) != 10:
             raise RuntimeError(f"expected ten epoch results, got {len(history)}")
