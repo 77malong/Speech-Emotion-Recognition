@@ -84,7 +84,7 @@ class DatasetEditor:
         sample_rate_hint: int | None | object = _UNSET,
         metadata: Mapping[str, Any] | object = _UNSET,
     ) -> AudioRecord:
-        """修改单条记录；未传字段保持不变。"""
+        """修改单条记录；所有字段通过验证后才一次性应用内存状态。"""
         index = self._index_for_uid(uid)
         current = self._records[index]
         changes: dict[str, Any] = {}
@@ -107,13 +107,17 @@ class DatasetEditor:
             if not isinstance(metadata, Mapping):
                 raise DatasetEditError("metadata 必须是 Mapping", uid=uid)
             changes["metadata"] = dict(metadata)
+        if split is not _UNSET:
+            self._validate_split(split)
         try:
             updated = replace(current, **changes)
         except (TypeError, ValueError) as exc:
             raise DatasetEditError(str(exc), uid=uid) from exc
+
+        # Do not mutate either record or split state until every requested field
+        # has passed validation and the replacement record has been constructed.
         self._records[index] = updated
         if split is not _UNSET:
-            self._validate_split(split)
             self._record_splits[uid] = split  # type: ignore[assignment]
         return updated
 
