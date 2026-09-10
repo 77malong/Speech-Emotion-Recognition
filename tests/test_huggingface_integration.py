@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 import torch
 
-transformers = pytest.importorskip("transformers")
-
 from ser_lib.artifacts import export_model_artifact, load_model_artifact
 from ser_lib.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.data import SERBatch
@@ -17,12 +15,14 @@ from ser_lib.engine import Trainer, TrainerConfig, evaluate, load_checkpoint, sa
 from ser_lib.inference import EmotionPredictor
 from ser_lib.models import HFAudioClassifier, model_registry
 
+transformers = pytest.importorskip("transformers")
+
 
 _FAMILY_TYPES = ("wav2vec2", "hubert", "wavlm")
 _LABELS = {0: "neutral", 1: "happy"}
 
 
-def _tiny_encoder_config(model_type: str) -> dict:
+def _tiny_encoder_config(model_type: str, *, feat_extract_norm: str = "group") -> dict:
     config = transformers.AutoConfig.for_model(
         model_type,
         hidden_size=8,
@@ -40,17 +40,18 @@ def _tiny_encoder_config(model_type: str) -> dict:
         feat_proj_dropout=0.0,
         final_dropout=0.0,
         layerdrop=0.0,
+        feat_extract_norm=feat_extract_norm,
     )
     return config.to_dict()
 
 
-def _processor_snapshot() -> dict:
+def _processor_snapshot(*, return_attention_mask: bool = False) -> dict:
     processor = transformers.Wav2Vec2FeatureExtractor(
         feature_size=1,
         sampling_rate=16000,
         padding_value=0.0,
         do_normalize=True,
-        return_attention_mask=True,
+        return_attention_mask=return_attention_mask,
     )
     return {
         "class_name": type(processor).__name__,
@@ -88,11 +89,16 @@ def _single_batch(signal: torch.Tensor) -> SERBatch:
     )
 
 
-def _model(model_type: str = "wav2vec2") -> HFAudioClassifier:
+def _model(
+    model_type: str = "wav2vec2",
+    *,
+    feat_extract_norm: str = "group",
+    return_attention_mask: bool = False,
+) -> HFAudioClassifier:
     return HFAudioClassifier(
         num_classes=2,
-        encoder_config=_tiny_encoder_config(model_type),
-        processor_config=_processor_snapshot(),
+        encoder_config=_tiny_encoder_config(model_type, feat_extract_norm=feat_extract_norm),
+        processor_config=_processor_snapshot(return_attention_mask=return_attention_mask),
         dropout=0.0,
     )
 
@@ -142,7 +148,11 @@ def test_real_tiny_verified_audio_families_forward(model_type: str):
 
 def test_real_wav2vec2_padding_and_output_length_contract():
     torch.manual_seed(11)
-    model = _model("wav2vec2").eval()
+    model = _model(
+        "wav2vec2",
+        feat_extract_norm="layer",
+        return_attention_mask=True,
+    ).eval()
     batch = _batch(first_length=80, second_length=112)
     first_signal = batch.inputs["waveform"][0, :80].clone()
 
@@ -156,6 +166,7 @@ def test_real_wav2vec2_padding_and_output_length_contract():
     valid = batch.masks["waveform"]
     assert valid is not None
     prepared, attention_mask = model._prepare_waveform(batch.inputs["waveform"], valid)
+    assert attention_mask is not None
     hidden = model.encoder(
         input_values=prepared,
         attention_mask=attention_mask,
@@ -164,6 +175,16 @@ def test_real_wav2vec2_padding_and_output_length_contract():
     encoded_mask = model._encoded_mask(valid, hidden.shape[1])
     expected_lengths = model.encoder._get_feat_extract_output_lengths(batch.lengths["waveform"])
     assert encoded_mask.sum(dim=1).tolist() == expected_lengths.tolist()
+
+
+def test_real_group_norm_processor_does_not_request_attention_mask():
+    model = _model("wav2vec2").eval()
+    batch = _batch()
+    valid = batch.masks["waveform"]
+    assert valid is not None
+    _, attention_mask = model._prepare_waveform(batch.inputs["waveform"], valid)
+    assert model.encoder.config.feat_extract_norm == "group"
+    assert attention_mask is None
 
 
 def test_real_wav2vec2_full_offline_lifecycle(tmp_path: Path, monkeypatch):
@@ -221,7 +242,7 @@ def test_real_processor_local_directory_is_snapshotted(tmp_path: Path):
         sampling_rate=16000,
         padding_value=0.0,
         do_normalize=True,
-        return_attention_mask=True,
+        return_attention_mask=False,
     )
     directory = tmp_path / "processor"
     processor.save_pretrained(directory)
