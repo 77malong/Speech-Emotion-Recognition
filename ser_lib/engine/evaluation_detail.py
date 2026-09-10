@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ser_lib.core.diagnostics import Diagnostic
 from ser_lib.engine.evaluation_reports import EvaluationReportInfo
 from ser_lib.engine.evaluation_runs import EvaluationRunInfo
+from ser_lib.foundation.diagnostics import Diagnostic
 
 
 @dataclass(frozen=True, slots=True)
