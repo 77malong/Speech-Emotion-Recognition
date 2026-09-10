@@ -17,12 +17,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ser_lib.core._catalog_scan import scan_catalog_candidates
-from ser_lib.core.events import CancellationCheck, EventCallback, ProgressEvent
-from ser_lib.core.migrations import migrate_schema_payload
 from ser_lib.data.errors import DatasetEditConflictError, DatasetTransactionError
 from ser_lib.data.fingerprint import fingerprint_manifest
 from ser_lib.data.manifest import DatasetManifest
+from ser_lib.data.migrations import migrate_data_payload
+from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 DATASET_REVISION_SCHEMA_VERSION = 1
 _DEFAULT_HISTORY_DIR = ".ser_history"
@@ -360,20 +359,36 @@ def scan_dataset_revisions(
         item = inspect_dataset_revision(directory, cancellation=cancellation)
         return item if item.dataset_id == dataset.meta.dataset_id else None
 
-    revisions, failures = scan_catalog_candidates(
-        candidates,
-        inspect_candidate=inspect_candidate,
-        failure_factory=lambda directory, exc: DatasetRevisionScanFailure(
-            directory=directory.as_posix(),
-            error_type=type(exc).__name__,
-            message=str(exc),
-        ),
-        stage="dataset_revision_catalog_scan",
-        candidate_detail_key=None,
-        fail_fast=fail_fast,
-        event_callback=event_callback,
-        cancellation=cancellation,
-    )
+    revisions: list[DatasetRevisionInfo] = []
+    failures: list[DatasetRevisionScanFailure] = []
+    total = len(candidates)
+    for index, directory in enumerate(candidates, start=1):
+        if cancellation is not None:
+            cancellation.raise_if_cancelled()
+        try:
+            item = inspect_candidate(directory)
+            if item is not None:
+                revisions.append(item)
+        except Exception as exc:
+            if fail_fast:
+                raise
+            failures.append(
+                DatasetRevisionScanFailure(
+                    directory=directory.as_posix(),
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                )
+            )
+        if event_callback is not None:
+            event_callback(
+                ProgressEvent(
+                    stage="dataset_revision_catalog_scan",
+                    completed=index,
+                    total=total,
+                    details={"valid": len(revisions), "failed": len(failures)},
+                )
+            )
+
     revisions.sort(key=lambda item: (item.created_at, item.revision_id), reverse=True)
     return DatasetRevisionCatalog(
         dataset_id=dataset.meta.dataset_id,
@@ -531,7 +546,7 @@ def _load_revision(path: Path | str) -> tuple[Path, _RevisionRecordModel]:
         raise ValueError("revision.json 顶层必须是映射")
     payload = dict(raw)
     payload.setdefault("schema_version", DATASET_REVISION_SCHEMA_VERSION)
-    payload = migrate_schema_payload(
+    payload = migrate_data_payload(
         "dataset_revision",
         payload,
         target_version=DATASET_REVISION_SCHEMA_VERSION,
