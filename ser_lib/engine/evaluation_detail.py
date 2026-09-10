@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ser_lib.engine.evaluation_reports import EvaluationReportInfo
-from ser_lib.engine.evaluation_runs import EvaluationRunInfo
+from ser_lib.engine.evaluation_reports import EvaluationReportInfo, inspect_evaluation_report
+from ser_lib.engine.evaluation_runs import EvaluationRunInfo, load_evaluation_run_info
 from ser_lib.foundation.diagnostics import Diagnostic
 
 
@@ -68,8 +68,50 @@ def inspect_evaluation_prediction_file(run: EvaluationRunInfo) -> EvaluationPred
     )
 
 
+def inspect_evaluation_run_detail(path: Path | str) -> EvaluationRunDetail:
+    """聚合 evaluation metadata、metrics 与 prediction stat，不读预测明细。"""
+    run = load_evaluation_run_info(path)
+    run_dir = Path(run.directory)
+    predictions = inspect_evaluation_prediction_file(run)
+    diagnostics: list[Diagnostic] = []
+
+    try:
+        report = inspect_evaluation_report(run_dir)
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        report = None
+        diagnostics.append(
+            Diagnostic(
+                severity="warning",
+                code="evaluation_report_unavailable",
+                message=str(exc),
+                stage="evaluation_run_detail",
+                path=(run_dir / run.metrics_file).as_posix(),
+                details={"error_type": type(exc).__name__},
+            )
+        )
+
+    if run.predictions_file is not None and not predictions.exists:
+        diagnostics.append(
+            Diagnostic(
+                severity="warning",
+                code="evaluation_predictions_unavailable",
+                message=f"评估 predictions 文件不存在: {predictions.path}",
+                stage="evaluation_run_detail",
+                path=predictions.path,
+            )
+        )
+
+    return EvaluationRunDetail(
+        run=run,
+        report=report,
+        predictions=predictions,
+        diagnostics=tuple(diagnostics),
+    )
+
+
 __all__ = [
     "EvaluationPredictionFileInfo",
     "EvaluationRunDetail",
     "inspect_evaluation_prediction_file",
+    "inspect_evaluation_run_detail",
 ]
