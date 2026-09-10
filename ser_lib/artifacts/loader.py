@@ -122,6 +122,8 @@ def _validate_external_metadata(source: Path, manifest: ModelArtifactManifest) -
         "labels.json": {str(key): value for key, value in manifest.labels.items()},
         "metrics.json": manifest.metrics,
     }
+    if manifest.processor is not None:
+        expected["processor_config.json"] = manifest.processor
     for name, embedded in expected.items():
         path = _safe_component_path(source, name)
         try:
@@ -149,6 +151,11 @@ def inspect_model_artifact(directory: Path | str) -> ModelArtifactManifest:
             raise ValueError("schema v2 artifact 缺少 files_sha256")
         if manifest.files_sha256.get(manifest.weights_file) != manifest.weights_sha256:
             raise ValueError("weights_sha256 与 files_sha256 不一致")
+        if (
+            manifest.processor is not None
+            and "processor_config.json" not in manifest.files_sha256
+        ):
+            raise ValueError("包含 processor 的 artifact 必须哈希 processor_config.json")
         for name in manifest.files_sha256:
             path = _safe_component_path(source, name)
             if not path.is_file():
@@ -314,6 +321,9 @@ def load_model_artifact(
         raise ValueError("artifact 加载请求 CUDA，但当前环境不可用")
     data_config = DataConfig.model_validate(manifest.preprocessing)
     model = model_registry.create(manifest.model_name, **manifest.model_params)
+    if model.artifact_processor_config != manifest.processor:
+        raise ValueError("重建模型的 processor snapshot 与 artifact manifest 不一致")
+    model.validate_artifact_labels(manifest.labels)
     audio_loader, pipeline = build_components(data_config, train=False)
     validate_compatibility(
         pipeline.output_specs,
