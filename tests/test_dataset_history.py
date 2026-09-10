@@ -167,6 +167,32 @@ def test_restore_verifies_revision_before_modifying_current_dataset(tmp_path: Pa
     assert (tmp_path / "train.jsonl").read_bytes() == current_train
 
 
+def test_restore_rejects_tampered_target_path_before_writing(tmp_path: Path):
+    manifest_path = _write_dataset(tmp_path)
+    revision = create_dataset_revision(manifest_path, revision_id="baseline")
+    current_fingerprint = fingerprint_manifest(manifest_path).digest
+    unrelated = tmp_path / "unrelated.txt"
+    unrelated.write_text("KEEP ME", encoding="utf-8")
+
+    revision_path = Path(revision.directory) / "revision.json"
+    document = json.loads(revision_path.read_text(encoding="utf-8"))
+    document["files"]["split:train"]["target_path"] = unrelated.as_posix()
+    revision_path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="target_path"):
+        restore_dataset_revision(
+            manifest_path,
+            revision.directory,
+            expected_current_fingerprint=current_fingerprint,
+        )
+
+    assert unrelated.read_text(encoding="utf-8") == "KEEP ME"
+    assert fingerprint_manifest(manifest_path).digest == current_fingerprint
+
+
 def test_revision_validation_and_cancellation(tmp_path: Path):
     manifest_path = _write_dataset(tmp_path)
     with pytest.raises(ValueError, match="时区"):
