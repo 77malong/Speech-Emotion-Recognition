@@ -12,16 +12,16 @@ from typing import Protocol
 import torch
 import torch.nn.functional as F
 
-from ser_lib.core.events import (
+from ser_lib.data.types import SERBatch
+from ser_lib.engine.trainer import move_batch_to_device
+from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
     EventContext,
     LifecycleEvent,
     ProgressEvent,
 )
-from ser_lib.core.exceptions import OperationCancelled
-from ser_lib.data.types import SERBatch
-from ser_lib.engine.trainer import move_batch_to_device
+from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.models.base import SERModel
 
 
