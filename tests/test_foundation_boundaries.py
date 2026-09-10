@@ -6,12 +6,10 @@ import sys
 from pathlib import Path
 
 import ser_lib
-import ser_lib.core as legacy_core
 from ser_lib._version import __version__
 from ser_lib.engine.events import CheckpointEvent
 from ser_lib.foundation import (
     CancellationToken,
-    Diagnostic,
     EventContext,
     LifecycleEvent,
     LogEvent,
@@ -62,23 +60,14 @@ def test_foundation_has_no_reverse_domain_imports():
         ), path.name
 
 
-def test_legacy_core_common_exports_are_identity_shims():
-    assert legacy_core.SERError is SERError
-    assert legacy_core.OperationCancelled is OperationCancelled
-    assert legacy_core.Diagnostic is Diagnostic
-    assert legacy_core.EventContext is EventContext
-    assert legacy_core.ProgressEvent is ProgressEvent
-    assert legacy_core.MetricEvent is MetricEvent
-    assert legacy_core.LogEvent is LogEvent
-    assert legacy_core.LifecycleEvent is LifecycleEvent
-    assert legacy_core.CancellationToken is CancellationToken
+def test_retired_core_source_package_is_absent():
+    root = Path(__file__).resolve().parents[1] / "ser_lib"
+    assert not (root / "core").exists()
 
 
-def test_domain_events_have_new_owners_and_legacy_aliases():
+def test_domain_events_have_canonical_owners():
     assert CheckpointEvent.__module__ == "ser_lib.engine.events"
     assert PredictionEvent.__module__ == "ser_lib.inference.events"
-    assert legacy_core.CheckpointEvent is CheckpointEvent
-    assert legacy_core.PredictionEvent is PredictionEvent
 
 
 def test_domain_and_foundation_events_share_global_sequence():
@@ -93,7 +82,7 @@ def test_domain_and_foundation_events_share_global_sequence():
     assert progress.sequence < checkpoint.sequence < prediction.sequence
 
 
-def test_cancellation_error_identity_survives_core_shim():
+def test_cancellation_uses_foundation_error_identity():
     token = CancellationToken()
     token.cancel()
     try:
