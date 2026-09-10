@@ -12,6 +12,7 @@ import ser_lib.engine as engine
 import ser_lib.foundation as foundation
 import ser_lib.inference as inference
 import ser_lib.models as models
+from ser_lib._version import __version__
 
 
 _ROOT_API = [
@@ -50,7 +51,7 @@ def test_package_public_surfaces_are_resolvable_and_unique():
         models,
     ):
         _assert_explicit_public_surface(module)
-    assert ser_lib.__version__ == "0.2.0"
+    assert ser_lib.__version__ == __version__
     assert ser_lib.__all__ == _ROOT_API
 
 
