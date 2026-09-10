@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+import torch
 from torch.utils.data import DataLoader
 
 from ser_lib._version import __version__
@@ -283,6 +284,9 @@ def train_experiment(
         dataset_id=manifest.meta.dataset_id,
         dataset_fingerprint=dataset_fingerprint.digest,
     )
+    sampler_generator = getattr(getattr(batches, "sampler", None), "generator", None)
+    if isinstance(sampler_generator, torch.Generator):
+        trainer.attach_sampling_generator(sampler_generator)
 
     val_batches = None
     if "val" in manifest.meta.splits:
