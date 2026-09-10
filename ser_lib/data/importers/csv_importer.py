@@ -123,22 +123,19 @@ class CsvImporter:
                     if cfg.label_column:
                         raw_label = (row.get(cfg.label_column) or "").strip()
                         if raw_label:
-                            if cfg.label_mapping is not None or not _is_int(raw_label):
-                                label = label_mapping.get(raw_label)
-                                if label is None:
-                                    preview.diagnostics.append(
-                                        Diagnostic(
-                                            "error",
-                                            "import_unknown_label",
-                                            f"未知标签值 '{raw_label}'，跳过该行",
-                                            stage="validate",
-                                            path=source,
-                                            details={"entry_index": index},
-                                        )
+                            label = label_mapping.get(raw_label)
+                            if label is None:
+                                preview.diagnostics.append(
+                                    Diagnostic(
+                                        "error",
+                                        "import_unknown_label",
+                                        f"未知标签值 '{raw_label}'，跳过该行",
+                                        stage="validate",
+                                        path=source,
+                                        details={"entry_index": index},
                                     )
-                                    continue
-                            else:
-                                label = int(raw_label)
+                                )
+                                continue
 
                     uid = (
                         row[cfg.uid_column].strip()
