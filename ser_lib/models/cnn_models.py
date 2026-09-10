@@ -14,11 +14,45 @@ from ser_lib.models.registry import ModelDescriptor, model_registry
 from ser_lib.models.specs import ModelSpec
 
 
+class _MaskedBatchNorm1d(nn.BatchNorm1d):
+    """BatchNorm1d that excludes padded time steps from training statistics.
+
+    The class intentionally subclasses ``nn.BatchNorm1d`` so its persistent
+    ``weight``, ``bias``, ``running_mean``, ``running_var`` and
+    ``num_batches_tracked`` state remains compatible with existing CNN artifacts.
+    """
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if mask is None:
+            return super().forward(input)
+        if input.dim() != 3:
+            raise ValueError("masked BatchNorm1d 期望 [B,C,T]")
+        if mask.shape != (input.shape[0], input.shape[-1]):
+            raise ValueError(
+                f"masked BatchNorm1d mask 期望 {(input.shape[0], input.shape[-1])}，"
+                f"实际 {tuple(mask.shape)}"
+            )
+        valid_mask = mask.to(device=input.device, dtype=torch.bool)
+        time_major = input.transpose(1, 2)
+        valid_values = time_major[valid_mask]
+        if valid_values.shape[0] == 0:
+            raise ValueError("masked BatchNorm1d 至少需要一个有效时间步")
+        normalized = super().forward(valid_values)
+        output = torch.zeros_like(time_major)
+        output[valid_mask] = normalized
+        return output.transpose(1, 2)
+
+
 class CNNBaseline(SERModel):
     """保持时间分辨率的一维卷积分类器。
 
-    输入 ``features`` 为 ``[B,F,T]``。卷积沿时间轴进行，随后根据 mask 做
-    masked mean pooling，因此支持同一 batch 内不同有效长度。
+    输入 ``features`` 为 ``[B,F,T]``。当提供 mask 时，无效时间步在每个卷积块
+    之间都被清零，并从 BatchNorm 统计中排除，因此同一有效序列的输出不依赖右侧
+    padding 长度或同 batch 中最长样本。随后根据 mask 做 masked mean pooling。
     """
 
     def __init__(
@@ -39,7 +73,7 @@ class CNNBaseline(SERModel):
         self.dropout = float(dropout)
         self.encoder = nn.Sequential(
             nn.Conv1d(feature_dim, hidden_dim, kernel_size=5, padding=2),
-            nn.BatchNorm1d(hidden_dim),
+            _MaskedBatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Conv1d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -60,6 +94,22 @@ class CNNBaseline(SERModel):
             dropout=self.dropout,
         ).model_dump(mode="json")
 
+    def _encode_masked(self, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        valid = mask.to(device=features.device, dtype=torch.bool)
+        weights = valid.to(features.dtype).unsqueeze(1)
+        hidden = features * weights
+        hidden = self.encoder[0](hidden)
+        batch_norm = self.encoder[1]
+        assert isinstance(batch_norm, _MaskedBatchNorm1d)
+        hidden = batch_norm(hidden, valid)
+        hidden = self.encoder[2](hidden)
+        hidden = hidden * weights
+        hidden = self.encoder[3](hidden)
+        hidden = self.encoder[4](hidden)
+        hidden = hidden * weights
+        hidden = self.encoder[5](hidden)
+        return hidden * weights
+
     def forward(self, batch: SERBatch) -> ModelOutput:
         try:
             features = batch.inputs["features"]
@@ -73,9 +123,9 @@ class CNNBaseline(SERModel):
             raise ValueError("CNNBaseline 不接受空 batch 或零长度时间轴")
         if not features.is_floating_point():
             raise ValueError(f"CNNBaseline features 必须是浮点 tensor，实际 {features.dtype}")
-        encoded = self.encoder(features)
         mask = batch.masks.get("features")
         if mask is None:
+            encoded = self.encoder(features)
             embeddings = encoded.mean(dim=-1)
         else:
             if mask.shape != (features.shape[0], features.shape[-1]):
@@ -85,7 +135,8 @@ class CNNBaseline(SERModel):
                 )
             if torch.any(mask.sum(dim=-1) == 0):
                 raise ValueError("CNNBaseline 的每个样本必须至少包含一个有效时间步")
-            weights = mask.to(encoded.dtype).unsqueeze(1)
+            encoded = self._encode_masked(features, mask)
+            weights = mask.to(device=encoded.device, dtype=encoded.dtype).unsqueeze(1)
             embeddings = (encoded * weights).sum(dim=-1) / weights.sum(dim=-1)
         return ModelOutput(logits=self.classifier(embeddings), embeddings=embeddings)
 
