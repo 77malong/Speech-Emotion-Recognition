@@ -56,6 +56,11 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
         ]
         insertion = current.index("validate_experiment") + 1
         current[insertion:insertion] = experiment_api
+        current.insert(current.index("scan_training_runs"), "inspect_training_run_detail")
+        current.insert(
+            current.index("build_evaluation_run_metadata"),
+            "inspect_evaluation_run_detail",
+        )
     return current
 
 
@@ -64,17 +69,20 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert ser_lib.__version__ == snapshot["version"]
 
     for module_name, expected in snapshot["public_api"].items():
-        if module_name == "ser_lib.core":
+        if module_name in {"ser_lib.core", "ser_lib.services"}:
             continue
         module = importlib.import_module(module_name)
         assert list(module.__all__) == _expected_current_public_api(module_name, expected), module_name
 
     # Stage 01 的历史快照继续记录已退役 namespace，不能通过改 fixture 抹掉基线证据。
     assert snapshot["public_api"]["ser_lib.core"]
-    # Stage 06/07 保留旧 namespace 表面作为历史证据，只在测试中显式记录迁移/新增。
+    assert snapshot["public_api"]["ser_lib.services"]
+    # Stage 06/07/08 的计划内迁移与新增只在测试中显式记录。
     assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
     assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
     assert "train_experiment" not in snapshot["public_api"]["ser_lib.engine"]
+    assert "inspect_training_run_detail" not in snapshot["public_api"]["ser_lib.engine"]
+    assert "inspect_evaluation_run_detail" not in snapshot["public_api"]["ser_lib.engine"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
