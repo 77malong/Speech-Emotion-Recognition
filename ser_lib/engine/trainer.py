@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -29,10 +30,23 @@ from ser_lib.models.base import ModelOutput, SERModel
 
 
 class _AccumulationState:
-    """Track the effective reduction denominator for one optimizer step."""
+    """Track an online weighted-average gradient for one optimizer step.
 
-    def __init__(self, accumulation_steps: int) -> None:
+    Each microbatch loss is already a mean over its own reduction mass.  To
+    reproduce the gradient of one logical large batch without first turning
+    those means back into potentially huge numerators, accumulated gradients
+    are maintained as an online weighted average.  This keeps the gradient
+    entering AMP at mean-loss scale while preserving exact denominator
+    semantics for uneven microbatches and weighted cross entropy.
+    """
+
+    def __init__(
+        self,
+        accumulation_steps: int,
+        optimizer: torch.optim.Optimizer,
+    ) -> None:
         self.accumulation_steps = accumulation_steps
+        self.optimizer = optimizer
         self.pending_denominator = 0.0
         self.active = False
 
@@ -43,23 +57,42 @@ class _AccumulationState:
     def end_epoch(self) -> None:
         self.active = False
 
+    def _rescale_pending_gradients(self, factor: float) -> None:
+        if factor == 1.0:
+            return
+        for group in self.optimizer.param_groups:
+            for parameter in group["params"]:
+                if parameter.grad is not None:
+                    parameter.grad.mul_(factor)
+
     def scale_loss(self, loss: torch.Tensor, denominator: float) -> torch.Tensor:
         if not self.active:
             return loss
         if denominator <= 0:
             raise ValueError("gradient accumulation denominator 必须大于 0")
-        self.pending_denominator += denominator
-        scale = denominator * self.accumulation_steps
-        scaled = loss * scale
+
+        previous_denominator = self.pending_denominator
+        combined_denominator = previous_denominator + denominator
+        if previous_denominator > 0:
+            self._rescale_pending_gradients(previous_denominator / combined_denominator)
+
+        # _TrainerCore divides the returned scalar by accumulation_steps before
+        # backward.  Compensate only in the gradient path so the effective
+        # contribution is denominator / combined_denominator.  Unlike the old
+        # numerator-based scheme this factor is bounded by one after the core
+        # division, which avoids needless FP16 gradient amplification.
+        gradient_scale = (
+            denominator * self.accumulation_steps / combined_denominator
+        )
+        scaled = loss * gradient_scale
+        self.pending_denominator = combined_denominator
         # Preserve the user-visible scalar loss while changing only its gradient scale.
         return loss.detach() + scaled - scaled.detach()
 
-    def consume_denominator(self) -> float:
-        denominator = self.pending_denominator
-        if denominator <= 0:
+    def finish_step(self) -> None:
+        if self.pending_denominator <= 0:
             raise RuntimeError("optimizer step 缺少 gradient accumulation denominator")
         self.pending_denominator = 0.0
-        return denominator
 
 
 class _AccumulationAwareLoss(torch.nn.Module):
@@ -96,7 +129,8 @@ class Trainer(_TrainerCore):
     ``gradient_accumulation_steps`` 的分组都会按实际有效归约分母重新归一化。显式
     自定义标量 ``loss_fn`` 约定为“对当前 microbatch 样本取 mean”；内置带类别权重
     的 ``ClassificationLoss`` 会使用与 PyTorch weighted cross-entropy 一致的权重
-    质量作为分母。
+    质量作为分母。累积梯度采用在线加权平均，不会先在 AMP 反向路径中放大为 loss
+    numerator。
     """
 
     run_metadata: TrainingRunMetadata | None
@@ -123,7 +157,8 @@ class Trainer(_TrainerCore):
         self.run_metadata = run_metadata
         self._sampling_generator: torch.Generator | None = None
         self._accumulation_state = _AccumulationState(
-            resolved_config.gradient_accumulation_steps
+            resolved_config.gradient_accumulation_steps,
+            resolved_optimizer,
         )
         wrapped_loss = (
             _AccumulationAwareLoss(loss_fn, self._accumulation_state)
@@ -141,6 +176,8 @@ class Trainer(_TrainerCore):
             observability=observability,
             run_id=run_id,
         )
+        self.optimizer_step_attempted = 0
+        self.optimizer_step_skipped = 0
         self._accumulation_model_hook = None
         if loss_fn is None:
             self._accumulation_model_hook = self.model.register_forward_hook(
@@ -185,31 +222,43 @@ class Trainer(_TrainerCore):
         )
 
     def train_epoch(self, batches: Iterable[SERBatch], *, epoch: int) -> EpochResult:
+        applied_before = self.optimizer_step
         self._accumulation_state.begin_epoch()
         try:
-            return super().train_epoch(batches, epoch=epoch)
+            result = super().train_epoch(batches, epoch=epoch)
+            return replace(
+                result,
+                optimizer_steps=self.optimizer_step - applied_before,
+            )
         finally:
             self._accumulation_state.end_epoch()
 
     def _optimizer_step(self) -> None:
-        denominator = self._accumulation_state.consume_denominator()
+        self._accumulation_state.finish_step()
+        self.optimizer_step_attempted += 1
         if self._scaler is not None:
             self._scaler.unscale_(self.optimizer)
-        for group in self.optimizer.param_groups:
-            for parameter in group["params"]:
-                if parameter.grad is not None:
-                    parameter.grad.div_(denominator)
         if self.config.gradient_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config.gradient_clip_norm
             )
+
+        applied = True
         if self._scaler is None:
             self.optimizer.step()
         else:
+            scale_before = float(self._scaler.get_scale())
             self._scaler.step(self.optimizer)
             self._scaler.update()
+            # GradScaler lowers its scale whenever non-finite gradients cause
+            # optimizer.step() to be skipped. Successful steps keep or grow it.
+            applied = float(self._scaler.get_scale()) >= scale_before
+
         self.optimizer.zero_grad(set_to_none=True)
-        self.optimizer_step += 1
+        if applied:
+            self.optimizer_step += 1
+        else:
+            self.optimizer_step_skipped += 1
 
     @classmethod
     def from_experiment(
