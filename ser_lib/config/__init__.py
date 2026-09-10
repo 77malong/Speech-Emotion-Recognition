@@ -40,6 +40,11 @@ from ser_lib.config.model import (
     GRUBaselineConfig,
     HFAudioClassifierConfig,
     ModelConfig,
+    TorchDTypeName,
+    TorchLayoutName,
+    TorchModelAdapterConfig,
+    TorchOutputMappingConfig,
+    TorchTensorSpecConfig,
     TransformerBaselineConfig,
 )
 from ser_lib.config.optimizer import (
@@ -110,6 +115,11 @@ __all__ = [
     "GRUBaselineConfig",
     "TransformerBaselineConfig",
     "HFAudioClassifierConfig",
+    "TorchDTypeName",
+    "TorchLayoutName",
+    "TorchTensorSpecConfig",
+    "TorchOutputMappingConfig",
+    "TorchModelAdapterConfig",
     "ObservabilityConfig",
     "TrainerConfig",
     "LossConfig",
