@@ -326,15 +326,6 @@ def train_experiment(
     )
     run_info = load_training_run_info(run_record)
 
-    checkpoint_dir = cast(Path, resolved.trainer.checkpoint_dir)
-    last_checkpoint = (
-        checkpoint_dir / f"epoch-{trainer.last_completed_epoch:04d}.pt"
-        if trainer.last_completed_epoch
-        else resumed_from
-    )
-    best_checkpoint = (
-        checkpoint_dir / "best.pt" if trainer.best_epoch is not None else None
-    )
     return TrainingExperimentResult(
         output_dir=resolved.output_dir,
         training=training_result,
@@ -343,8 +334,8 @@ def train_experiment(
         metrics_log=metrics_log,
         history_path=history_path,
         resumed_from=resumed_from,
-        last_checkpoint=last_checkpoint,
-        best_checkpoint=best_checkpoint,
+        last_checkpoint=training_result.last_checkpoint,
+        best_checkpoint=training_result.best_checkpoint,
     )
 
 
