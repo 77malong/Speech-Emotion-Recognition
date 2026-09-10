@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -103,8 +104,14 @@ def load_checkpoint(
     map_location: str | torch.device = "cpu",
     restore_rng: bool = True,
     expected_trainer_config: dict[str, Any] | None = None,
+    metadata_validator: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """加载可信 checkpoint；兼容格式 v1，完整恢复格式 v2。"""
+    """加载可信 checkpoint；兼容格式 v1，完整恢复格式 v2。
+
+    ``metadata_validator`` 在任何 model/optimizer/scheduler/scaler 状态应用之前执行，
+    用于高层实验入口检查 lineage、数据指纹和完整实验配置兼容性，避免“不兼容后
+    才报错但当前对象已被部分恢复”的半状态。
+    """
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"checkpoint 不存在: {source}")
@@ -126,6 +133,17 @@ def load_checkpoint(
             != _resume_trainer_signature(expected_trainer_config)
         ):
             raise ValueError("checkpoint trainer_config 与当前训练配置不一致")
+
+    metadata = payload.get("metadata")
+    if metadata is None:
+        normalized_metadata: dict[str, Any] = {}
+    elif isinstance(metadata, dict):
+        normalized_metadata = metadata
+    else:
+        raise ValueError("checkpoint metadata 必须是映射")
+    if metadata_validator is not None:
+        metadata_validator(normalized_metadata)
+
     model_state = payload.get("model_state")
     if not isinstance(model_state, dict):
         raise ValueError("checkpoint 缺少合法 model_state")
