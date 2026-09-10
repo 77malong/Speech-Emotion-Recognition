@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from ser_lib.config import StrictConfig
 from ser_lib.config.importers import (
     DEFAULT_AUDIO_EXTENSIONS,
     CasiaImportConfig,
@@ -35,6 +36,19 @@ from ser_lib.data.importers.jsonl_importer import (
 from ser_lib.data.importers.ravdess import RavdessImportConfig as LegacyRavdessImportConfig
 
 
+IMPORTER_CONFIG_TYPES = (
+    CasiaImportConfig,
+    CsvImportConfig,
+    CsemotionsImportConfig,
+    CremaDImportConfig,
+    EmotionTalkImportConfig,
+    EsdImportConfig,
+    FolderImportConfig,
+    JsonlImportConfig,
+    RavdessImportConfig,
+)
+
+
 def test_importer_config_legacy_paths_are_identity_aliases():
     pairs = [
         (CasiaImportConfig, LegacyCasiaImportConfig),
@@ -57,18 +71,9 @@ def test_folder_import_config_preserves_defaults_and_normalization():
     assert FolderImportConfig().audio_extensions == list(DEFAULT_AUDIO_EXTENSIONS)
 
 
-def test_importer_configs_preserve_unknown_field_rejection():
-    for config_type in (
-        CasiaImportConfig,
-        CsvImportConfig,
-        CsemotionsImportConfig,
-        CremaDImportConfig,
-        EmotionTalkImportConfig,
-        EsdImportConfig,
-        FolderImportConfig,
-        JsonlImportConfig,
-        RavdessImportConfig,
-    ):
+def test_importer_configs_share_strict_config_contract():
+    for config_type in IMPORTER_CONFIG_TYPES:
+        assert issubclass(config_type, StrictConfig)
         with pytest.raises(ValidationError):
             config_type(unknown_field=True)
 
@@ -80,10 +85,18 @@ def test_csv_and_jsonl_config_preserve_path_roundtrip():
     assert jsonl_config.model_dump()["root"] == Path("records")
 
 
-def test_importer_configs_preserve_mutable_base_model_semantics():
+def test_importer_configs_are_frozen_like_other_public_configs():
     config = CsvImportConfig()
-    config.uid_prefix = "changed"
-    assert config.uid_prefix == "changed"
+    with pytest.raises(ValidationError):
+        config.uid_prefix = "changed"
+    assert config.uid_prefix == "audio"
+
+
+def test_esd_default_languages_do_not_share_mutable_default():
+    first = EsdImportConfig()
+    second = EsdImportConfig()
+    first.languages.append("zh")
+    assert second.languages == ["zh", "en"]
 
 
 def test_literal_constraints_remain_unchanged():

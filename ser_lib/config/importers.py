@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator
+
+from ser_lib.config.base import StrictConfig
 
 DEFAULT_AUDIO_EXTENSIONS = (
     ".wav",
@@ -18,14 +20,12 @@ DEFAULT_AUDIO_EXTENSIONS = (
 )
 
 
-class CasiaImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class CasiaImportConfig(StrictConfig):
     audio_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_AUDIO_EXTENSIONS))
     label_mapping: dict[str, int] | None = None
 
 
-class CsvImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class CsvImportConfig(StrictConfig):
     audio_path_column: str = Field(default="audio_path", min_length=1)
     label_column: str | None = Field(default="label")
     label_mapping: dict[str, int] | None = None
@@ -38,8 +38,7 @@ class CsvImportConfig(BaseModel):
     root: Path | None = None
 
 
-class CsemotionsImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class CsemotionsImportConfig(StrictConfig):
     metadata_file: str = "csemotions_metadata.csv"
     audio_directory: str = "wav_data"
     encoding: str = "utf-8-sig"
@@ -47,8 +46,7 @@ class CsemotionsImportConfig(BaseModel):
     speaker_splits: dict[str, list[str]] | None = None
 
 
-class CremaDImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class CremaDImportConfig(StrictConfig):
     audio_directory: str = "AudioWAV"
     demographics_file: str | None = "VideoDemographics.csv"
     encoding: str = "utf-8-sig"
@@ -56,8 +54,7 @@ class CremaDImportConfig(BaseModel):
     speaker_splits: dict[str, list[str]] | None = None
 
 
-class EmotionTalkImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class EmotionTalkImportConfig(StrictConfig):
     json_directory: str = "json"
     audio_directory: str = "wav"
     encoding: str = "utf-8"
@@ -66,16 +63,14 @@ class EmotionTalkImportConfig(BaseModel):
     speaker_splits: dict[str, list[str]] | None = None
 
 
-class EsdImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    languages: list[Literal["zh", "en"]] = ["zh", "en"]
+class EsdImportConfig(StrictConfig):
+    languages: list[Literal["zh", "en"]] = Field(default_factory=lambda: ["zh", "en"])
     encoding: str = "utf-8-sig"
     label_mapping: dict[str, int] | None = None
     speaker_splits: dict[str, list[str]] | None = None
 
 
-class FolderImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class FolderImportConfig(StrictConfig):
     audio_extensions: list[str] = Field(default_factory=lambda: list(DEFAULT_AUDIO_EXTENSIONS))
     label_dir_level: int = Field(default=0, ge=0, le=2)
     speaker_dir_level: int | None = Field(default=None, ge=0, le=3)
@@ -95,14 +90,12 @@ class FolderImportConfig(BaseModel):
         return result
 
 
-class JsonlImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class JsonlImportConfig(StrictConfig):
     uid_prefix: str = Field(default="audio", min_length=1)
     root: Path | None = None
 
 
-class RavdessImportConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class RavdessImportConfig(StrictConfig):
     vocal_channel: Literal["speech", "song", "all"] = "speech"
     relative_paths: bool = True
 
