@@ -77,6 +77,8 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
     elif module_name == "ser_lib.models":
         current.insert(2, "ModelSpec")
         current[3:3] = ["TorchModelAdapter", "TORCH_ADAPTER_MODEL_ID"]
+        insertion = current.index("HFAudioClassifierConfig") + 1
+        current.insert(insertion, "HFProcessorConfig")
     elif module_name == "ser_lib.engine":
         compatibility = [
             "CompatibilityReport",
@@ -133,7 +135,7 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert "ArtifactInfo" in snapshot["public_api"]["ser_lib.artifacts"]
     assert "ComponentCatalog" in snapshot["public_api"]["ser_lib"]
 
-    # Stage 06–10 的计划内迁移与新增只在测试中显式记录。
+    # Stage 06–11 的计划内迁移与新增只在测试中显式记录。
     assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
     assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
     assert "train_experiment" not in snapshot["public_api"]["ser_lib.engine"]
@@ -142,6 +144,7 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert "ArtifactEntry" not in snapshot["public_api"]["ser_lib.artifacts"]
     assert "TorchModelAdapter" not in snapshot["public_api"]["ser_lib.models"]
     assert "TORCH_ADAPTER_MODEL_ID" not in snapshot["public_api"]["ser_lib.models"]
+    assert "HFProcessorConfig" not in snapshot["public_api"]["ser_lib.models"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
@@ -256,7 +259,7 @@ def test_hf_registration_and_state_dict_key_shape_are_locked(monkeypatch):
             return _FakeEncoder(config)
 
     monkeypatch.setattr(
-        "ser_lib.models.pretrained._transformers",
+        "ser_lib.models.adapters.huggingface._transformers",
         lambda: SimpleNamespace(AutoConfig=AutoConfig, AutoModel=AutoModel),
     )
     model = HFAudioClassifier(
