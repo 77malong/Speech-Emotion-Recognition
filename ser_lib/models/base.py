@@ -1,6 +1,7 @@
 """SER 模型公共契约。"""
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,6 +52,15 @@ class SERModel(nn.Module, ABC):
     def model_config(self) -> dict[str, Any]:
         """返回可 JSON 序列化、可用于注册表重建模型的完整配置。"""
         ...
+
+    @property
+    def artifact_processor_config(self) -> dict[str, Any] | None:
+        """返回需要随 artifact 固化的 processor 快照；普通模型默认没有。"""
+        return None
+
+    def validate_artifact_labels(self, labels: Mapping[int, str]) -> None:
+        """允许模型在 artifact 写入前校验领域标签契约。"""
+        _ = labels
 
     def parameter_count(self, *, trainable_only: bool = False) -> int:
         """返回模型参数量；可限制为需要梯度的参数。"""
