@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "model_id": "cnn_baseline",
+  "model_config": {
+    "feature_dim": 4,
+    "num_classes": 2,
+    "hidden_dim": 6,
+    "dropout": 0.0
+  },
+  "epoch": 3,
+  "metrics": {"uar": 0.5},
+  "metadata": {"fixture": "pre-stage12"}
+}

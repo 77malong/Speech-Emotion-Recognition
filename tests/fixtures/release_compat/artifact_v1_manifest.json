@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "library_version": "0.1.0",
+  "model_name": "cnn_baseline",
+  "model_params": {
+    "feature_dim": 4,
+    "num_classes": 2,
+    "hidden_dim": 6,
+    "dropout": 0.0
+  },
+  "weights_sha256": "__RUNTIME_SHA256__",
+  "preprocessing": {
+    "schema_version": 1,
+    "manifest": "dataset_v1.yaml",
+    "dataset_id": "legacy-release-fixture",
+    "labels": {
+      "0": {"en": "neutral"},
+      "1": {"en": "happy"}
+    },
+    "audio": {
+      "target_sample_rate": 16000,
+      "mono": true,
+      "normalize_peak": false,
+      "backend": "soundfile"
+    },
+    "cache": {
+      "enabled": false,
+      "directory": ".ser-cache/features"
+    },
+    "representation": {
+      "type": "log_mel",
+      "params": {
+        "sample_rate": 16000,
+        "n_fft": 256,
+        "win_length": 256,
+        "hop_length": 80,
+        "n_mels": 4
+      }
+    },
+    "waveform_transforms": [],
+    "feature_transforms": [],
+    "batching": {"type": "dynamic"}
+  },
+  "labels": {
+    "0": "neutral",
+    "1": "happy"
+  },
+  "metrics": {},
+  "metadata": {"fixture": "pre-stage12"}
+}
