@@ -42,8 +42,20 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
     elif module_name == "ser_lib.models":
         current.insert(2, "ModelSpec")
     elif module_name == "ser_lib.engine":
-        insertion = ["CompatibilityReport", "inspect_compatibility", "validate_compatibility"]
-        current[7:7] = insertion
+        compatibility = [
+            "CompatibilityReport",
+            "inspect_compatibility",
+            "validate_compatibility",
+        ]
+        current[7:7] = compatibility
+        experiment_api = [
+            "TrainingExperimentResult",
+            "EvaluationExperimentResult",
+            "train_experiment",
+            "evaluate_artifact",
+        ]
+        insertion = current.index("validate_experiment") + 1
+        current[insertion:insertion] = experiment_api
     return current
 
 
@@ -59,9 +71,10 @@ def test_pre_refactor_public_api_exact_snapshot():
 
     # Stage 01 的历史快照继续记录已退役 namespace，不能通过改 fixture 抹掉基线证据。
     assert snapshot["public_api"]["ser_lib.core"]
-    # Stage 06 同样保留旧 data/models/engine 表面作为历史证据，只在测试中显式记录迁移。
+    # Stage 06/07 保留旧 namespace 表面作为历史证据，只在测试中显式记录迁移/新增。
     assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
     assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
+    assert "train_experiment" not in snapshot["public_api"]["ser_lib.engine"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
