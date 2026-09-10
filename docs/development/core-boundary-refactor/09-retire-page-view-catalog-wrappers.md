@@ -64,3 +64,23 @@
 ## 建议提交
 
 `refactor(api): remove page view detail and aggregate catalog wrappers`
+
+## 实施记录
+
+Stage 09 开始前重新读取了 `SER_LIB_CORE_BOUNDARY_AUDIT.md`、`SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划，并按“删除包装、保留算法”的边界逐项核对 data query、training/evaluation run、prediction report、artifact scan、component catalog 与 preset introspection。实现范围从 Stage 08 closure `2c9a5f78115690b5a94ca338ffec264939e2e815` 推进到代码验收 HEAD `d8c0adcc53bd071f149b81362ea794bf148dd66e`；未修改 models adapter、HF processor、optimizer/checkpoint 训练算法，因此没有越界进入 Stage 10/11。
+
+数据查询已退役 `RecordView`、`RecordPage`、`query_records` 和 `_to_view`，改为 `ser_lib.data.iter_records() -> Iterator[AudioRecord]`；过滤、split/label/speaker/uid 子串筛选、稳定顺序与 cancellation 继续保留，分页/计数由调用方按需 `islice` 或统计，不再为了页面 total 扫描并复制整页 DTO。对应测试直接锁住 iterator 过滤和调用方切片语义。
+
+评估 prediction 查询已退役 `EvaluationPredictionPage` 与 `query_evaluation_predictions`，改为 `iter_evaluation_predictions()` 流式逐行 yield `PredictionRecord`。逐行 schema 校验、坏行行号错误和 cancellation 继续保留，并新增“首条合格记录可在坏尾部被扫描前 yield”的回归，避免因为 matched_count/has_more 再扫描到 EOF。真实 prediction 文件 metadata `EvaluationPredictionFileInfo` 与 stat helper 合并到 `evaluation_reports.py` 并继续保留。
+
+`TrainingRunDetail` 与 `EvaluationRunDetail` 已删除；调用方和测试分别组合 `load_training_run_info`、`load_training_history`、`scan_checkpoints`，以及 `load_evaluation_run_info`、`inspect_evaluation_report`、`inspect_evaluation_prediction_file`。此前 Stage 08 为接回 Service 隐藏行为临时保留的 detail 聚合入口与 `engine/evaluation_detail.py` 在本阶段一并退役；run.json/history/report/checkpoint/prediction stat 等真实资源 API 未删除。
+
+Artifact 扫描继续保留 no-load/no-hash 语义，但 `ArtifactInfo` 已收缩为最小 `ArtifactEntry(path, manifest, weights_bytes)`：不再扁平复制 model/labels/metrics/metadata，也不再替管理页计算总目录容量。`inspect_model_artifact`、`verify_model_artifact`、`load_model_artifact` 的职责边界保持不变，scan 仍只 inspect/stat，verify 才 hash，load 才实例化模型。
+
+跨领域聚合 `ser_lib/catalog.py` 已物理删除（删除提交 `d4a8436c2a349d416599f7f5c1eebe25aca76121`）；组件发现改为 data/model registry 的原生 descriptor/schema。`engine/presets.py` 也已物理删除（`59cb870063ecd1fa7da34c8d19b3f6b3b6247747`），preset 直接使用 `ser_lib.config.list_experiment_preset_ids()`、`get_experiment_preset_payload()` 与 `build_experiment_config()`。根包同步移除 ComponentCatalog/PresetCatalog/Page/Detail 等应用包装导出，同时保留真实 `ComponentDescriptor` 与 `build_experiment_config` 的 canonical convenience 路径。
+
+Stage 01 历史 fixture 未修改；`tests/test_pre_refactor_contracts.py` 只显式声明 Stage 09 的计划内 public-API delta。`tests/test_public_api.py` 进一步要求已退役 wrapper 名不可解析，并把 `ser_lib.catalog`、`ser_lib.engine.presets`、`ser_lib.engine.evaluation_detail` 列为退役 namespace。CI wheel smoke 在 `47abb8f2edca1436773b038b26b1400c7658ee45` 增加这些 namespace 的独立安装包缺失断言；`docs/API_REFERENCE.md` 和 `examples/inspect_runs_and_presets.py` 也改为直接组合领域资源 API。
+
+首轮 exact-head CI #376 / run `34443151078` 的 package install、dependency check、compile、Ruff 和 mypy 均通过，但 pytest collection 发现两个遗漏的旧测试入口：`tests/test_config_schema_centralization.py` 仍导入已删除的 `ser_lib.engine.presets`，`tests/test_direct_domain_apis.py` 仍导入 `query_records`。分别由 `7d45dc54c6d9d7d26ee3d73692498816c2556265` 与 `d8c0adcc53bd071f149b81362ea794bf148dd66e` 迁到 canonical config/record iterator 后，代码验收 CI #378 / run `34443321741` 7/7 `completed/success`：Ruff、mypy、package coverage、Ubuntu/macOS/Windows × Python 3.10/3.12、完整测试与 training smoke 全部通过；Ubuntu 3.12 的 distribution build 与独立 wheel smoke 同样成功。
+
+因此 Stage 09 的代码验收已满足：公开 API 不再暴露 View/Page/Detail/aggregate catalog 包装，数据过滤、prediction 流式读取、run/history/report、scan failure、artifact no-load 扫描和领域 registry/config introspection 均由真实资源 API 继续承担，没有为了统一返回类型创建新的页面 DTO。
