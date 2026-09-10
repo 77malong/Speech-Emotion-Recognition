@@ -241,7 +241,8 @@ def test_processor_snapshot_is_hashed_and_rebuilt_offline(fake_transformers, tmp
     assert loaded.manifest.processor == model.artifact_processor_config
     assert "processor_config.json" in loaded.manifest.files_sha256
     assert loaded.model.artifact_processor_config == model.artifact_processor_config
-    assert torch.allclose(model(_batch()).logits, loaded.model(_batch()).logits, atol=1e-6) is False
+    batch = _batch()
+    assert torch.allclose(model(batch).logits, loaded.model(batch).logits, atol=1e-6)
 
 
 def test_pretrained_declares_required_sample_rate(fake_transformers):
