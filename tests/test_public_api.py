@@ -48,8 +48,14 @@ def test_new_stabilization_types_have_intentional_public_paths():
     assert ser_lib.EtaEstimator is engine.EtaEstimator
 
     assert ser_lib.Diagnostic is foundation.Diagnostic
+    assert ser_lib.CompatibilityReport is engine.CompatibilityReport
+    assert ser_lib.inspect_compatibility is engine.inspect_compatibility
+    assert models.ModelSpec.__module__ == "ser_lib.models.specs"
+    assert engine.CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
     assert config.StrictConfig.__module__ == "ser_lib.config.base"
     assert foundation.SchemaMigrationError.__module__ == "ser_lib.foundation.errors"
+    assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors"
+    assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors"
 
 
 def test_services_are_public_only_from_service_facade_not_root_package():

@@ -28,6 +28,25 @@ def _snapshot() -> dict:
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
 
 
+def _expected_current_public_api(module_name: str, expected: list[str]) -> list[str]:
+    """Apply only explicitly planned namespace moves while preserving Stage 01 evidence."""
+    current = list(expected)
+    if module_name == "ser_lib.data":
+        retired = {
+            "ModelSpec",
+            "CompatibilityReport",
+            "inspect_compatibility",
+            "validate_compatibility",
+        }
+        current = [name for name in current if name not in retired]
+    elif module_name == "ser_lib.models":
+        current.insert(2, "ModelSpec")
+    elif module_name == "ser_lib.engine":
+        insertion = ["CompatibilityReport", "inspect_compatibility", "validate_compatibility"]
+        current[7:7] = insertion
+    return current
+
+
 def test_pre_refactor_public_api_exact_snapshot():
     snapshot = _snapshot()
     assert ser_lib.__version__ == snapshot["version"]
@@ -36,10 +55,13 @@ def test_pre_refactor_public_api_exact_snapshot():
         if module_name == "ser_lib.core":
             continue
         module = importlib.import_module(module_name)
-        assert list(module.__all__) == expected, module_name
+        assert list(module.__all__) == _expected_current_public_api(module_name, expected), module_name
 
     # Stage 01 的历史快照继续记录已退役 namespace，不能通过改 fixture 抹掉基线证据。
     assert snapshot["public_api"]["ser_lib.core"]
+    # Stage 06 同样保留旧 data/models/engine 表面作为历史证据，只在测试中显式记录迁移。
+    assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
+    assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
