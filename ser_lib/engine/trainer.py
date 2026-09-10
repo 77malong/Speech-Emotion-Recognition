@@ -121,6 +121,7 @@ class Trainer(_TrainerCore):
             AdamWConfig(),
         )
         self.run_metadata = run_metadata
+        self._sampling_generator: torch.Generator | None = None
         self._accumulation_state = _AccumulationState(
             resolved_config.gradient_accumulation_steps
         )
@@ -145,6 +146,12 @@ class Trainer(_TrainerCore):
             self._accumulation_model_hook = self.model.register_forward_hook(
                 self._scale_implicit_training_loss
             )
+
+    def attach_sampling_generator(self, generator: torch.Generator | None) -> None:
+        """绑定训练 sampler 的独立 RNG，使 checkpoint/resume 可恢复抽样序列。"""
+        if generator is not None and not isinstance(generator, torch.Generator):
+            raise TypeError("sampling generator 必须是 torch.Generator 或 None")
+        self._sampling_generator = generator
 
     def _scale_implicit_training_loss(
         self,
@@ -272,6 +279,10 @@ class Trainer(_TrainerCore):
         resolved_metadata = dict(metadata)
         if self.run_metadata is not None:
             resolved_metadata["run_metadata"] = self.run_metadata.to_dict()
+        if self._sampling_generator is not None:
+            resolved_metadata["sampling_generator_state"] = (
+                self._sampling_generator.get_state().cpu()
+            )
         return super()._save_checkpoint_with_event(
             path,
             kind=kind,
@@ -288,6 +299,13 @@ class Trainer(_TrainerCore):
             raw_lineage = raw_checkpoint_metadata.get("run_metadata")
             if isinstance(raw_lineage, Mapping):
                 saved_run_metadata = TrainingRunMetadata.from_dict(raw_lineage)
+            sampling_state = raw_checkpoint_metadata.get("sampling_generator_state")
+            if (
+                restore_rng
+                and self._sampling_generator is not None
+                and isinstance(sampling_state, torch.Tensor)
+            ):
+                self._sampling_generator.set_state(sampling_state.cpu())
 
         if not self._run_id_explicit and saved_run_metadata is not None:
             self.run_metadata = saved_run_metadata.with_run_id(self.run_id)
