@@ -62,3 +62,26 @@
 ## 建议提交
 
 `feat(models): harden huggingface audio adapter and processor artifacts`
+
+## 实施记录
+
+Stage 11 开始前重新读取并以 `docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`、`docs/development/SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划作为实现依据。实现严格限定在 HF adapter、processor、artifact 和依赖验证范围，没有新增 HF 专用 Trainer，也没有提前进入 Stage 12 的最终发布整理。
+
+实际完成：
+
+- 正式实现迁至 `ser_lib/models/adapters/huggingface.py`，物理删除旧 `ser_lib/models/pretrained.py`；持久化注册 ID `hf_audio_classifier` 保持不变，public API 与 wheel smoke 明确验证旧模块不可导入。
+- 中央配置新增 `HFProcessorConfig`，processor 通过类名和 JSON-safe 配置快照离线重建；基础安装不依赖 Transformers，新增 `[hf]` extra，并保留 `[pretrained]` 兼容别名。
+- `HFAudioClassifier` 支持 `encoder_head` 与 `audio_classification` 两条策略；后者使用原生 HF logits，不重复叠加 SER 分类头，并严格校验 `num_labels`、`num_classes`、`id2label`、`label2id` 与 artifact labels。分类头不匹配只有显式 `reset_classifier_head=True` 才允许重置。
+- processor snapshot 写入 `processor_config.json` 并纳入 artifact `files_sha256`；manifest 同时保存同一快照，离线 load 后验证 processor identity 与 label contract。旧无 processor 的 artifact 继续按原兼容规则读取，没有伪造格式迁移。
+- 默认继续 `local_files_only=True`、`trust_remote_code=False`，不使用 `device_map=auto`；训练、评估与推理仍服从统一 SER 执行端。
+- 删除旧 nearest-interpolation encoded mask 假设，优先使用 HF 模型 `_get_feat_extract_output_lengths()`，必要时按 `conv_kernel/conv_stride` 计算真实输出长度。
+- 用本地 tiny config + 随机权重真实验证 Wav2Vec2、HuBERT、WavLM；Wav2Vec2 额外覆盖 CPU train、evaluate、checkpoint save/load、artifact export/offline load、processor 重建和文件预测。processor 测试不访问 Hub。
+- padding/mask 测试按 HF feature extractor 语义区分：group-norm 路径不要求 attention mask；layer-norm 路径用 attention mask 验证 padding 与真实 output-length 行为，不通过扩大数值容差掩盖差异。
+
+CI 记录：
+
+- CI #411 / run `34448958792` 是首轮 9-job HF 扩展验证。普通矩阵首先暴露两个仍指向 `ser_lib.models.pretrained` 的测试入口；Static 暴露 integration test import 顺序的 Ruff E402；Transformers 4.38.2 与 5.17.0 均得到相同的 `14 passed / 2 failed`，失败分别来自 fake processor 类名和过强的 group-norm padding 不变性断言，因此没有观察到 4.x/5.x API 分叉。
+- 上述问题按正式 adapter 路径和真实 feature-norm/mask 语义修复，没有恢复旧 `pretrained.py` shim，也没有放宽行为契约。
+- 代码验收 HEAD `7defe672752e5ea0fd197a1ed0a48569a42176a1` 对应 CI #415 / run `34450291387`：9/9 jobs 全部 `completed/success`。Linux/Windows/macOS × Python 3.10/3.12、Ruff、mypy、coverage、distribution build、wheel smoke、training smoke 全部通过；Transformers 4.38.2 与 5.17.0 两个独立 HF lane 的 `pip check` 和真实 tiny integration 均通过。
+
+结论：Stage 11 的代码与依赖兼容门禁已满足；本记录提交后仍需以新的 doc-only exact HEAD 再运行一次完整 CI，只有该 closure CI 也 9/9 全绿后才正式关闭 Stage 11。
