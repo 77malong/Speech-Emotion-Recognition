@@ -12,8 +12,8 @@ from torch import nn
 import ser_lib
 from scripts.check_coverage import DEFAULT_THRESHOLDS
 from ser_lib.artifacts import ModelArtifactManifest
+from ser_lib.config import AudioSettings, load_data_config
 from ser_lib.data import DATASET_REVISION_SCHEMA_VERSION
-from ser_lib.data.config import AudioSettings, load_data_config
 from ser_lib.data.manifest import MANIFEST_SCHEMA_VERSION
 from ser_lib.engine import EVALUATION_RUN_SCHEMA_VERSION, RUN_RECORD_SCHEMA_VERSION
 from ser_lib.engine.checkpoint import CHECKPOINT_FORMAT_VERSION
@@ -22,6 +22,20 @@ from ser_lib.models import HFAudioClassifier, model_registry
 
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "pre_refactor_contract_snapshot.json"
+_FINAL_ROOT_API = [
+    "SERDataset",
+    "SERBatch",
+    "SERModel",
+    "Trainer",
+    "TrainingResult",
+    "evaluate",
+    "train_experiment",
+    "evaluate_artifact",
+    "EmotionPredictor",
+    "PredictionResult",
+    "export_model_artifact",
+    "load_model_artifact",
+]
 
 
 def _snapshot() -> dict:
@@ -39,31 +53,11 @@ def _retire_names(current: list[str], retired: set[str]) -> list[str]:
 
 def _expected_current_public_api(module_name: str, expected: list[str]) -> list[str]:
     """Apply only explicitly planned namespace moves while preserving Stage 01 evidence."""
-    current = list(expected)
     if module_name == "ser_lib":
-        current = _retire_names(
-            current,
-            {
-                "CATALOG_SCHEMA_VERSION",
-                "CATALOG_CATEGORIES",
-                "ComponentCatalog",
-                "get_component_catalog",
-                "list_component_descriptors",
-                "TrainingRunDetail",
-                "EvaluationRunDetail",
-                "EvaluationPredictionPage",
-                "query_evaluation_predictions",
-                "ExperimentPresetInfo",
-                "ExperimentPresetCatalog",
-                "PresetStatus",
-                "list_experiment_presets",
-                "get_experiment_preset",
-            },
-        )
-        _replace_name(current, "ArtifactInfo", "ArtifactEntry")
-        insertion = current.index("inspect_evaluation_report") + 1
-        current.insert(insertion, "iter_evaluation_predictions")
-    elif module_name == "ser_lib.data":
+        return list(_FINAL_ROOT_API)
+
+    current = list(expected)
+    if module_name == "ser_lib.data":
         retired = {
             "ModelSpec",
             "CompatibilityReport",
@@ -135,7 +129,7 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert "ArtifactInfo" in snapshot["public_api"]["ser_lib.artifacts"]
     assert "ComponentCatalog" in snapshot["public_api"]["ser_lib"]
 
-    # Stage 06–11 的计划内迁移与新增只在测试中显式记录。
+    # Stage 06–12 的计划内迁移、删除与新增只在测试中显式记录。
     assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
     assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
     assert "train_experiment" not in snapshot["public_api"]["ser_lib.engine"]
@@ -145,6 +139,7 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert "TorchModelAdapter" not in snapshot["public_api"]["ser_lib.models"]
     assert "TORCH_ADAPTER_MODEL_ID" not in snapshot["public_api"]["ser_lib.models"]
     assert "HFProcessorConfig" not in snapshot["public_api"]["ser_lib.models"]
+    assert snapshot["public_api"]["ser_lib"] != _FINAL_ROOT_API
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
