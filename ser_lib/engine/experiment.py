@@ -38,9 +38,14 @@ from ser_lib.foundation.events import EventContext
 
 
 class _DataComponents(Protocol):
-    audio_loader: Any
-    pipeline: SamplePipeline
-    collator: SERCollator
+    @property
+    def audio_loader(self) -> Any: ...
+
+    @property
+    def pipeline(self) -> SamplePipeline: ...
+
+    @property
+    def collator(self) -> SERCollator: ...
 
 
 @dataclass(frozen=True, slots=True)
