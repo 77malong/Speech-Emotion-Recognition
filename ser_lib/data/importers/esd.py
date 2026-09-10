@@ -6,14 +6,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ser_lib.config.importers import EsdImportConfig
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.importers._conversion import run_manifest_conversion, write_partitioned_manifest
 from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.importers.csemotions import _automatic_speaker_splits, _validate_speaker_splits
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.events import CancellationCheck, EventCallback, EventContext
 
 ESD_LABELS = {"Neutral": 0, "Happy": 1, "Angry": 2, "Sad": 3, "Surprise": 4}
 ESD_ZH = {"Neutral": "中性", "Happy": "快乐", "Angry": "愤怒", "Sad": "悲伤", "Surprise": "惊讶"}
