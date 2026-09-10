@@ -37,11 +37,12 @@ def test_package_public_surfaces_are_resolvable_and_unique():
     assert ser_lib.__version__ == "0.2.0"
 
 
-def test_new_stabilization_types_have_intentional_public_paths():
-    assert ser_lib.TrainingRunDetail is engine.TrainingRunDetail
-    assert ser_lib.EvaluationRunDetail is engine.EvaluationRunDetail
-    assert ser_lib.ExperimentPresetInfo is engine.ExperimentPresetInfo
-    assert ser_lib.ExperimentPresetCatalog is engine.ExperimentPresetCatalog
+def test_canonical_domain_types_have_intentional_public_paths():
+    assert ser_lib.ArtifactEntry is artifacts.ArtifactEntry
+    assert ser_lib.ComponentDescriptor is data.ComponentDescriptor
+    assert ser_lib.build_experiment_config is config.build_experiment_config
+    assert ser_lib.iter_evaluation_predictions is engine.iter_evaluation_predictions
+    assert ser_lib.EvaluationPredictionFileInfo is engine.EvaluationPredictionFileInfo
     assert ser_lib.EtaSnapshot is engine.EtaSnapshot
     assert ser_lib.EtaEstimator is engine.EtaEstimator
 
@@ -54,6 +55,32 @@ def test_new_stabilization_types_have_intentional_public_paths():
     assert foundation.SchemaMigrationError.__module__ == "ser_lib.foundation.errors"
     assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors"
     assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors"
+
+
+def test_application_wrappers_are_absent_from_public_surfaces():
+    retired = {
+        "RecordView",
+        "RecordPage",
+        "query_records",
+        "TrainingRunDetail",
+        "inspect_training_run_detail",
+        "EvaluationRunDetail",
+        "inspect_evaluation_run_detail",
+        "EvaluationPredictionPage",
+        "query_evaluation_predictions",
+        "ArtifactInfo",
+        "ComponentCatalog",
+        "get_component_catalog",
+        "list_component_descriptors",
+        "ExperimentPresetInfo",
+        "ExperimentPresetCatalog",
+        "PresetStatus",
+        "list_experiment_presets",
+        "get_experiment_preset",
+    }
+    for module in (ser_lib, data, engine, artifacts):
+        assert retired.isdisjoint(module.__all__), module.__name__
+        assert all(not hasattr(module, name) for name in retired), module.__name__
 
 
 def test_internal_modules_are_not_required_for_stable_imports():
@@ -72,6 +99,6 @@ def test_internal_modules_are_not_required_for_stable_imports():
 
 
 def test_retired_internal_namespaces_are_not_importable():
-    for module_name in ("ser_lib.core", "ser_lib.services"):
+    for module_name in ("ser_lib.core", "ser_lib.services", "ser_lib.catalog"):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(module_name)
