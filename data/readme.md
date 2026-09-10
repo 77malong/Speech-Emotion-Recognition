@@ -2,7 +2,7 @@
 
 `data/` 只用于存放用户自行准备的原始语料或本地数据卷。仓库不再维护独立的数据处理脚本体系，也不再使用 `DatasetProcessor` / `CasiaProcessor` 一类离线 Processor。
 
-所有外部语料统一通过 `ser_lib.data.importers` 转换为标准 `DatasetManifest`，应用层优先使用 `ser dataset ...` CLI 或 `DatasetService`。
+所有外部语料统一通过 `ser_lib.data.importers` 转换为标准 `DatasetManifest`。应用层可使用 `ser dataset ...` CLI，也可直接调用 importer 领域 API。
 
 ## 统一工作流
 
@@ -70,14 +70,17 @@ ser dataset import --importer casia --source data/CASIA \
 ## Python API
 
 ```python
-from ser_lib.services import DatasetService
+from pathlib import Path
 
-preview = DatasetService.scan_importer("casia", "data/CASIA", {})
+from ser_lib.data.importers import CasiaImporter
+
+importer = CasiaImporter()
+source = Path("data/CASIA")
+preview = importer.scan(source, {})
 if preview.ok:
-    manifest = DatasetService.import_dataset(
-        "casia",
-        "data/CASIA",
-        "data/casia-standard",
+    manifest = importer.convert(
+        source,
+        Path("data/casia-standard"),
         {},
     )
 ```
