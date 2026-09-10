@@ -1,9 +1,8 @@
-"""训练运行记录的原子持久化、轻量 Catalog 扫描与详情聚合 DTO。"""
+"""训练运行记录的原子持久化与轻量 Catalog 扫描。"""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -11,12 +10,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ser_lib.engine.checkpoint_catalog import CheckpointCatalog, scan_checkpoints
 from ser_lib.engine.lineage import TrainingRunMetadata
 from ser_lib.engine.migrations import migrate_engine_payload
-from ser_lib.engine.training_history import TrainingHistoryInfo, load_training_history
 from ser_lib.engine.trainer import TrainingResult, TrainingStatus
-from ser_lib.foundation.diagnostics import Diagnostic
 from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 RUN_RECORD_SCHEMA_VERSION = 1
@@ -62,7 +58,7 @@ class _RunRecordModel(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class TrainingRunInfo:
-    """Web 历史列表/详情共用的轻量、JSON-safe 训练记录。"""
+    """轻量、JSON-safe 的训练运行记录。"""
 
     run_id: str
     directory: str
@@ -160,28 +156,6 @@ class TrainingRunInfo:
 
 
 @dataclass(frozen=True, slots=True)
-class TrainingRunDetail:
-    """训练详情页/Worker 可直接消费的轻量聚合结果。
-
-    该 DTO 只组合 ``run.json``、``history.json`` 与 checkpoint 文件 stat，
-    不包含模型/optimizer payload，也不会要求调用方反序列化 checkpoint。
-    """
-
-    run: TrainingRunInfo
-    history: TrainingHistoryInfo | None
-    checkpoints: CheckpointCatalog
-    diagnostics: tuple[Diagnostic, ...] = ()
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "run": self.run.to_dict(),
-            "history": self.history.to_dict() if self.history is not None else None,
-            "checkpoints": self.checkpoints.to_dict(),
-            "diagnostics": [item.to_dict() for item in self.diagnostics],
-        }
-
-
-@dataclass(frozen=True, slots=True)
 class TrainingRunScanFailure:
     directory: str
     error_type: str
@@ -249,54 +223,6 @@ def load_training_run_info(path: Path | str) -> TrainingRunInfo:
     return TrainingRunInfo.from_dict(raw, directory=record_path.parent)
 
 
-def inspect_training_run_detail(path: Path | str) -> TrainingRunDetail:
-    """聚合训练元数据、曲线与 checkpoint stat，不加载 checkpoint 内容。"""
-    run = load_training_run_info(path)
-    run_dir = Path(run.directory)
-    diagnostics: list[Diagnostic] = []
-
-    try:
-        history = load_training_history(run_dir)
-    except (FileNotFoundError, ValueError) as exc:
-        history = None
-        diagnostics.append(
-            Diagnostic(
-                severity="warning",
-                code="training_history_unavailable",
-                message=str(exc),
-                stage="training_run_detail",
-                path=(run_dir / "history.json").as_posix(),
-                details={"error_type": type(exc).__name__},
-            )
-        )
-
-    checkpoint_root = _checkpoint_root_for_run(run)
-    if checkpoint_root.is_dir():
-        checkpoints = scan_checkpoints(checkpoint_root)
-    else:
-        checkpoints = CheckpointCatalog(
-            root=checkpoint_root.as_posix(),
-            checkpoints=(),
-            failures=(),
-        )
-        diagnostics.append(
-            Diagnostic(
-                severity="warning",
-                code="training_checkpoint_directory_missing",
-                message=f"checkpoint 目录不存在: {checkpoint_root}",
-                stage="training_run_detail",
-                path=checkpoint_root.as_posix(),
-            )
-        )
-
-    return TrainingRunDetail(
-        run=run,
-        history=history,
-        checkpoints=checkpoints,
-        diagnostics=tuple(diagnostics),
-    )
-
-
 def scan_training_runs(
     root: Path | str,
     *,
@@ -351,23 +277,6 @@ def scan_training_runs(
     )
 
 
-def _checkpoint_root_for_run(run: TrainingRunInfo) -> Path:
-    raw_trainer = run.config.get("trainer")
-    if isinstance(raw_trainer, Mapping):
-        raw_checkpoint_dir = raw_trainer.get("checkpoint_dir")
-        if isinstance(raw_checkpoint_dir, str) and raw_checkpoint_dir.strip():
-            checkpoint_root = Path(raw_checkpoint_dir)
-            if not checkpoint_root.is_absolute():
-                checkpoint_root = Path(run.directory) / checkpoint_root
-            return checkpoint_root
-
-    for raw_checkpoint in (run.last_checkpoint, run.best_checkpoint):
-        if isinstance(raw_checkpoint, str) and raw_checkpoint.strip():
-            return Path(raw_checkpoint).parent
-
-    return Path(run.directory) / "checkpoints"
-
-
 def _candidate_directories(root: Path, *, recursive: bool) -> list[Path]:
     candidates: set[Path] = set()
     if (root / _RUN_RECORD_NAME).is_file():
@@ -386,11 +295,9 @@ def _candidate_directories(root: Path, *, recursive: bool) -> list[Path]:
 __all__ = [
     "RUN_RECORD_SCHEMA_VERSION",
     "TrainingRunInfo",
-    "TrainingRunDetail",
     "TrainingRunScanFailure",
     "TrainingRunCatalog",
     "write_training_run_info",
     "load_training_run_info",
-    "inspect_training_run_detail",
     "scan_training_runs",
 ]
