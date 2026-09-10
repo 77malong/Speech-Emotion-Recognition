@@ -114,6 +114,20 @@ def _label_mapping_matches(hf_config: Any, labels: Mapping[int, str]) -> bool:
     return actual == expected and int(getattr(hf_config, "num_labels", -1)) == len(expected)
 
 
+def _reset_pretrained_classifier_head(model: Any) -> None:
+    """Reinitialize the native HF classifier after pretrained weights are loaded.
+
+    ``ignore_mismatched_sizes`` only helps when the class count changes.  An explicit
+    reset must also discard a same-shaped head when label semantics change, while
+    preserving the pretrained encoder/projector.
+    """
+    classifier = getattr(model, "classifier", None)
+    init_weights = getattr(model, "_init_weights", None)
+    if not isinstance(classifier, nn.Module) or not callable(init_weights):
+        raise ValueError("HF audio-classification model 缺少可重置的 classifier")
+    classifier.apply(init_weights)
+
+
 def _build_hf_model(transformers: Any, config: HFAudioClassifierConfig) -> Any:
     if config.encoder_config is not None:
         raw = dict(config.encoder_config)
@@ -149,7 +163,7 @@ def _build_hf_model(transformers: Any, config: HFAudioClassifierConfig) -> Any:
                     "label_names 不一致；如需重置分类头必须显式设置 reset_classifier_head=True"
                 )
             _set_label_mapping(hf_config, config.label_names)
-        return transformers.AutoModelForAudioClassification.from_pretrained(
+        model = transformers.AutoModelForAudioClassification.from_pretrained(
             source,
             config=hf_config,
             local_files_only=config.local_files_only,
@@ -157,6 +171,9 @@ def _build_hf_model(transformers: Any, config: HFAudioClassifierConfig) -> Any:
             trust_remote_code=False,
             ignore_mismatched_sizes=config.reset_classifier_head,
         )
+        if config.reset_classifier_head:
+            _reset_pretrained_classifier_head(model)
+        return model
 
     return transformers.AutoModel.from_pretrained(
         source,
