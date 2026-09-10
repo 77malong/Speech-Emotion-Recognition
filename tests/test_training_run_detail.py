@@ -6,8 +6,7 @@ from pathlib import Path
 
 import torch
 
-from ser_lib.engine import TrainingRunDetail, TrainingRunInfo
-from ser_lib.services import TrainingService
+from ser_lib.engine import TrainingRunDetail, TrainingRunInfo, inspect_training_run_detail
 
 
 def _write_run(run_dir: Path, checkpoint_dir: Path) -> TrainingRunInfo:
@@ -91,7 +90,7 @@ def test_training_run_detail_aggregates_lightweight_sources(
 
     monkeypatch.setattr(torch, "load", fail_torch_load)
 
-    detail = TrainingService.inspect_run_detail(run_dir)
+    detail = inspect_training_run_detail(run_dir)
 
     assert isinstance(detail, TrainingRunDetail)
     assert detail.run.run_id == "run-detail-demo"
@@ -111,7 +110,7 @@ def test_training_run_detail_tolerates_missing_history_and_checkpoints(tmp_path:
     checkpoint_dir = tmp_path / "missing-checkpoints"
     _write_run(run_dir, checkpoint_dir)
 
-    detail = TrainingService.inspect_run_detail(run_dir)
+    detail = inspect_training_run_detail(run_dir)
 
     assert detail.history is None
     assert detail.checkpoints.checkpoints == ()
@@ -134,7 +133,7 @@ def test_training_run_detail_uses_run_directory_after_move(tmp_path: Path):
     moved = tmp_path / "moved"
     original.rename(moved)
 
-    detail = TrainingService.inspect_run_detail(moved)
+    detail = inspect_training_run_detail(moved)
 
     assert detail.run.directory == moved.as_posix()
     assert detail.history is not None
@@ -148,7 +147,7 @@ def test_training_run_detail_keeps_corrupt_history_nonfatal(tmp_path: Path):
     checkpoint_dir.mkdir(parents=True)
     (run_dir / "history.json").write_text("{broken", encoding="utf-8")
 
-    detail = TrainingService.inspect_run_detail(run_dir)
+    detail = inspect_training_run_detail(run_dir)
 
     assert detail.history is None
     assert [item.code for item in detail.diagnostics] == ["training_history_unavailable"]
@@ -176,7 +175,7 @@ def test_training_run_detail_keeps_history_validation_error_nonfatal(tmp_path: P
         encoding="utf-8",
     )
 
-    detail = TrainingService.inspect_run_detail(run_dir)
+    detail = inspect_training_run_detail(run_dir)
 
     assert detail.history is None
     assert detail.checkpoints.checkpoints == ()
