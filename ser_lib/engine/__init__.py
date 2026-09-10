@@ -31,6 +31,7 @@ from ser_lib.engine.evaluation_detail import (
     EvaluationPredictionFileInfo,
     EvaluationRunDetail,
     inspect_evaluation_prediction_file,
+    inspect_evaluation_run_detail,
 )
 from ser_lib.engine.evaluation_reports import (
     EvaluationPredictionPage,
@@ -124,7 +125,7 @@ __all__ = [
     "load_training_history",
     "EVALUATION_RUN_SCHEMA_VERSION", "EvaluationRunMetadata", "EvaluationRunInfo",
     "EvaluationPredictionFileInfo", "EvaluationRunDetail",
-    "inspect_evaluation_prediction_file",
+    "inspect_evaluation_prediction_file", "inspect_evaluation_run_detail",
     "build_evaluation_run_metadata", "write_evaluation_run_info",
     "load_evaluation_run_info", "EvaluationRunScanFailure", "EvaluationRunCatalog",
     "scan_evaluation_runs",
