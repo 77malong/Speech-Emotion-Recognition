@@ -18,7 +18,6 @@ from ser_lib.data import (
 )
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
-from ser_lib.services import DatasetService
 
 
 def _write_dataset(root: Path) -> Path:
@@ -90,7 +89,7 @@ def test_revision_history_orders_newest_and_isolates_bad_records(tmp_path: Path)
         revision_id="first",
         created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
-    second = DatasetService.snapshot_revision(
+    second = create_dataset_revision(
         manifest,
         revision_id="second",
         created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
@@ -99,7 +98,7 @@ def test_revision_history_orders_newest_and_isolates_bad_records(tmp_path: Path)
     broken.mkdir()
     (broken / "revision.json").write_text("{bad", encoding="utf-8")
 
-    catalog = DatasetService.revision_history(manifest)
+    catalog = scan_dataset_revisions(manifest)
     assert [item.revision_id for item in catalog.revisions] == ["second", "first"]
     assert {Path(item.directory).name for item in catalog.revisions} == {
         Path(first.directory).name,
@@ -142,7 +141,7 @@ def test_restore_rejects_stale_current_fingerprint(tmp_path: Path):
     before = (tmp_path / "train.jsonl").read_text(encoding="utf-8")
 
     with pytest.raises(DatasetEditConflictError, match="expected_current_fingerprint"):
-        DatasetService.restore_revision(
+        restore_dataset_revision(
             manifest_path,
             revision.directory,
             expected_current_fingerprint="0" * 64,
