@@ -6,13 +6,15 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ser_lib import get_component_catalog
+from ser_lib.config import parse_optimizer_config, parse_scheduler_config
+from ser_lib.data import default_registry
 from ser_lib.engine import (
     ExperimentConfig,
     build_experiment_config,
     get_experiment_preset,
     list_experiment_presets,
 )
+from ser_lib.models.registry import model_registry
 
 
 def test_experiment_preset_catalog_is_stable_and_json_safe():
@@ -28,18 +30,15 @@ def test_experiment_preset_catalog_is_stable_and_json_safe():
 
 
 def test_each_preset_builds_existing_experiment_config_and_registered_components():
-    components = get_component_catalog()
-
     for preset in list_experiment_presets().presets:
         config = build_experiment_config(preset.preset_id)
         assert isinstance(config, ExperimentConfig)
-        components.get("model", config.model.type)
-        components.get("representation", config.data.representation.type)
-        components.get("optimizer", config.optimizer["type"])
-        if config.scheduler is not None:
-            components.get("scheduler", config.scheduler["type"])
-        components.get("loss", config.loss.type)
-        components.get("sampler", config.sampling.type)
+        model_registry.descriptor(config.model.type)
+        default_registry.get_entry("representation", config.data.representation.type)
+        parse_optimizer_config(config.optimizer)
+        parse_scheduler_config(config.scheduler)
+        assert config.loss.type in {"cross_entropy", "focal"}
+        assert config.sampling.type in {"shuffle", "weighted"}
         json.dumps(config.model_dump(mode="json"))
 
 
