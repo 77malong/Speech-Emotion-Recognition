@@ -7,7 +7,6 @@ import pytest
 from ser_lib.data import DatasetProfile, profile_dataset, profile_manifest_audio
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken
-from ser_lib.services import DatasetService
 
 
 def _write_wav(path: Path, *, seconds: float, sample_rate: int = 8000) -> None:
@@ -83,7 +82,7 @@ def test_audio_profile_adds_percentiles_and_histogram(tmp_path: Path):
     for name, seconds in (("a.wav", 1.0), ("b.wav", 2.0), ("c.wav", 3.0), ("d.wav", 4.0)):
         _write_wav(tmp_path / name, seconds=seconds)
 
-    profile = DatasetService.detailed_profile(
+    profile = profile_dataset(
         dataset_yaml,
         include_audio=True,
         histogram_bins=4,
@@ -104,11 +103,11 @@ def test_audio_profile_adds_percentiles_and_histogram(tmp_path: Path):
     json.dumps(profile.to_dict(), ensure_ascii=False)
 
 
-def test_audio_profile_preserves_failure_isolation_and_old_service_api(tmp_path: Path):
+def test_audio_profile_preserves_failure_isolation_through_direct_api(tmp_path: Path):
     dataset_yaml = _write_dataset(tmp_path)
     _write_wav(tmp_path / "a.wav", seconds=1.0)
 
-    audio = DatasetService.profile(dataset_yaml, histogram_bins=5)
+    audio = profile_manifest_audio(dataset_yaml, histogram_bins=5)
 
     assert audio.total_records == 4
     assert audio.probed_records == 1
