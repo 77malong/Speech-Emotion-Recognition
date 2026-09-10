@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.editor import DatasetEditor
 from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
 from ser_lib.data.history import (
@@ -26,6 +25,7 @@ from ser_lib.data.profiling import (
     summarize_manifest,
 )
 from ser_lib.data.query import RecordPage, query_records
+from ser_lib.foundation.events import CancellationCheck, EventCallback
 
 
 class DatasetService:
