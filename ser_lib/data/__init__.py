@@ -32,7 +32,7 @@ from ser_lib.data.profiling import (
     AudioProbeFailure, DatasetAudioProfile, DatasetProfile, DatasetSummary,
     DurationHistogramBin, profile_dataset, profile_manifest_audio, summarize_manifest,
 )
-from ser_lib.data.query import RecordPage, RecordView, query_records
+from ser_lib.data.query import iter_records
 from ser_lib.data.registry import ComponentDescriptor, Registry, default_registry
 from ser_lib.data.representations import register_representations
 from ser_lib.data.transforms import register_transforms
@@ -64,5 +64,5 @@ __all__ = [
     "DataConfig", "ComponentConfig", "AudioSettings", "CacheSettings", "BatchingConfig", "load_data_config",
     "AudioProbeFailure", "DurationHistogramBin", "DatasetAudioProfile", "DatasetSummary", "DatasetProfile",
     "profile_manifest_audio", "summarize_manifest", "profile_dataset",
-    "RecordView", "RecordPage", "query_records", "DatasetFingerprint", "fingerprint_manifest",
+    "iter_records", "DatasetFingerprint", "fingerprint_manifest",
 ]
