@@ -29,7 +29,12 @@ def _write_wav(path: Path, frequency: float) -> None:
         output.writeframes(frames)
 
 
-def test_engine_experiment_api_persists_training_and_evaluation_lineage(tmp_path: Path):
+def _write_minimal_experiment(
+    tmp_path: Path,
+    *,
+    save_last: bool = True,
+    save_best: bool = True,
+) -> Path:
     for index, frequency in enumerate((220.0, 660.0)):
         _write_wav(tmp_path / f"sample-{index}.wav", frequency)
     (tmp_path / "train.jsonl").write_text(
@@ -50,23 +55,30 @@ labels:
     )
     config = tmp_path / "experiment.yaml"
     config.write_text(
-        """schema_version: 1
+        f"""schema_version: 1
 data:
   manifest: dataset.yaml
-  labels: {0: {en: low}, 1: {en: high}}
+  labels: {{0: {{en: low}}, 1: {{en: high}}}}
   representation:
     type: log_mel
-    params: {sample_rate: 16000, n_fft: 256, hop_length: 80, n_mels: 16}
+    params: {{sample_rate: 16000, n_fft: 256, hop_length: 80, n_mels: 16}}
 model:
   type: cnn_baseline
-  params: {feature_dim: 16, num_classes: 2, hidden_dim: 8, dropout: 0}
+  params: {{feature_dim: 16, num_classes: 2, hidden_dim: 8, dropout: 0}}
 trainer:
   epochs: 1
-optimizer: {type: adamw, params: {learning_rate: 0.001}}
+  save_last: {str(save_last).lower()}
+  save_best: {str(save_best).lower()}
+optimizer: {{type: adamw, params: {{learning_rate: 0.001}}}}
 output_dir: run
 """,
         encoding="utf-8",
     )
+    return config
+
+
+def test_engine_experiment_api_persists_training_and_evaluation_lineage(tmp_path: Path):
+    config = _write_minimal_experiment(tmp_path)
 
     execution = train_experiment(
         config,
@@ -96,6 +108,7 @@ output_dir: run
 
     checkpoint = execution.last_checkpoint
     assert checkpoint is not None
+    assert checkpoint == execution.training.last_checkpoint
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     checkpoint_lineage = payload["metadata"]["run_metadata"]
     assert checkpoint_lineage["run_id"] == result["run_id"]
@@ -136,3 +149,26 @@ output_dir: run
     assert saved_evaluation["metrics"]["accuracy"] == evaluated["accuracy"]
     assert (evaluation_dir / "metrics.json").is_file()
     assert (evaluation_dir / "predictions.jsonl").is_file()
+
+
+def test_training_result_does_not_claim_disabled_checkpoints(tmp_path: Path):
+    config = _write_minimal_experiment(
+        tmp_path,
+        save_last=False,
+        save_best=False,
+    )
+
+    execution = train_experiment(
+        config,
+        split="train",
+        batch_size=2,
+        workers=0,
+        resume=None,
+    )
+
+    assert execution.training.last_checkpoint is None
+    assert execution.training.best_checkpoint is None
+    assert execution.last_checkpoint is None
+    assert execution.best_checkpoint is None
+    assert execution.to_dict()["last_checkpoint"] is None
+    assert execution.to_dict()["best_checkpoint"] is None
