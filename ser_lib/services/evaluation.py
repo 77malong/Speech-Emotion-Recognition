@@ -8,8 +8,6 @@ from pathlib import Path
 
 import torch
 
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.evaluation_catalog import EvaluationRunCatalog, scan_evaluation_runs
 from ser_lib.engine.evaluation_detail import (
@@ -35,6 +33,8 @@ from ser_lib.engine.evaluator import (
     evaluate,
     write_evaluation_report,
 )
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.models.base import SERModel
 
 
