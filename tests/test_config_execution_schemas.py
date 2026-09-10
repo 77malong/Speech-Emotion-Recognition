@@ -3,22 +3,39 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+from pydantic import ValidationError
+
 from ser_lib.config import (
+    AcousticFeaturesConfig,
     AdamWConfig,
     CNNBaselineConfig,
+    CompositeConfig,
     CosineSchedulerConfig,
     ExperimentConfig,
+    GaussianNoiseConfig,
     GRUBaselineConfig,
     HFAudioClassifierConfig,
+    LogMelConfig,
     LossConfig,
+    MFCCConfig,
     ModelConfig,
+    NormalizeConfig,
     ObservabilityConfig,
+    RawWaveformConfig,
     SGDConfig,
     SamplingConfig,
+    SpecMaskingConfig,
+    SpectrogramConfig,
     StepSchedulerConfig,
     StreamingConfig,
+    StrictConfig,
+    TimeShiftConfig,
+    TimeStretchConfig,
     TrainerConfig,
     TransformerBaselineConfig,
+    VolumeScaleConfig,
+    PitchShiftConfig,
     parse_optimizer_config,
     parse_scheduler_config,
 )
@@ -98,6 +115,31 @@ def test_model_and_training_config_payload_defaults_are_preserved():
         encoder_config={"model_type": "fake_audio", "hidden_size": 4},
     )
     assert hf.local_files_only is True
+
+
+def test_representation_and_transform_configs_share_strict_contract():
+    config_types = (
+        RawWaveformConfig,
+        SpectrogramConfig,
+        LogMelConfig,
+        MFCCConfig,
+        AcousticFeaturesConfig,
+        CompositeConfig,
+        NormalizeConfig,
+        GaussianNoiseConfig,
+        TimeShiftConfig,
+        VolumeScaleConfig,
+        PitchShiftConfig,
+        TimeStretchConfig,
+        SpecMaskingConfig,
+    )
+    assert all(issubclass(config_type, StrictConfig) for config_type in config_types)
+
+    config = GaussianNoiseConfig()
+    with pytest.raises(ValidationError):
+        config.snr_db = 20.0
+    with pytest.raises(ValidationError):
+        GaussianNoiseConfig(unknown_field=True)
 
 
 def test_streaming_config_keeps_dataclass_defaults_and_validation():

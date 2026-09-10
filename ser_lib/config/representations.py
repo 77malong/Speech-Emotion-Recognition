@@ -4,19 +4,17 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
+
+from ser_lib.config.base import StrictConfig
 
 
-class RawWaveformConfig(BaseModel):
+class RawWaveformConfig(StrictConfig):
     """RawWaveform 无参数；保留空模型用于 schema 生成与未知参数报错。"""
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class SpectralConfigBase(BaseModel):
+class SpectralConfigBase(StrictConfig):
     """谱图类表示的公共参数（对齐 torchaudio 默认值）。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     sample_rate: int = Field(default=16000, ge=1000, le=192000)
     n_fft: int = Field(default=400, ge=32, le=8192)
@@ -85,10 +83,8 @@ AcousticFeatureName = Literal[
 ]
 
 
-class AcousticFeaturesConfig(BaseModel):
+class AcousticFeaturesConfig(StrictConfig):
     """AcousticFeatures 参数。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     features: list[AcousticFeatureName] = Field(..., min_length=1)
     sample_rate: int = Field(default=16000, ge=1000, le=192000)
@@ -112,10 +108,8 @@ class AcousticFeaturesConfig(BaseModel):
         return self
 
 
-class CompositeConfig(BaseModel):
+class CompositeConfig(StrictConfig):
     """组合表示参数：``{key: 组件配置}``。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     outputs: dict[str, dict[str, Any]] = Field(..., min_length=1)
 

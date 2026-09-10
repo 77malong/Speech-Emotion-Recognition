@@ -2,35 +2,29 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
+
+from ser_lib.config.base import StrictConfig
 
 
-class NormalizeConfig(BaseModel):
+class NormalizeConfig(StrictConfig):
     """Normalize 无参数。"""
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class GaussianNoiseConfig(BaseModel):
+class GaussianNoiseConfig(StrictConfig):
     """高斯噪声参数。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     snr_db: float = Field(default=15.0, gt=0.0, le=120.0, description="信噪比 (dB)")
 
 
-class TimeShiftConfig(BaseModel):
+class TimeShiftConfig(StrictConfig):
     """时间平移参数。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     max_ratio: float = Field(default=0.2, ge=0.0, le=1.0, description="最大平移比例")
 
 
-class VolumeScaleConfig(BaseModel):
+class VolumeScaleConfig(StrictConfig):
     """音量缩放参数。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     gain_min: float = Field(default=0.5, gt=0.0)
     gain_max: float = Field(default=1.5, gt=0.0)
@@ -42,27 +36,21 @@ class VolumeScaleConfig(BaseModel):
         return self
 
 
-class PitchShiftConfig(BaseModel):
+class PitchShiftConfig(StrictConfig):
     """音高偏移参数。sample_rate 由 pipeline 构建时按 AudioLoader 配置注入。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     sample_rate: int = Field(default=16000, ge=1000, le=192000)
     n_steps: int = Field(default=4, ge=-24, le=24)
 
 
-class TimeStretchConfig(BaseModel):
+class TimeStretchConfig(StrictConfig):
     """时间拉伸参数。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     rate: float = Field(default=1.2, gt=0.1, le=4.0)
 
 
-class SpecMaskingConfig(BaseModel):
+class SpecMaskingConfig(StrictConfig):
     """SpecAugment 掩码参数。"""
-
-    model_config = ConfigDict(extra="forbid")
 
     time_mask_param: int = Field(default=30, ge=1, description="时间掩码最大宽度")
     freq_mask_param: int = Field(default=15, ge=1, description="频率掩码最大宽度")
