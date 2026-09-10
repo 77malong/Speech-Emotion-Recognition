@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.core import CancellationToken, OperationCancelled, ProgressEvent
 from ser_lib.engine import inspect_checkpoint_file, scan_checkpoints
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.services import TrainingService
 
 checkpoint_catalog = importlib.import_module("ser_lib.engine.checkpoint_catalog")
