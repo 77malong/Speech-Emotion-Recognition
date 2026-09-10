@@ -31,6 +31,7 @@ from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
     EventContext,
+    EventLike,
     LibraryEvent,
     LifecycleEvent,
     MetricEvent,
@@ -249,7 +250,7 @@ class Trainer:
             run_id=run_id,
         )
 
-    def _emit(self, event: LibraryEvent) -> None:
+    def _emit(self, event: EventLike) -> None:
         if self.event_callback is not None:
             self.event_callback(event)
 
