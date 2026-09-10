@@ -3,13 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Sequence
-from typing import Literal, Mapping
+from typing import TYPE_CHECKING, Literal, Mapping
 import torch
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator
 from ser_lib.data.pipeline import SamplePipeline
 from ser_lib.data.types import AudioData, AudioRecord, move_batch_to_device
 from ser_lib.models.base import SERModel
+
+if TYPE_CHECKING:
+    from ser_lib.artifacts import LoadedArtifact
 
 @dataclass(frozen=True, slots=True)
 class PredictionResult:
@@ -32,6 +35,27 @@ class EmotionPredictor:
             raise ValueError("推理请求 CUDA，但当前环境不可用")
         self.window_aggregation = window_aggregation
         model.to(self.device)
+
+    @classmethod
+    def from_loaded_artifact(
+        cls,
+        artifact: "LoadedArtifact",
+        *,
+        device: str | torch.device = "cpu",
+        window_aggregation: Literal[
+            "mean_logits", "mean_probabilities", "max_confidence"
+        ] | None = None,
+    ) -> "EmotionPredictor":
+        """从已加载 artifact 构造 predictor，不隐藏额外模型或 processor 加载。"""
+        return cls(
+            artifact.model,
+            artifact.audio_loader,
+            artifact.pipeline,
+            artifact.collator,
+            artifact.manifest.labels,
+            device=device,
+            window_aggregation=window_aggregation,
+        )
 
     @torch.inference_mode()
     def predict_file(self, path: Path | str, *, uid: str | None = None) -> PredictionResult:
