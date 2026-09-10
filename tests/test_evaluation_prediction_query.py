@@ -8,7 +8,6 @@ import pytest
 from ser_lib.engine import EvaluationPredictionPage, query_evaluation_predictions
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken
-from ser_lib.services import EvaluationService
 
 
 def _row(
@@ -50,7 +49,7 @@ def _predictions(tmp_path: Path) -> Path:
 def test_query_predictions_filters_and_pages_without_materializing_all_rows(tmp_path: Path):
     directory = _predictions(tmp_path)
 
-    first = EvaluationService.query_predictions(
+    first = query_evaluation_predictions(
         directory,
         incorrect_only=True,
         offset=0,
