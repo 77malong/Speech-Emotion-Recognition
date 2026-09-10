@@ -7,7 +7,6 @@ import pytest
 from pydantic import ValidationError
 
 from ser_lib.engine import EvaluationReportInfo, inspect_evaluation_report
-from ser_lib.services import EvaluationService
 
 
 def _metrics() -> dict:
@@ -69,10 +68,10 @@ def _report(tmp_path: Path, *, predictions: bool = True) -> Path:
     return directory
 
 
-def test_evaluation_service_inspects_metrics_without_loading_predictions(tmp_path: Path):
+def test_evaluation_report_inspects_metrics_without_loading_predictions(tmp_path: Path):
     directory = _report(tmp_path)
 
-    info = EvaluationService.inspect_report(directory)
+    info = inspect_evaluation_report(directory)
 
     assert isinstance(info, EvaluationReportInfo)
     assert info.directory == directory.as_posix()
