@@ -33,7 +33,8 @@ def main() -> None:
         collate_fn=components.collator,
     )
     trainer = Trainer.from_experiment(components.model, config)
-    for result in trainer.fit(lambda: batches):
+    training_result = trainer.fit(lambda: batches)
+    for result in training_result.epochs:
         print(
             f"epoch={result.epoch} loss={result.loss:.6f} "
             f"accuracy={result.accuracy:.4f} samples={result.sample_count}"
