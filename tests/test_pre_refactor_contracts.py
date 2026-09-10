@@ -28,17 +28,52 @@ def _snapshot() -> dict:
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
 
 
+def _replace_name(current: list[str], old: str, new: str) -> None:
+    index = current.index(old)
+    current[index] = new
+
+
+def _retire_names(current: list[str], retired: set[str]) -> list[str]:
+    return [name for name in current if name not in retired]
+
+
 def _expected_current_public_api(module_name: str, expected: list[str]) -> list[str]:
     """Apply only explicitly planned namespace moves while preserving Stage 01 evidence."""
     current = list(expected)
-    if module_name == "ser_lib.data":
+    if module_name == "ser_lib":
+        current = _retire_names(
+            current,
+            {
+                "CATALOG_SCHEMA_VERSION",
+                "CATALOG_CATEGORIES",
+                "ComponentCatalog",
+                "get_component_catalog",
+                "list_component_descriptors",
+                "TrainingRunDetail",
+                "EvaluationRunDetail",
+                "EvaluationPredictionPage",
+                "query_evaluation_predictions",
+                "ExperimentPresetInfo",
+                "ExperimentPresetCatalog",
+                "PresetStatus",
+                "list_experiment_presets",
+                "get_experiment_preset",
+            },
+        )
+        _replace_name(current, "ArtifactInfo", "ArtifactEntry")
+        insertion = current.index("inspect_evaluation_report") + 1
+        current.insert(insertion, "iter_evaluation_predictions")
+    elif module_name == "ser_lib.data":
         retired = {
             "ModelSpec",
             "CompatibilityReport",
             "inspect_compatibility",
             "validate_compatibility",
+            "RecordView",
+            "RecordPage",
         }
-        current = [name for name in current if name not in retired]
+        current = _retire_names(current, retired)
+        _replace_name(current, "query_records", "iter_records")
     elif module_name == "ser_lib.models":
         current.insert(2, "ModelSpec")
     elif module_name == "ser_lib.engine":
@@ -48,6 +83,21 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
             "validate_compatibility",
         ]
         current[7:7] = compatibility
+        current = _retire_names(
+            current,
+            {
+                "PresetStatus",
+                "ExperimentPresetInfo",
+                "ExperimentPresetCatalog",
+                "list_experiment_presets",
+                "get_experiment_preset",
+                "build_experiment_config",
+                "TrainingRunDetail",
+                "EvaluationRunDetail",
+                "EvaluationPredictionPage",
+                "query_evaluation_predictions",
+            },
+        )
         experiment_api = [
             "TrainingExperimentResult",
             "EvaluationExperimentResult",
@@ -56,11 +106,10 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
         ]
         insertion = current.index("validate_experiment") + 1
         current[insertion:insertion] = experiment_api
-        current.insert(current.index("scan_training_runs"), "inspect_training_run_detail")
-        current.insert(
-            current.index("build_evaluation_run_metadata"),
-            "inspect_evaluation_run_detail",
-        )
+        insertion = current.index("inspect_evaluation_report") + 1
+        current.insert(insertion, "iter_evaluation_predictions")
+    elif module_name == "ser_lib.artifacts":
+        _replace_name(current, "ArtifactInfo", "ArtifactEntry")
     return current
 
 
@@ -74,15 +123,22 @@ def test_pre_refactor_public_api_exact_snapshot():
         module = importlib.import_module(module_name)
         assert list(module.__all__) == _expected_current_public_api(module_name, expected), module_name
 
-    # Stage 01 的历史快照继续记录已退役 namespace，不能通过改 fixture 抹掉基线证据。
+    # Stage 01 的历史快照继续记录已退役 namespace/包装，不能通过改 fixture 抹掉基线证据。
     assert snapshot["public_api"]["ser_lib.core"]
     assert snapshot["public_api"]["ser_lib.services"]
-    # Stage 06/07/08 的计划内迁移与新增只在测试中显式记录。
+    assert "RecordPage" in snapshot["public_api"]["ser_lib.data"]
+    assert "TrainingRunDetail" in snapshot["public_api"]["ser_lib.engine"]
+    assert "EvaluationPredictionPage" in snapshot["public_api"]["ser_lib.engine"]
+    assert "ArtifactInfo" in snapshot["public_api"]["ser_lib.artifacts"]
+    assert "ComponentCatalog" in snapshot["public_api"]["ser_lib"]
+
+    # Stage 06/07/08/09 的计划内迁移与新增只在测试中显式记录。
     assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
     assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
     assert "train_experiment" not in snapshot["public_api"]["ser_lib.engine"]
-    assert "inspect_training_run_detail" not in snapshot["public_api"]["ser_lib.engine"]
-    assert "inspect_evaluation_run_detail" not in snapshot["public_api"]["ser_lib.engine"]
+    assert "iter_records" not in snapshot["public_api"]["ser_lib.data"]
+    assert "iter_evaluation_predictions" not in snapshot["public_api"]["ser_lib.engine"]
+    assert "ArtifactEntry" not in snapshot["public_api"]["ser_lib.artifacts"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
