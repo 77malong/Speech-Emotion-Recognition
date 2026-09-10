@@ -76,6 +76,7 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
         _replace_name(current, "query_records", "iter_records")
     elif module_name == "ser_lib.models":
         current.insert(2, "ModelSpec")
+        current[3:3] = ["TorchModelAdapter", "TORCH_ADAPTER_MODEL_ID"]
     elif module_name == "ser_lib.engine":
         compatibility = [
             "CompatibilityReport",
@@ -132,13 +133,15 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert "ArtifactInfo" in snapshot["public_api"]["ser_lib.artifacts"]
     assert "ComponentCatalog" in snapshot["public_api"]["ser_lib"]
 
-    # Stage 06/07/08/09 的计划内迁移与新增只在测试中显式记录。
+    # Stage 06–10 的计划内迁移与新增只在测试中显式记录。
     assert "ModelSpec" in snapshot["public_api"]["ser_lib.data"]
     assert "CompatibilityReport" in snapshot["public_api"]["ser_lib.data"]
     assert "train_experiment" not in snapshot["public_api"]["ser_lib.engine"]
     assert "iter_records" not in snapshot["public_api"]["ser_lib.data"]
     assert "iter_evaluation_predictions" not in snapshot["public_api"]["ser_lib.engine"]
     assert "ArtifactEntry" not in snapshot["public_api"]["ser_lib.artifacts"]
+    assert "TorchModelAdapter" not in snapshot["public_api"]["ser_lib.models"]
+    assert "TORCH_ADAPTER_MODEL_ID" not in snapshot["public_api"]["ser_lib.models"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
