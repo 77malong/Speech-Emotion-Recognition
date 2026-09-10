@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ser_lib._version import __version__
 from ser_lib.engine.evaluator import EvaluationResult
 from ser_lib.engine.migrations import migrate_engine_payload
 
@@ -238,13 +239,13 @@ def build_evaluation_run_metadata(
     model_name: str,
     split: str,
     device: str,
-    library_version: str,
+    library_version: str | None = None,
     source_run_id: str | None = None,
     dataset_fingerprint: str | None = None,
     evaluation_id: str | None = None,
     created_at: datetime | None = None,
 ) -> EvaluationRunMetadata:
-    """构造评估 lineage；不执行文件扫描、模型加载或 fingerprint 计算。"""
+    """构造评估 lineage；默认使用当前库版本，不执行隐藏 I/O。"""
     return EvaluationRunMetadata(
         evaluation_id=evaluation_id or f"eval_{uuid4().hex}",
         created_at=created_at or datetime.now(timezone.utc),
@@ -255,7 +256,7 @@ def build_evaluation_run_metadata(
         model_name=model_name,
         split=split,
         device=device,
-        library_version=library_version,
+        library_version=__version__ if library_version is None else library_version,
     )
 
 
