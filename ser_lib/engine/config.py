@@ -36,7 +36,7 @@ def build_experiment_components(
     """构建实验组件，并在读取训练数据前完成全部静态兼容性检查。"""
     from ser_lib.data.collate import build_collator
     from ser_lib.data.pipeline import build_components
-    from ser_lib.data.validation import validate_compatibility
+    from ser_lib.engine.compatibility import validate_compatibility
     from ser_lib.models.registry import model_registry
 
     model_params = model_registry.validate_config(config.model.type, config.model.params)

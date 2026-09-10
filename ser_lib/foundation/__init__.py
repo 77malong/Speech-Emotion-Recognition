@@ -2,6 +2,7 @@
 
 from ser_lib.foundation.diagnostics import Diagnostic, DiagnosticSeverity
 from ser_lib.foundation.errors import (
+    CompatibilityError,
     ConfigurationError,
     OperationCancelled,
     RegistryError,
@@ -29,6 +30,7 @@ __all__ = [
     "SchemaMigrationError",
     "OperationCancelled",
     "RegistryError",
+    "CompatibilityError",
     "Diagnostic",
     "DiagnosticSeverity",
     "EVENT_SCHEMA_VERSION",

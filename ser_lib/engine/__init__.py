@@ -7,6 +7,11 @@ from ser_lib.engine.checkpoint_catalog import (
     inspect_checkpoint_file,
     scan_checkpoints,
 )
+from ser_lib.engine.compatibility import (
+    CompatibilityReport,
+    inspect_compatibility,
+    validate_compatibility,
+)
 from ser_lib.engine.config import (
     ExperimentConfig,
     ExperimentComponents,
@@ -99,6 +104,7 @@ from ser_lib.engine.validation import ExperimentValidationResult, validate_exper
 __all__ = [
     "ModelConfig", "ObservabilityConfig", "TrainerConfig", "ExperimentConfig",
     "ExperimentComponents", "load_experiment_config", "build_experiment_components",
+    "CompatibilityReport", "inspect_compatibility", "validate_compatibility",
     "EtaSnapshot", "EtaEstimator",
     "PresetStatus", "ExperimentPresetInfo", "ExperimentPresetCatalog",
     "list_experiment_presets", "get_experiment_preset", "build_experiment_config",

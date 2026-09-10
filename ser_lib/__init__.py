@@ -14,7 +14,6 @@ from ser_lib._version import __version__ as __version__
 _MODULE_EXPORTS: dict[str, tuple[str, ...]] = {
     "ser_lib.foundation": ("Diagnostic", "DiagnosticSeverity"),
     "ser_lib.data": (
-        "CompatibilityReport", "inspect_compatibility",
         "SERDataset", "SERSample", "SERBatch", "TensorSpec",
     ),
     "ser_lib.artifacts": (
@@ -24,6 +23,7 @@ _MODULE_EXPORTS: dict[str, tuple[str, ...]] = {
         "scan_model_artifacts", "verify_model_artifact",
     ),
     "ser_lib.engine": (
+        "CompatibilityReport", "inspect_compatibility",
         "EVALUATION_RUN_SCHEMA_VERSION", "RUN_RECORD_SCHEMA_VERSION",
         "CheckpointCatalog", "CheckpointInfo", "CheckpointKind", "CheckpointScanFailure",
         "EtaEstimator", "EtaSnapshot", "EvaluationPredictionFileInfo",

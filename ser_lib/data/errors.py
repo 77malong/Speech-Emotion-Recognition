@@ -12,10 +12,10 @@
     ├── InvalidAudioSegmentError
     ├── RepresentationError
     ├── TransformError
-    ├── CollationError
-    └── CompatibilityError
+    └── CollationError
 
-``RegistryError`` 已归属 foundation，本模块仅为 0.2.x 旧 import 路径重导出同一类型。
+``RegistryError`` / ``CompatibilityError`` 已归属 foundation，本模块仅为 0.2.x
+旧 import 路径重导出同一类型。
 
 异常消息必须包含 ``uid`` 与解析后的音频路径（如适用）；底层异常保留为
 ``__cause__``，保证错误可定位。每个公开领域异常拥有稳定机器可读 ``code``，
@@ -27,6 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ser_lib.foundation.errors import CompatibilityError as CompatibilityError
 from ser_lib.foundation.errors import RegistryError as RegistryError
 from ser_lib.foundation.errors import SERError
 
@@ -136,12 +137,6 @@ class CollationError(SERDataError):
     """批处理（collate）失败：key 不一致、layout 不匹配、部分样本缺标签等。"""
 
     default_code = "collation_error"
-
-
-class CompatibilityError(SERDataError):
-    """表示、批处理与模型输入要求之间的兼容性校验失败。"""
-
-    default_code = "compatibility_error"
 
 
 def wrap_error(
