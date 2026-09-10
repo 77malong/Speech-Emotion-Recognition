@@ -42,21 +42,19 @@ def _model() -> CNNBaseline:
     return CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
 
 
-def test_training_result_is_public_and_fit_return_remains_compatible():
+def test_training_result_is_public_and_fit_returns_it_directly():
     assert RootTrainingResult is TrainingResult
     status: TrainingStatus = "completed"
     assert status == "completed"
 
     trainer = Trainer(_model(), TrainerConfig(epochs=1), run_id="result-completed")
-    history = trainer.fit([_batch(1), _batch(2)])
+    result = trainer.fit([_batch(1), _batch(2)])
 
-    assert isinstance(history, list)
-    assert len(history) == 1
-    result = trainer.last_result
     assert isinstance(result, TrainingResult)
+    assert trainer.last_result is result
     assert result.run_id == "result-completed"
     assert result.status == "completed"
-    assert result.epochs == tuple(history)
+    assert len(result.epochs) == 1
     assert result.monitored_metric == trainer.config.monitor
     assert result.stop_reason is None
     assert result.started_at.tzinfo is not None
@@ -67,7 +65,7 @@ def test_training_result_is_public_and_fit_return_remains_compatible():
     assert result.best_checkpoint is None
 
     payload = result.to_dict()
-    assert payload["epochs"] == [history[0].to_dict()]
+    assert payload["epochs"] == [result.epochs[0].to_dict()]
     assert payload["started_at"].endswith("+00:00")
     assert payload["finished_at"].endswith("+00:00")
     json.dumps(payload)
@@ -84,10 +82,9 @@ def test_training_result_tracks_last_and_best_checkpoint(tmp_path: Path):
         run_id="result-checkpoint",
     )
 
-    trainer.fit([_batch(1)], val_batches=[_batch(2)])
+    result = trainer.fit([_batch(1)], val_batches=[_batch(2)])
 
-    result = trainer.last_result
-    assert result is not None
+    assert trainer.last_result is result
     assert result.status == "completed"
     assert result.best_epoch == 1
     assert result.best_metric == pytest.approx(trainer.best_metric)
@@ -114,14 +111,12 @@ def test_early_stopping_has_distinct_training_result_status():
         run_id="result-early-stop",
     )
 
-    history = trainer.fit(lambda: [_batch(1)], val_batches=lambda: [_batch(2)])
+    result = trainer.fit(lambda: [_batch(1)], val_batches=lambda: [_batch(2)])
 
-    result = trainer.last_result
-    assert result is not None
-    assert len(history) == 2
+    assert trainer.last_result is result
+    assert len(result.epochs) == 2
     assert result.status == "early_stopped"
     assert result.stop_reason == "early_stopped"
-    assert result.epochs == tuple(history)
     assert result.best_epoch == 1
 
 
@@ -180,8 +175,7 @@ def test_resume_source_is_exposed_as_last_checkpoint(tmp_path: Path):
     resumed.resume_from(checkpoint_dir / "last.pt")
 
     assert resumed.last_result is None
-    resumed.fit([], start_epoch=2)
-    result = resumed.last_result
-    assert result is not None
+    result = resumed.fit([], start_epoch=2)
+    assert resumed.last_result is result
     assert result.status == "completed"
     assert result.last_checkpoint == checkpoint_dir / "last.pt"
