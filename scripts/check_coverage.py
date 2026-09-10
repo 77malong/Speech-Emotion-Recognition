@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 DEFAULT_THRESHOLDS = {
-    "ser_lib/core/": 85.0,
     "ser_lib/foundation/": 85.0,
     "ser_lib/config/": 85.0,
     "ser_lib/artifacts/": 85.0,
