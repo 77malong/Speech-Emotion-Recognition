@@ -8,9 +8,9 @@ import torch
 from ser_lib import TrainingRunMetadata
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
-from ser_lib.engine import ExperimentConfig, ModelConfig, TrainerConfig
+from ser_lib.engine import ExperimentConfig, ModelConfig, Trainer, TrainerConfig
 from ser_lib.models import CNNBaseline
-from ser_lib.services import ArtifactService, TrainingService
+from ser_lib.services import ArtifactService
 
 
 def _data_config(tmp_path: Path) -> DataConfig:
@@ -63,16 +63,16 @@ def _model() -> CNNBaseline:
     return CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
 
 
-def test_training_service_builds_json_safe_run_metadata_without_dataset_io(tmp_path: Path):
+def test_trainer_from_experiment_builds_json_safe_lineage_without_dataset_io(tmp_path: Path):
     fingerprint = "a" * 64
-    trainer = TrainingService.create_trainer(
+    trainer = Trainer.from_experiment(
         _model(),
         _experiment(tmp_path),
         run_id="lineage-run",
         dataset_fingerprint=fingerprint,
     )
 
-    metadata = TrainingService.get_run_metadata(trainer)
+    metadata = trainer.run_metadata
 
     assert isinstance(metadata, TrainingRunMetadata)
     assert metadata.run_id == "lineage-run"
@@ -89,16 +89,16 @@ def test_checkpoint_and_artifact_preserve_training_lineage(tmp_path: Path):
     fingerprint = "b" * 64
     model = _model()
     experiment = _experiment(tmp_path)
-    trainer = TrainingService.create_trainer(
+    trainer = Trainer.from_experiment(
         model,
         experiment,
         run_id="lineage-run",
         dataset_fingerprint=fingerprint,
     )
-    metadata = TrainingService.get_run_metadata(trainer)
+    metadata = trainer.run_metadata
     assert metadata is not None
 
-    result = TrainingService.run(trainer, [_batch()])
+    result = trainer.fit([_batch()])
     assert result.status == "completed"
 
     checkpoint_path = experiment.trainer.checkpoint_dir / "last.pt"
@@ -126,17 +126,17 @@ def test_checkpoint_and_artifact_preserve_training_lineage(tmp_path: Path):
 def test_resume_restores_saved_lineage_when_run_id_is_not_explicit(tmp_path: Path):
     fingerprint = "c" * 64
     experiment = _experiment(tmp_path)
-    source = TrainingService.create_trainer(
+    source = Trainer.from_experiment(
         _model(),
         experiment,
         run_id="original-run",
         dataset_fingerprint=fingerprint,
     )
-    TrainingService.run(source, [_batch()])
+    source.fit([_batch()])
 
-    resumed = TrainingService.create_trainer(_model(), experiment)
+    resumed = Trainer.from_experiment(_model(), experiment)
     resumed.resume_from(experiment.trainer.checkpoint_dir / "last.pt")
-    metadata = TrainingService.get_run_metadata(resumed)
+    metadata = resumed.run_metadata
 
     assert resumed.run_id == "original-run"
     assert metadata is not None
