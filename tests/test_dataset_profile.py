@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.core.events import CancellationToken
-from ser_lib.core.exceptions import OperationCancelled
 from ser_lib.data import DatasetProfile, profile_dataset, profile_manifest_audio
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken
 from ser_lib.services import DatasetService
 
 
