@@ -38,10 +38,23 @@ class FakeEncoder(nn.Module):
         self.config = config or FakeConfig()
         self.projection = nn.Linear(1, self.config.hidden_size, bias=False)
 
-    def forward(self, *, input_values, attention_mask, return_dict):
+    def forward(self, *, input_values, attention_mask=None, return_dict):
         assert return_dict is True
-        assert attention_mask.shape == input_values.shape
+        if attention_mask is not None:
+            assert attention_mask.shape == input_values.shape
         return SimpleNamespace(last_hidden_state=self.projection(input_values.unsqueeze(-1)))
+
+
+class FakeWav2Vec2FeatureExtractor:
+    def __init__(self, config):
+        self._config = dict(config)
+
+    @classmethod
+    def from_dict(cls, config):
+        return cls(config)
+
+    def to_dict(self):
+        return dict(self._config)
 
 
 @pytest.fixture
@@ -65,8 +78,12 @@ def fake_transformers(monkeypatch):
             calls["from_pretrained"] = (name, kwargs)
             return FakeEncoder()
 
-    module = SimpleNamespace(AutoConfig=AutoConfig, AutoModel=AutoModel)
-    monkeypatch.setattr("ser_lib.models.pretrained._transformers", lambda: module)
+    module = SimpleNamespace(
+        AutoConfig=AutoConfig,
+        AutoModel=AutoModel,
+        Wav2Vec2FeatureExtractor=FakeWav2Vec2FeatureExtractor,
+    )
+    monkeypatch.setattr("ser_lib.models.adapters.huggingface._transformers", lambda: module)
     return calls
 
 
@@ -91,6 +108,19 @@ def _data_config(tmp_path: Path):
         batching=BatchingConfig(type="dynamic"),
         labels={0: {"en": "neutral"}, 1: {"en": "happy"}},
     )
+
+
+def _processor_snapshot():
+    return {
+        "class_name": "Wav2Vec2FeatureExtractor",
+        "config": {
+            "feature_size": 1,
+            "sampling_rate": 16000,
+            "padding_value": 0.0,
+            "do_normalize": True,
+            "return_attention_mask": True,
+        },
+    }
 
 
 def test_pretrained_config_requires_exactly_one_source():
@@ -169,8 +199,8 @@ def test_optional_dependency_error_is_actionable(monkeypatch):
             raise ImportError(name)
         return original(name, package)
 
-    monkeypatch.setattr("ser_lib.models.pretrained.importlib.import_module", missing)
-    with pytest.raises(ImportError, match=r"ser-lib\[pretrained\]"):
+    monkeypatch.setattr("ser_lib.models.adapters.huggingface.importlib.import_module", missing)
+    with pytest.raises(ImportError, match=r"ser-lib\[hf\]"):
         HFAudioClassifier(
             num_classes=2, encoder_config={"model_type": "fake_audio"}
         )
@@ -190,6 +220,28 @@ def test_pretrained_registry_and_artifact_round_trip(fake_transformers, tmp_path
     assert loaded.model.model_config == model.model_config
     for key, value in model.state_dict().items():
         assert torch.equal(loaded.model.state_dict()[key], value)
+
+
+def test_processor_snapshot_is_hashed_and_rebuilt_offline(fake_transformers, tmp_path: Path):
+    model = HFAudioClassifier(
+        num_classes=2,
+        encoder_config={"model_type": "fake_audio", "hidden_size": 4},
+        processor_config=_processor_snapshot(),
+        dropout=0,
+    )
+    directory = export_model_artifact(
+        tmp_path / "hf-processor",
+        model,
+        model_name="hf_audio_classifier",
+        data_config=_data_config(tmp_path),
+        labels={0: "neutral", 1: "happy"},
+    )
+    assert (directory / "processor_config.json").is_file()
+    loaded = load_model_artifact(directory)
+    assert loaded.manifest.processor == model.artifact_processor_config
+    assert "processor_config.json" in loaded.manifest.files_sha256
+    assert loaded.model.artifact_processor_config == model.artifact_processor_config
+    assert torch.allclose(model(_batch()).logits, loaded.model(_batch()).logits, atol=1e-6) is False
 
 
 def test_pretrained_declares_required_sample_rate(fake_transformers):
