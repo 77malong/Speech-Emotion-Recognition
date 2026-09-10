@@ -54,3 +54,17 @@
 ## 建议提交
 
 `refactor(engine): expose direct training and experiment APIs`
+
+## 实施记录
+
+进入本阶段前已重新读取 `SER_LIB_CORE_BOUNDARY_AUDIT.md`、`SER_LIB_CORE_BOUNDARY_EVIDENCE.md` 与本阶段计划，并严格保持“不删除 Service、不创建 Evaluator、不修改 optimizer/scheduler/checkpoint 算法”的边界。
+
+- `fc164405ca6b741159adbdc53ca0d22230fded22`：公开 `Trainer.fit()` 直接返回 `TrainingResult`；`Trainer.from_experiment()` 接管 dataset/run lineage 构造。
+- `f1b2bf86edc1dd7d81c9f778c8b70985eb175799`：`TrainingService` 收缩为兼容 facade，训练构造与执行直接委托 engine API。
+- `1f8f25ec1f4bc8c62084a6bf3d9ded9f33b74838` / `571b7c6d64f213f45a584d00ee2a430dfef72c04`：新增并公开 `engine.experiment`，提供 typed `TrainingExperimentResult`、`EvaluationExperimentResult`、`train_experiment()`、`evaluate_artifact()`。
+- `5060d37a20ec782df0e5f8a7684dd79f5f029da8`：CLI 的 train/evaluate 流程缩为参数转发与输出适配；lineage、loader、history、run record、evaluation report 等业务逻辑不再在 CLI 重复维护。
+- validation 路径只重建 `train=False` 的数据 pipeline/collator，并复用同一个训练模型；评估直接使用 artifact 中已加载的模型，没有引入 `Evaluator` 或重复 model/processor 构造。
+- 仓库内旧 `history = trainer.fit(...)` 消费方式全部迁到 `TrainingResult.epochs`；resume、observability、early stop、cancellation、scheduler、checkpoint lineage 与端到端 experiment lineage 都有回归测试覆盖。
+- `64ee2a40dc5dc6f9c92a8169ea5de2ec04bf0ba6` 修复最后一个 resume 测试的旧 list 假设；`8eb69de4cec75e38e6fa6ad9e1038bc5f1c50249` 将实验组件 Protocol 调整为只读属性，解决 structural typing，不改变运行行为。
+
+代码验收：exact HEAD `8eb69de4cec75e38e6fa6ad9e1038bc5f1c50249` 的 CI #315（run `34435443201`）7/7 job 全部成功，包括 Ruff、mypy、coverage、Windows/macOS/Linux × Python 3.10/3.12、Ubuntu 3.12 wheel build/smoke、完整测试与 training smoke。
