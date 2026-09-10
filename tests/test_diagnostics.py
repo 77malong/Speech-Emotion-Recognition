@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.core import Diagnostic
 from ser_lib.data.errors import (
     AudioDecodeError, AudioNotFoundError, CollationError, CompatibilityError,
     InvalidAudioSegmentError, ManifestError, RegistryError, RepresentationError, TransformError,
 )
 from ser_lib.data.importers import ImportPreview
+from ser_lib.foundation.diagnostics import Diagnostic
 
 
 def test_diagnostic_is_json_safe_and_validates_contract(tmp_path: Path):
