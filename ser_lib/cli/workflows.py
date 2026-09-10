@@ -6,7 +6,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-from ser_lib.artifacts import ModelCard
+from ser_lib.artifacts import (
+    ModelCard,
+    export_model_artifact,
+    inspect_model_artifact,
+    load_model_artifact,
+    verify_model_artifact,
+)
 from ser_lib.data import DatasetManifest
 from ser_lib.engine import (
     TrainingRunMetadata,
@@ -18,7 +24,12 @@ from ser_lib.engine.experiment import (
     evaluate_artifact as run_artifact_evaluation,
     train_experiment as run_training_experiment,
 )
-from ser_lib.services import ArtifactService, InferenceService
+from ser_lib.engine.lineage import artifact_provenance_from_training_run
+from ser_lib.inference import (
+    BatchEmotionPredictor,
+    EmotionPredictor,
+    write_batch_predictions,
+)
 
 
 def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
@@ -82,36 +93,34 @@ def predict_artifact(
         "mean_logits", "mean_probabilities", "max_confidence"
     ] | None,
 ) -> dict[str, Any]:
-    loaded = ArtifactService.load(artifact, map_location=device)
-    predictor = InferenceService.create_predictor(
+    loaded = load_model_artifact(artifact, map_location=device)
+    predictor = EmotionPredictor.from_loaded_artifact(
         loaded,
         device=device,
         window_aggregation=window_aggregation,
     )
+    batch_predictor = BatchEmotionPredictor(predictor)
     if source.is_dir():
-        result = InferenceService.predict_directory(
-            predictor,
+        result = batch_predictor.predict_directory(
             source,
             recursive=recursive,
             batch_size=batch_size,
             fail_fast=not keep_going,
         )
     elif source.suffix.lower() in {".yaml", ".yml"}:
-        result = InferenceService.predict_manifest(
-            predictor,
+        result = batch_predictor.predict_manifest(
             source,
             split=split,
             batch_size=batch_size,
             fail_fast=not keep_going,
         )
     else:
-        result = InferenceService.predict_files(
-            predictor,
+        result = batch_predictor.predict_files(
             [source],
             batch_size=batch_size,
             fail_fast=not keep_going,
         )
-    InferenceService.write_predictions(output, result)
+    write_batch_predictions(output, result)
     return {
         "output": str(output),
         "total": result.total,
@@ -149,15 +158,20 @@ def export_checkpoint_artifact(
         raw_run_metadata = checkpoint_metadata.get("run_metadata")
         if isinstance(raw_run_metadata, Mapping):
             source_run = TrainingRunMetadata.from_dict(raw_run_metadata)
-    target = ArtifactService.export(
+    metadata: dict[str, Any] = {"checkpoint_epoch": payload.get("epoch")}
+    if source_run is not None:
+        metadata = artifact_provenance_from_training_run(
+            source_run,
+            metadata=metadata,
+        )
+    target = export_model_artifact(
         destination,
         components.model,
         model_name=config.model.type,
         data_config=config.data,
         labels=labels,
         metrics=payload.get("metrics") or {},
-        metadata={"checkpoint_epoch": payload.get("epoch")},
-        source_run=source_run,
+        metadata=metadata,
         model_card=ModelCard(**(model_card or {})),
     )
     return {
@@ -169,7 +183,7 @@ def export_checkpoint_artifact(
 
 
 def inspect_artifact(path: Path, *, verify: bool) -> dict[str, Any]:
-    manifest = ArtifactService.verify(path) if verify else ArtifactService.inspect(path)
+    manifest = verify_model_artifact(path) if verify else inspect_model_artifact(path)
     return manifest.model_dump(mode="json")
 
 
