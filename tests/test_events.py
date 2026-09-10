@@ -57,7 +57,7 @@ def test_progress_event_v2_is_json_safe_and_preserves_legacy_constructor():
     assert payload["details"] == {"path": "audio.wav", "rate": 12.5}
     assert payload["sequence"] > 0
     assert event.fraction == 0.5
-    json.dumps(payload, ensure_ascii=False)
+    json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
 
 def test_event_sequences_are_monotonic_across_event_types():
@@ -85,6 +85,12 @@ def test_metric_rejects_conflicting_legacy_and_context_split():
         )
 
 
+def test_metric_event_rejects_non_finite_value_during_serialization():
+    for value in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="非有限浮点值"):
+            MetricEvent("loss", value).to_dict()
+
+
 def test_log_event_converts_common_metadata_to_json_safe_values():
     event = LogEvent(
         "INFO",
@@ -100,7 +106,12 @@ def test_log_event_converts_common_metadata_to_json_safe_values():
     assert payload["details"]["path"] == "artifacts/model"
     assert payload["details"]["at"].endswith("+00:00")
     assert payload["details"]["items"] == ["a", "b"]
-    json.dumps(payload, ensure_ascii=False)
+    json.dumps(payload, ensure_ascii=False, allow_nan=False)
+
+
+def test_event_details_reject_non_finite_nested_float():
+    with pytest.raises(ValueError, match="非有限浮点值"):
+        LogEvent("INFO", "bad", details={"nested": [1.0, float("nan")]}).to_dict()
 
 
 def test_lifecycle_event_serializes_status_and_context():
@@ -117,7 +128,7 @@ def test_lifecycle_event_serializes_status_and_context():
     assert payload["status"] == "started"
     assert payload["context"]["run_id"] == "run-001"
     assert payload["details"] == {"device": "cpu"}
-    json.dumps(payload, ensure_ascii=False)
+    json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
 
 def test_lifecycle_event_rejects_unknown_status():
@@ -143,7 +154,12 @@ def test_checkpoint_event_is_json_safe():
     assert payload["path"] == "checkpoints/best.pt"
     assert payload["metric_name"] == "val_uar"
     assert payload["metric_value"] == 0.72
-    json.dumps(payload, ensure_ascii=False)
+    json.dumps(payload, ensure_ascii=False, allow_nan=False)
+
+
+def test_checkpoint_event_rejects_non_finite_metric_value():
+    with pytest.raises(ValueError, match="非有限浮点值"):
+        CheckpointEvent("saved", "best", "best.pt", 1, metric_value=float("nan")).to_dict()
 
 
 def test_checkpoint_event_rejects_unknown_action():

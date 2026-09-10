@@ -66,7 +66,7 @@ class CheckpointEvent:
             "path": _json_safe(self.path),
             "epoch": self.epoch,
             "metric_name": self.metric_name,
-            "metric_value": self.metric_value,
+            "metric_value": _json_safe(self.metric_value),
             "timestamp": _timestamp_to_iso(self.timestamp),
             "context": self.context.to_dict(),
             "message": self.message,

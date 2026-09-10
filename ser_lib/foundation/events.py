@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
@@ -43,7 +44,11 @@ def _timestamp_to_iso(value: datetime) -> str:
 
 
 def _json_safe(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("事件字段包含非有限浮点值，无法序列化为严格 JSON")
         return value
     if isinstance(value, datetime):
         return _timestamp_to_iso(value)
@@ -157,7 +162,7 @@ class MetricEvent:
             "event_type": self.event_type,
             "sequence": self.sequence,
             "name": self.name,
-            "value": self.value,
+            "value": _json_safe(self.value),
             "step": self.step,
             "split": self.split,
             "timestamp": _timestamp_to_iso(self.timestamp),
