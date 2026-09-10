@@ -34,8 +34,18 @@ class _AccumulationState:
     def __init__(self, accumulation_steps: int) -> None:
         self.accumulation_steps = accumulation_steps
         self.pending_denominator = 0.0
+        self.active = False
+
+    def begin_epoch(self) -> None:
+        self.pending_denominator = 0.0
+        self.active = True
+
+    def end_epoch(self) -> None:
+        self.active = False
 
     def scale_loss(self, loss: torch.Tensor, denominator: float) -> torch.Tensor:
+        if not self.active:
+            return loss
         if denominator <= 0:
             raise ValueError("gradient accumulation denominator 必须大于 0")
         self.pending_denominator += denominator
@@ -143,6 +153,8 @@ class Trainer(_TrainerCore):
         output: ModelOutput,
     ) -> ModelOutput:
         _ = module
+        if not self._accumulation_state.active:
+            return output
         if not self.model.training or not torch.is_grad_enabled():
             return output
         if not args or not isinstance(args[0], SERBatch):
@@ -164,6 +176,13 @@ class Trainer(_TrainerCore):
             embeddings=output.embeddings,
             loss=scaled_loss,
         )
+
+    def train_epoch(self, batches: Iterable[SERBatch], *, epoch: int) -> EpochResult:
+        self._accumulation_state.begin_epoch()
+        try:
+            return super().train_epoch(batches, epoch=epoch)
+        finally:
+            self._accumulation_state.end_epoch()
 
     def _optimizer_step(self) -> None:
         denominator = self._accumulation_state.consume_denominator()
