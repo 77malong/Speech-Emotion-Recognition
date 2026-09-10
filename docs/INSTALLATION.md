@@ -1,19 +1,30 @@
 # 安装与环境
 
-支持 Python 3.10–3.12，CI 覆盖 Windows 和 Linux，macOS 通过纯 Python 包结构
-支持但发布前仍需单独 smoke test。
+支持 Python 3.10–3.12。CI 在 Linux、Windows 和 macOS 上覆盖声明的 Python
+版本，并在 Linux/Python 3.12 上额外验证基础安装、构建产物和源码树外隔离 wheel。
+
+基础库安装：
 
 ```bash
 python -m venv .venv
 python -m pip install --upgrade pip
-python -m pip install -e ".[test]"
+python -m pip install -e .
 ```
 
-预训练编码器是可选能力：
+开发与测试环境：
 
 ```bash
-python -m pip install -e ".[pretrained]"
+python -m pip install -e ".[test,dev]"
 ```
+
+Hugging Face 预训练音频模型是可选能力，正式 extra 名称为 `hf`：
+
+```bash
+python -m pip install -e ".[hf]"
+```
+
+`pretrained` extra 仅为旧安装命令保留兼容别名；新文档、新 CI 和新集成应使用
+`hf`。基础安装不会引入 `transformers`。
 
 PyTorch/TorchAudio 必须来自兼容版本与相同 CPU/CUDA 渠道。安装后运行：
 

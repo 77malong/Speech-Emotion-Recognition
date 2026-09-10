@@ -2,7 +2,8 @@
 
 本仓库只维护可复用的 SER Python 能力，不接受桌面端、Web UI、本地 HTTP
 服务或产品工作区代码。提交前请阅读
-[`docs/REPOSITORY_IMPLEMENTATION_PLAN.md`](docs/REPOSITORY_IMPLEMENTATION_PLAN.md)。
+[`docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md`](docs/development/SER_LIB_CORE_BOUNDARY_AUDIT.md)，
+并结合对应领域文档确认公开 API、持久化格式和安全边界。
 
 ## 开发环境
 
@@ -13,6 +14,12 @@ python -m pytest -q
 python -m ruff check ser_lib tests data benchmarks scripts examples
 python -m mypy --follow-imports=skip ser_lib
 python -m build
+```
+
+涉及 Hugging Face adapter 时额外安装：
+
+```bash
+python -m pip install -e ".[hf]"
 ```
 
 新增公开配置必须禁止未知字段；新增 Representation 必须声明 `TensorSpec`；

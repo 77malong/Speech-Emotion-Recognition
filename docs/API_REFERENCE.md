@@ -20,6 +20,18 @@ Page/View/Detail 或跨领域 ComponentCatalog facade。未列入各模块 `__al
 
 当前版本为 `0.2.0`，尚未承诺 1.0 级别的长期兼容性。本轮边界重构会删除已经明确判定为应用包装的旧入口；规范路径以各领域子包为准。
 
+## 根包便利入口
+
+`import ser_lib` 只保留少量高层、惰性加载的便利入口，不作为完整 API 目录：
+
+- `SERDataset`、`SERBatch`、`SERModel`；
+- `Trainer`、`TrainingResult`、`evaluate`、`train_experiment`、`evaluate_artifact`；
+- `EmotionPredictor`、`PredictionResult`；
+- `export_model_artifact`、`load_model_artifact`。
+
+配置、运行时、诊断、兼容性报告、lineage、catalog 等能力必须从其领域子包导入。这样
+`import ser_lib` 不会为了访问一个简单符号而加载整个库，也避免重新形成跨领域 facade。
+
 ## Direct API 推荐入口
 
 ```python
@@ -188,8 +200,8 @@ CPU/RAM 通过跨平台 psutil API 获取，不依赖 Linux `/proc`，不会在 
 
 ## ETA v2
 
-`ser_lib.EtaEstimator` / `ser_lib.engine.EtaEstimator` 使用有界 recent-N batch window，
-配置由 `ObservabilityConfig.eta_window_batches` 与 `eta_warmup_batches` 控制。Trainer
+`ser_lib.engine.EtaEstimator` 使用有界 recent-N batch window，配置由
+`ObservabilityConfig.eta_window_batches` 与 `eta_warmup_batches` 控制。Trainer
 ProgressEvent 继续保留：
 
 - `estimated_epoch_remaining_seconds`；
