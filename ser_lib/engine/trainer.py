@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import torch
+import torch.nn.functional as F
 
 from ser_lib._version import __version__
 from ser_lib.data.types import SERBatch, move_batch_to_device
@@ -21,9 +22,56 @@ from ser_lib.engine._trainer_core import (
 )
 from ser_lib.engine.config import ExperimentConfig
 from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
+from ser_lib.engine.objectives import ClassificationLoss
 from ser_lib.engine.optim import AdamWConfig, build_optimizer
 from ser_lib.foundation.events import CancellationCheck, EventCallback
-from ser_lib.models.base import SERModel
+from ser_lib.models.base import ModelOutput, SERModel
+
+
+class _AccumulationState:
+    """Track the effective reduction denominator for one optimizer step."""
+
+    def __init__(self, accumulation_steps: int) -> None:
+        self.accumulation_steps = accumulation_steps
+        self.pending_denominator = 0.0
+
+    def scale_loss(self, loss: torch.Tensor, denominator: float) -> torch.Tensor:
+        if denominator <= 0:
+            raise ValueError("gradient accumulation denominator 必须大于 0")
+        self.pending_denominator += denominator
+        scale = denominator * self.accumulation_steps
+        scaled = loss * scale
+        # Preserve the user-visible scalar loss while changing only its gradient scale.
+        return loss.detach() + scaled - scaled.detach()
+
+    def consume_denominator(self) -> float:
+        denominator = self.pending_denominator
+        if denominator <= 0:
+            raise RuntimeError("optimizer step 缺少 gradient accumulation denominator")
+        self.pending_denominator = 0.0
+        return denominator
+
+
+class _AccumulationAwareLoss(torch.nn.Module):
+    """Wrap an explicit scalar loss with logical-batch accumulation semantics."""
+
+    def __init__(
+        self,
+        base_loss: torch.nn.Module,
+        state: _AccumulationState,
+    ) -> None:
+        super().__init__()
+        self.base_loss = base_loss
+        self.state = state
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        loss = self.base_loss(logits, targets)
+        if isinstance(self.base_loss, ClassificationLoss):
+            denominator = self.base_loss.reduction_denominator(targets)
+        else:
+            # Public custom scalar losses are interpreted as a mean over samples.
+            denominator = float(targets.numel())
+        return self.state.scale_loss(loss, denominator)
 
 
 class Trainer(_TrainerCore):
@@ -33,6 +81,12 @@ class Trainer(_TrainerCore):
     完整实验应使用 ``Trainer.from_experiment``，optimizer 由
     ``ExperimentConfig.optimizer`` 构造。lineage 是 Trainer 自身状态，checkpoint
     保存和恢复不再依赖 Service 私有子类。
+
+    梯度累积按一个逻辑大 batch 的归约语义执行：不同大小 microbatch 与尾部不足
+    ``gradient_accumulation_steps`` 的分组都会按实际有效归约分母重新归一化。显式
+    自定义标量 ``loss_fn`` 约定为“对当前 microbatch 样本取 mean”；内置带类别权重
+    的 ``ClassificationLoss`` 会使用与 PyTorch weighted cross-entropy 一致的权重
+    质量作为分母。
     """
 
     run_metadata: TrainingRunMetadata | None
@@ -51,22 +105,85 @@ class Trainer(_TrainerCore):
         run_id: str | None = None,
         run_metadata: TrainingRunMetadata | None = None,
     ) -> None:
+        resolved_config = config or TrainerConfig()
         resolved_optimizer = optimizer or build_optimizer(
             model.parameters(),
             AdamWConfig(),
         )
         self.run_metadata = run_metadata
+        self._accumulation_state = _AccumulationState(
+            resolved_config.gradient_accumulation_steps
+        )
+        wrapped_loss = (
+            _AccumulationAwareLoss(loss_fn, self._accumulation_state)
+            if loss_fn is not None
+            else None
+        )
         super().__init__(
             model,
-            config,
+            resolved_config,
             optimizer=resolved_optimizer,
             scheduler=scheduler,
-            loss_fn=loss_fn,
+            loss_fn=wrapped_loss,
             event_callback=event_callback,
             cancellation=cancellation,
             observability=observability,
             run_id=run_id,
         )
+        self._accumulation_model_hook = None
+        if loss_fn is None:
+            self._accumulation_model_hook = self.model.register_forward_hook(
+                self._scale_implicit_training_loss
+            )
+
+    def _scale_implicit_training_loss(
+        self,
+        module: torch.nn.Module,
+        args: tuple[object, ...],
+        output: ModelOutput,
+    ) -> ModelOutput:
+        _ = module
+        if not self.model.training or not torch.is_grad_enabled():
+            return output
+        if not args or not isinstance(args[0], SERBatch):
+            return output
+        batch = args[0]
+        if batch.labels is None:
+            return output
+        base_loss = (
+            output.loss
+            if output.loss is not None
+            else F.cross_entropy(output.logits, batch.labels)
+        )
+        scaled_loss = self._accumulation_state.scale_loss(
+            base_loss,
+            float(batch.labels.numel()),
+        )
+        return ModelOutput(
+            logits=output.logits,
+            embeddings=output.embeddings,
+            loss=scaled_loss,
+        )
+
+    def _optimizer_step(self) -> None:
+        denominator = self._accumulation_state.consume_denominator()
+        if self._scaler is not None:
+            self._scaler.unscale_(self.optimizer)
+        for group in self.optimizer.param_groups:
+            for parameter in group["params"]:
+                if parameter.grad is not None:
+                    parameter.grad.div_(denominator)
+        if self.config.gradient_clip_norm is not None:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.config.gradient_clip_norm
+            )
+        if self._scaler is None:
+            self.optimizer.step()
+        else:
+            self._scaler.step(self.optimizer)
+            self._scaler.update()
+        self.optimizer.zero_grad(set_to_none=True)
+        self.optimizer_step += 1
 
     @classmethod
     def from_experiment(
