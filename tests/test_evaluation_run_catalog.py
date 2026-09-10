@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ser_lib.core import CancellationToken, OperationCancelled, ProgressEvent
 from ser_lib.engine import EvaluationRunCatalog, scan_evaluation_runs
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.services import EvaluationService
 
 
