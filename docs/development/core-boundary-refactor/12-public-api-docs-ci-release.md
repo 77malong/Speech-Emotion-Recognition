@@ -82,14 +82,33 @@ Stage 12 以本阶段计划和前 11 个阶段已经锁定的领域边界为基�
 - coverage policy 删除已退役 core 门槛，为 `foundation` 与 `config` 建立各 85% 的独立门槛，并保留 artifacts 85%、engine/inference/models 80%、data 60%、cli 65% 等既有领域要求，没有因模块迁移下调其他领域标准。
 - CI 扩展为 Linux/Windows/macOS × Python 3.10/3.11/3.12 的 9 个普通矩阵 job、Transformers 4.38.2/5.17.0 两个真实 tiny-model HF lane，以及独立 Static job。普通矩阵覆盖 `pip check`、compileall、pytest 和 CPU training smoke；Ubuntu/Python 3.12 额外验证基础安装不含 Transformers、distribution build、源码树外 isolated wheel 安装及 wheel 内容；Static 覆盖 Ruff、mypy 和分包 coverage。
 - 增加固定 release compatibility fixture，分别验证旧 ExperimentConfig v1 的相对路径解析、无显式 `schema_version` 的旧 dataset manifest、checkpoint v1 状态恢复，以及 artifact v1 的 inspect/verify 与安全授权语义。legacy artifact 默认拒绝 pickle 权重，只有调用方显式设置 `allow_legacy_pickle=True` 才允许可信加载。
-- legacy artifact fixture 首轮使用 `log_mel.n_mels=4`，真实当前 `LogMelConfig` 正确拒绝了该非法配置。修复选择把该 artifact fixture 的 `n_mels` 与模型 `feature_dim` 同步为合法的 16，同时继续保留 checkpoint 4 维 fixture；没有放宽 `n_mels >= 16` 的正式配置约束。
-- 最终再次比较本分支与 `main`：代码验收 HEAD 时分支 `ahead 235 / behind 0`，merge base 与 main HEAD 均为 `7018e05dbbfd5e40207ac8ccfd886cbaedbebfe6`。差异中的 `core/services/catalog`、旧 roadmap/应用架构文档等删除均属于计划内边界收缩；可复用 SER 数据、模型、训练、评估、推理、artifact 与运行时能力仍由对应领域 API 和完整 CI 覆盖，没有观察到因未同步 main 而造成的能力遗漏。
+- legacy experiment fixture 首轮使用 `log_mel.n_mels=4`，真实当前 `LogMelConfig` 正确拒绝了该非法配置。修复选择把该 experiment fixture 的 `n_mels` 与模型 `feature_dim` 同步为合法的 16，没有放宽 `n_mels >= 16` 的正式配置约束；随后把兼容验收提升为运行时生成小 WAV、通过公开 `train_experiment()` 实际执行一轮训练并验证真实 checkpoint/lineage，而不再只证明 YAML 可以解析。
+- 最终再次比较本分支与 `main`：2026-09-10 复核时 main HEAD 仍为 `7018e05dbbfd5e40207ac8ccfd886cbaedbebfe6`，没有新的 main 提交需要同步。当前递归文件树再次确认 `ser_lib/core`、`ser_lib/services` 不存在，而 `data`、`models`、`engine`、`inference`、`artifacts`、`config`、`foundation` 以及 Torch/HF adapters 均存在；后续 strict-review 修复只增强数值正确性、恢复语义和测试，没有新增计划外能力删除。
+
+### Strict review 后续修复
+
+Stage 12 初次收口后又执行了 `docs/development/SER_LIB_STRICT_REVIEW_2026-09-10.md` 的逐模块严格审计。该审计是问题发现基线，不因后续修复而改写原结论；本节记录在同一分支上的后续 remediation：
+
+- 梯度累积改为按一个逻辑大 batch 的实际归约分母归一化，覆盖尾组、不同 microbatch 大小和 weighted cross-entropy，不再固定除以 `gradient_accumulation_steps`。
+- 实验 seed 移到随机模型/组件创建之前；同一 experiment seed 不再受调用前全局 RNG 状态影响模型初始化。
+- F0 修正 TorchAudio pitch smoothing 的 `win_length` 单位，并定义静音/短输入语义；未实现的 jitter/shimmer/HNR 不再伪造零值输出，而是显式拒绝。
+- CNN 采用 mask-aware BatchNorm 并在卷积层间清零 padding，使变长输入在不同右侧 padding/batch 组合下保持不变，同时保留既有 BatchNorm state-dict 表面。
+- 流式重采样改为有状态带限 sinc，实现 chunk partition invariance、与离线 TorchAudio 对齐，并新增目标 Nyquist 以上频率的抗混叠测试和有界 buffer 测试。
+- 高层训练/评估入口增加 label-id 语义一致性校验；整数范围相同但 label 含义不同的 manifest/artifact 不再静默计算无意义指标。
+- WeightedRandomSampler 的独立 `torch.Generator` 状态随 checkpoint 保存/恢复；resume 配置校验区分算法字段与运行字段，允许修改 `epochs`、`checkpoint_dir`、`save_last`、`save_best`，仍严格拒绝会改变数值训练语义的配置差异。
+- `DatasetEditor.update_record()` 先完成所有验证再一次应用内存修改，失败操作不再留下可被后续 commit 误提交的 dirty 状态。
+- 高层 checkpoint 返回值改为复用 `TrainingResult` 的实际保存结果；同时修正 `last_checkpoint` 契约，使逐 epoch checkpoint 不再冒充可选的 `last.pt`，`save_last=False` 时 fresh run 不会声称存在 `last.pt`。
+
+兼容性证据边界必须保留：当前仓库中的 v1 checkpoint/artifact fixture 可以验证旧 schema、安全授权和加载路径，但其权重仍由当前实现构造，**不能等价宣称已用真实 0.1.0 发布环境生成的 golden checkpoint/artifact 做跨版本二进制回归**。若将来要把“真实历史二进制兼容”作为强发布承诺，应从实际 0.1.0 环境生成并固定最小 golden 制品，再执行加载→推理/续训验收。
+
+版本语义复核：`pyproject.toml` 与 `ser_lib/_version.py` 均为 `0.2.0`，`CHANGELOG.md` 已把本轮从旧 API 面迁移到新领域 API 的 breaking changes 放在 Unreleased 中，历史 artifact fixture 标记 `0.1.0`。没有证据支持为了本次收口再次无依据 bump 到 0.3/1.0，因此保持 0.2.0 作为此次不兼容 API 面的目标版本。
 
 CI 记录：
 
 - CI #422 首先暴露测试仍从根包导入已迁移的兼容性、runtime、lineage、config 等 API；修复统一迁移到所属领域 public API，并加强“这些符号不得重新回到根包”的测试，而不是恢复旧根包导出。
 - CI #426 暴露 CLI 收口过程中意外扩大的 `ser_lib.engine` public surface；精确契约快照捕获新增 `artifact_provenance_from_training_run`，后续恢复已锁定的 engine public API，CI #427 重新 12/12 全绿。
-- CI #428 在新增旧格式 fixture 后暴露 legacy artifact 的 `n_mels=4` 不符合当前合法 Log-Mel schema；修复 fixture 自身维度契约，不修改生产校验。
-- 代码验收 HEAD `70e6ad02be640dc966e447bee07e1426a345cf01` 对应 CI #430 / run `34462775677`：12/12 jobs 全部 `completed/success`。Linux/Windows/macOS × Python 3.10/3.11/3.12、两个 Transformers lane、Ruff、mypy、分包 coverage、基础安装无 Transformers、distribution build、源码树外 isolated wheel smoke、完整 pytest 与 CPU training smoke 全部通过。
+- CI #428 在新增旧格式 fixture 后暴露 legacy experiment 的 `n_mels=4` 不符合当前合法 Log-Mel schema；修复 fixture 自身维度契约，不修改生产校验。
+- 初次 Stage 12 代码验收 HEAD `70e6ad02be640dc966e447bee07e1426a345cf01` 对应 CI #430 / run `34462775677`，当时 12/12 jobs 全部成功。之后 strict review 又发现并修复了数值/恢复/兼容性问题，因此 #430 不再作为最终验收依据。
+- Strict-review remediation 代码验收 HEAD `b684f90bcc5183c334e382afa888bbd390fb80c0` 对应 CI #458 / run `34477790449`：12/12 jobs 全部 `completed/success`。Linux/Windows/macOS × Python 3.10/3.11/3.12、两个 Transformers lane、Ruff、mypy、分包 coverage、基础安装无 Transformers、distribution build、源码树外 isolated wheel smoke、完整 pytest 与 CPU training smoke 全部通过。
 
-结论：Stage 12 的代码、文档、兼容性与发布门禁已满足；本记录提交后仍需以新的 doc-only exact HEAD 再运行一次完整 CI，只有该 closure CI 也 12/12 全绿后才正式关闭 Stage 12，并完成全部 12 个核心边界重构阶段。
+结论：Stage 12 的代码、文档、兼容性与发布门禁，以及 strict-review 中已列出的 P1/P2 remediation，均已完成到当前声明的证据边界。本记录提交后必须再以新的 doc-only exact HEAD 运行完整 CI；只有该 closure CI 也 12/12 全绿，才正式关闭 Stage 12，并完成全部 12 个核心边界重构阶段。
