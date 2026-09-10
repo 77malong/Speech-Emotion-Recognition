@@ -9,12 +9,8 @@ from pathlib import Path
 import torch
 
 from ser_lib.artifacts import inspect_model_artifact
-from ser_lib.cli.workflows import (
-    evaluate_artifact,
-    export_checkpoint_artifact,
-    train_experiment,
-)
-from ser_lib.services import TrainingService
+from ser_lib.cli.workflows import export_checkpoint_artifact
+from ser_lib.engine import evaluate_artifact, load_training_history, train_experiment
 
 
 def _write_wav(path: Path, frequency: float) -> None:
@@ -33,7 +29,7 @@ def _write_wav(path: Path, frequency: float) -> None:
         output.writeframes(frames)
 
 
-def test_cli_training_persists_run_lineage_and_exports_it_to_artifact(tmp_path: Path):
+def test_engine_experiment_api_persists_training_and_evaluation_lineage(tmp_path: Path):
     for index, frequency in enumerate((220.0, 660.0)):
         _write_wav(tmp_path / f"sample-{index}.wav", frequency)
     (tmp_path / "train.jsonl").write_text(
@@ -72,15 +68,18 @@ output_dir: run
         encoding="utf-8",
     )
 
-    result = train_experiment(
+    execution = train_experiment(
         config,
         split="train",
         batch_size=2,
         workers=0,
         resume=None,
     )
+    result = execution.to_dict()
+    assert execution.training.status == "completed"
+    assert execution.run.run_id == execution.training.run_id
 
-    run_record = Path(result["run_record"])
+    run_record = execution.run_record
     assert run_record.is_file()
     saved_run = json.loads(run_record.read_text(encoding="utf-8"))
     assert saved_run["run_id"] == result["run_id"]
@@ -90,12 +89,13 @@ output_dir: run
     assert saved_run["model_id"] == "cnn_baseline"
     assert saved_run["status"] == "completed"
 
-    history = TrainingService.inspect_history(Path(result["output_dir"]))
+    history = load_training_history(execution.output_dir)
     assert history.epoch_count == 1
     assert history.epochs[0].epoch == 1
     assert history.epochs[0].sample_count == 2
 
-    checkpoint = Path(result["last_checkpoint"])
+    checkpoint = execution.last_checkpoint
+    assert checkpoint is not None
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     checkpoint_lineage = payload["metadata"]["run_metadata"]
     assert checkpoint_lineage["run_id"] == result["run_id"]
@@ -111,7 +111,7 @@ output_dir: run
     assert artifact_manifest.metadata["dataset_fingerprint"] == result["dataset_fingerprint"]
 
     evaluation_dir = tmp_path / "evaluation"
-    evaluated = evaluate_artifact(
+    evaluation = evaluate_artifact(
         artifact,
         manifest_path=tmp_path / "dataset.yaml",
         split="train",
@@ -120,7 +120,8 @@ output_dir: run
         device="cpu",
         output=evaluation_dir,
     )
-    evaluation_record = Path(evaluated["evaluation_record"])
+    evaluated = evaluation.to_dict()
+    evaluation_record = evaluation.evaluation_record
     assert evaluation_record.is_file()
     saved_evaluation = json.loads(evaluation_record.read_text(encoding="utf-8"))
     assert evaluated["evaluation_id"].startswith("eval_")
