@@ -37,6 +37,10 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.6",
 ]
+hf = [
+    "transformers>=4.38,<6",
+]
+# Backward-compatible alias for callers that already use the old extra name.
 pretrained = [
     "transformers>=4.38,<6",
 ]
