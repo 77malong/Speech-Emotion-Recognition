@@ -1,11 +1,10 @@
 import json
 from pathlib import Path
 
-from ser_lib.artifacts import scan_model_artifacts
+from ser_lib.artifacts import export_model_artifact, scan_model_artifacts
 from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.foundation.events import ProgressEvent
 from ser_lib.models import CNNBaseline
-from ser_lib.services import ArtifactService
 
 
 def _config(tmp_path: Path) -> DataConfig:
@@ -36,7 +35,7 @@ def test_artifact_catalog_scans_without_hashing_and_exposes_management_metadata(
     model = CNNBaseline(feature_dim=16, num_classes=2, hidden_dim=4, dropout=0)
     root = tmp_path / "models"
     root.mkdir()
-    ArtifactService.export(
+    export_model_artifact(
         root / "model-a",
         model,
         model_name="cnn_baseline",
@@ -82,12 +81,12 @@ def test_artifact_catalog_scans_without_hashing_and_exposes_management_metadata(
     assert progress[-1].completed == progress[-1].total == 2
 
 
-def test_artifact_service_scan_supports_recursive_catalog(tmp_path: Path):
+def test_artifact_scan_supports_recursive_catalog(tmp_path: Path):
     model = CNNBaseline(feature_dim=16, num_classes=2, hidden_dim=4, dropout=0)
     root = tmp_path / "models"
     nested = root / "experiment-a"
     nested.mkdir(parents=True)
-    ArtifactService.export(
+    export_model_artifact(
         nested / "model-a",
         model,
         model_name="cnn_baseline",
@@ -95,7 +94,7 @@ def test_artifact_service_scan_supports_recursive_catalog(tmp_path: Path):
         labels={0: "neutral", 1: "happy"},
     )
 
-    assert ArtifactService.scan(root).artifacts == ()
-    recursive = ArtifactService.scan(root, recursive=True)
+    assert scan_model_artifacts(root).artifacts == ()
+    recursive = scan_model_artifacts(root, recursive=True)
     assert len(recursive.artifacts) == 1
     assert recursive.artifacts[0].model_name == "cnn_baseline"
