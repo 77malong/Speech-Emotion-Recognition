@@ -70,7 +70,9 @@ def _adapter(
         expected_sample_rate=16000,
         freeze_module=freeze_module,
         factory_id=factory_id,
-        factory_params=factory_params or {"num_classes": num_classes},
+        factory_params=(
+            {"num_classes": num_classes} if factory_params is None else factory_params
+        ),
     )
 
 
@@ -139,7 +141,7 @@ def test_plain_torch_module_full_ser_lifecycle(tmp_path: Path):
     training = Trainer(
         adapter,
         TrainerConfig(epochs=1, device="cpu"),
-        optimizer,
+        optimizer=optimizer,
         run_id="torch-adapter-test",
     ).fit([_batch()])
     assert training.status == "completed"
