@@ -160,11 +160,21 @@ class _LinearResampler:
 
 
 class StreamingEmotionRecognizer:
-    """同步消费 PCM，并为每个完整窗口返回一次预测。"""
+    """同步消费 PCM，并为每个完整窗口返回一次预测。
+
+    离线 ``normalize_peak`` 依赖整段音频的全局峰值，无法在无界流中保持相同
+    语义。该配置会在会话创建时明确拒绝，而不是被静默忽略或退化成依赖 chunk
+    划分的局部归一化。
+    """
 
     def __init__(self, predictor: EmotionPredictor, config: StreamingConfig) -> None:
         self.predictor = predictor
         self.config = config
+        if predictor.audio_loader.config.normalize_peak:
+            raise ValueError(
+                "streaming 不支持 audio.normalize_peak=True：全局峰值归一化需要完整音频；"
+                "请关闭该选项后使用流式推理"
+            )
         self.target_rate = predictor.audio_loader.config.target_sample_rate
         self.window_samples = round(config.window_ms * self.target_rate / 1000)
         self.hop_samples = round(config.hop_ms * self.target_rate / 1000)
