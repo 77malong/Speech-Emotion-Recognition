@@ -37,6 +37,11 @@ def test_pitch_f0_defines_too_short_input_as_single_unvoiced_frame():
     assert torch.equal(pitch, torch.zeros(1))
 
 
+def test_waveform_delta_is_rejected_as_misleading_acoustic_feature():
+    with pytest.raises(ValidationError, match="delta.*waveform.*帧级"):
+        AcousticFeaturesConfig(features=["delta"])
+
+
 def test_unvalidated_quality_vector_is_rejected_by_public_config():
     with pytest.raises(ValidationError, match="jitter_shimmer_hnr"):
         AcousticFeaturesConfig(features=["jitter_shimmer_hnr"])

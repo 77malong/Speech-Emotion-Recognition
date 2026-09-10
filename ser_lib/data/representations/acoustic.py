@@ -7,8 +7,10 @@
   ``RepresentationError``，禁止在 Dataset 中无条件插值或裁剪“凑齐”长度
   （设计文档 §2.4）。需要不等长时间轴时，请用多个独立的
   ``AcousticFeatures`` 子表示通过 :class:`CompositeRepresentation` 组合。
+- ``delta`` 暂不提供：历史实现直接对原始 waveform 计算采样点级差分，不能
+  冒充 MFCC/Log-Mel 等帧级声学特征的 delta。
 - ``jitter_shimmer_hnr`` 暂不提供：历史实现只真实计算 jitter，却把 shimmer/HNR
-  返回为 0。公共配置现在显式拒绝该选项，直到三项指标都有可信数值参考验证。
+  返回为 0。公共配置显式拒绝这些未经数值参考验证的输出。
 """
 
 from __future__ import annotations
@@ -19,7 +21,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-import torchaudio.transforms as T
 
 from ser_lib.config.representations import AcousticFeaturesConfig
 from ser_lib.data.errors import RepresentationError
@@ -32,7 +33,6 @@ from ser_lib.data.types import (
     TensorSpec,
 )
 
-# 各帧级特征的输出维度（堆叠后 [T, D] 的 D）
 _FRAME_FEATURE_DIMS: dict[str, int] = {
     "f0": 1,
     "rms": 1,
@@ -41,7 +41,6 @@ _FRAME_FEATURE_DIMS: dict[str, int] = {
     "spectral_rolloff": 1,
     "spectral_flatness": 1,
     "spectral_flux": 1,
-    "delta": 3,
 }
 
 
@@ -196,21 +195,6 @@ class _SpectralFlux(_StftFeature):
         return F.pad(flux, (1, 0))[0]
 
 
-class _Delta(_FrameFeature):
-    """对波形按 legacy 语义计算一阶/二阶差分并拼接，输出 [T, 3]。"""
-
-    def __init__(self, win_length: int) -> None:
-        super().__init__()
-        self.transform = T.ComputeDeltas(win_length=win_length)
-
-    def compute(self, waveform: torch.Tensor) -> torch.Tensor:
-        matrix = waveform.unsqueeze(1)
-        delta = self.transform(matrix)
-        delta_delta = self.transform(delta)
-        stacked = torch.cat([matrix, delta, delta_delta], dim=1)
-        return stacked[0].transpose(0, 1)
-
-
 class _JitterShimmerHNR(nn.Module):
     """退役的历史 helper；禁止继续返回未实现的 shimmer/HNR 占位值。"""
 
@@ -228,8 +212,8 @@ class AcousticFeatures(Representation):
         id="acoustic_features",
         display_name="声学特征",
         category="representation",
-        description="帧级声学特征 (f0/rms/zcr/spectral_*/delta) 堆叠为 [T, D]；"
-        "未验证的 jitter/shimmer/HNR 音质向量暂不开放。",
+        description="帧级声学特征 (f0/rms/zcr/spectral_*) 堆叠为 [T, D]；"
+        "delta 与未经验证的 jitter/shimmer/HNR 暂不开放。",
         config_schema=AcousticFeaturesConfig.model_json_schema(),
     )
 
@@ -266,8 +250,6 @@ class AcousticFeatures(Representation):
                 self._frame_modules[name] = _SpectralFlux(
                     config.sample_rate, config.n_fft, config.hop_length
                 )
-            elif name == "delta":
-                self._frame_modules[name] = _Delta(config.delta_win_length)
 
         self._feature_modules = nn.ModuleDict(
             {f"feat_{key}": value for key, value in self._frame_modules.items()}

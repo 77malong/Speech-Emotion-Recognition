@@ -100,6 +100,12 @@ class AcousticFeaturesConfig(StrictConfig):
             raise ValueError(f"features 存在重复项: {self.features}")
         if self.delta_win_length % 2 == 0:
             raise ValueError(f"delta_win_length 必须是奇数，实际: {self.delta_win_length}")
+        if "delta" in self.features:
+            raise ValueError(
+                "delta 暂不可用：历史实现对原始 waveform 计算采样点级差分，"
+                "不等价于 MFCC/Log-Mel 等帧级声学特征的 delta；"
+                "在提供经过数值参考验证的帧级实现前拒绝返回误导性结果"
+            )
         if "jitter_shimmer_hnr" in self.features:
             raise ValueError(
                 "jitter_shimmer_hnr 暂不可用：当前库尚未提供经过数值参考验证的 "
