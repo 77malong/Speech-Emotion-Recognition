@@ -60,7 +60,7 @@ def parse_record(
             f"记录 {uid} 缺少合法的 audio_path 字段 ({where})", uid=uid
         )
     label = raw.get("label")
-    if label is not None and not isinstance(label, int) or isinstance(label, bool):
+    if (label is not None and not isinstance(label, int)) or isinstance(label, bool):
         raise ManifestError(
             f"记录 {uid} 的 label 必须是 int 或 null，实际: {label!r} ({where})", uid=uid
         )
@@ -164,7 +164,6 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
         raise ManifestError(f"dataset.yaml 必须是映射: {yaml_path}", path=yaml_path)
 
     payload = dict(raw)
-    # 历史 manifest 允许省略版本；保持兼容并统一归一到 v1 migration 入口。
     payload.setdefault("schema_version", MANIFEST_SCHEMA_VERSION)
     try:
         payload = migrate_data_payload(
@@ -214,18 +213,67 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
     )
 
 
+def _resolved_audio_path(meta: ManifestMeta, record: AudioRecord) -> Path:
+    if record.audio_path.is_absolute():
+        return record.audio_path.resolve()
+    return (meta.root / record.audio_path).resolve()
+
+
+def _validate_cross_split_audio_overlap(
+    records: list[AudioRecord],
+    record_splits: Mapping[str, str],
+    meta: ManifestMeta,
+) -> None:
+    """拒绝同一音频在不同 split 中出现重叠区间。
+
+    这是与具体 split 策略无关的最小泄漏门禁。speaker overlap 是否非法取决于
+    speaker-independent 等显式策略，因此不在这里做无条件判断。
+    """
+    by_audio: dict[Path, list[tuple[int, float, str, str]]] = {}
+    for record in records:
+        split = record_splits.get(record.uid)
+        if split is None:
+            continue
+        start = record.start_ms if record.start_ms is not None else 0
+        end = float(record.end_ms) if record.end_ms is not None else float("inf")
+        by_audio.setdefault(_resolved_audio_path(meta, record), []).append(
+            (start, end, split, record.uid)
+        )
+
+    for audio_path, intervals in by_audio.items():
+        intervals.sort(key=lambda item: (item[0], item[1]))
+        furthest_by_split: dict[str, tuple[float, str]] = {}
+        for start, end, split, uid in intervals:
+            for other_split, (other_end, other_uid) in furthest_by_split.items():
+                if other_split != split and other_end > start:
+                    raise ManifestError(
+                        "音频片段跨 split 重叠: "
+                        f"'{other_uid}' ({other_split}) 与 '{uid}' ({split}) "
+                        f"引用同一音频 {audio_path}",
+                        uid=uid,
+                        path=meta.yaml_path,
+                    )
+            previous = furthest_by_split.get(split)
+            if previous is None or end > previous[0]:
+                furthest_by_split[split] = (end, uid)
+
+
 class DatasetManifest:
     """标准数据集 manifest：迭代记录、按 split 获取、轻量统计。"""
 
-    def __init__(self, meta: ManifestMeta, records: list[AudioRecord],
-                 record_splits: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        meta: ManifestMeta,
+        records: list[AudioRecord],
+        record_splits: dict[str, str] | None = None,
+    ) -> None:
         self.meta = meta
         self.records = records
         self.record_splits = record_splits or {}
 
     @classmethod
     def load(cls, yaml_path: Path | str) -> "DatasetManifest":
-        """加载 dataset.yaml 及其全部 splits。"""
+        """加载 dataset.yaml 及其全部 splits，并拒绝无歧义的跨 split 音频泄漏。"""
         yaml_path = Path(yaml_path)
         meta = load_meta(yaml_path)
         records: list[AudioRecord] = []
@@ -242,13 +290,11 @@ class DatasetManifest:
                 records.append(record)
                 record_splits[record.uid] = split_name
         _validate_label_range(records, meta, yaml_path)
+        _validate_cross_split_audio_overlap(records, record_splits, meta)
         return cls(meta, records, record_splits)
 
     def resolve_audio_path(self, record: AudioRecord) -> Path:
-        path = record.audio_path
-        if path.is_absolute():
-            return path
-        return (self.meta.root / path).resolve()
+        return _resolved_audio_path(self.meta, record)
 
     def iter_records(self, split: str | None = None) -> Iterator[AudioRecord]:
         for record in self.records:
@@ -327,8 +373,11 @@ class DatasetManifest:
         tmp.replace(yaml_path)
 
 
-def _validate_label_range(records: list[AudioRecord], meta: ManifestMeta,
-                          yaml_path: Path) -> None:
+def _validate_label_range(
+    records: list[AudioRecord],
+    meta: ManifestMeta,
+    yaml_path: Path,
+) -> None:
     if not meta.labels:
         return
     valid = set(meta.labels)
