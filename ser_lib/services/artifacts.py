@@ -19,9 +19,9 @@ from ser_lib.artifacts import (
     scan_model_artifacts,
     verify_model_artifact,
 )
-from ser_lib.core.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.data.config import DataConfig
 from ser_lib.engine.lineage import TrainingRunMetadata
+from ser_lib.foundation.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.models.base import SERModel
 
 
