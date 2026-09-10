@@ -5,13 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.core import (
-    CancellationToken,
-    EventContext,
-    LifecycleEvent,
-    OperationCancelled,
-    ProgressEvent,
-)
 from ser_lib.data.importers import (
     CasiaImporter,
     CremaDImporter,
@@ -23,6 +16,8 @@ from ser_lib.data.importers import (
     JsonlImporter,
     RavdessImporter,
 )
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, EventContext, LifecycleEvent, ProgressEvent
 
 
 IMPORTERS = (
