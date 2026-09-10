@@ -14,6 +14,7 @@ from typing import Any
 from safetensors.torch import save_file
 
 from ser_lib._version import __version__
+from ser_lib.artifacts._compatibility import validate_artifact_compatibility
 from ser_lib.artifacts.manifest import ModelArtifactManifest, ModelCard
 from ser_lib.data.config import DataConfig
 from ser_lib.foundation.errors import OperationCancelled
@@ -132,6 +133,11 @@ def export_model_artifact(
             f"{len(normalized_labels)} != {declared_num_classes}"
         )
     model.validate_artifact_labels(normalized_labels)
+    validate_artifact_compatibility(
+        model,
+        data_config,
+        num_classes=len(normalized_labels),
+    )
     processor_config = model.artifact_processor_config
     card = model_card if isinstance(model_card, ModelCard) else ModelCard(**dict(model_card or {}))
     resolved_metadata = _standard_metadata(model, data_config, metadata)
