@@ -11,14 +11,13 @@ from torch import nn
 from ser_lib.artifacts import export_model_artifact, load_model_artifact
 from ser_lib.data import (
     BatchingConfig,
-    CompatibilityError,
     SERCollator,
     SERSample,
     TensorSpec,
-    validate_compatibility,
 )
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
-from ser_lib.engine import Trainer, TrainerConfig
+from ser_lib.engine import Trainer, TrainerConfig, validate_compatibility
+from ser_lib.foundation.errors import CompatibilityError
 from ser_lib.models import HFAudioClassifier, HFAudioClassifierConfig, model_registry
 
 
