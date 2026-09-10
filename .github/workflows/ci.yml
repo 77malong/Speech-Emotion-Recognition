@@ -24,6 +24,9 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
       - name: Check dependency consistency
         run: python -m pip check
+      - name: Verify base install keeps Transformers optional
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: python -c "import importlib.util; assert importlib.util.find_spec('transformers') is None"
       - name: Compile package
         run: python -m compileall -q ser_lib scripts examples
       - name: Build distributions
@@ -45,6 +48,7 @@ jobs:
               "ser_lib.catalog",
               "ser_lib.engine.presets",
               "ser_lib.engine.evaluation_detail",
+              "ser_lib.models.pretrained",
           )
           for module_name in retired:
               assert importlib.util.find_spec(module_name) is None, module_name
@@ -55,6 +59,32 @@ jobs:
       - name: End-to-end training smoke test
         run: python scripts/smoke_train_epoch.py --device cpu
 
+  hf:
+    name: HF Transformers ${{ matrix.transformers-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        transformers-version: ["4.38.2", "5.17.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package and pinned Transformers
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test]" "transformers==${{ matrix.transformers-version }}"
+          python -m pip install -e ".[hf]"
+      - name: Check dependency consistency
+        run: python -m pip check
+      - name: Run real tiny Hugging Face integration
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: python -m pytest -q tests/test_huggingface_integration.py tests/test_pretrained_adapter.py
+
   quality:
     name: Static checks
     runs-on: ubuntu-latest
@@ -64,8 +94,8 @@ jobs:
         with:
           python-version: "3.10"
           cache: pip
-      - name: Install quality and test tools
-        run: python -m pip install -e ".[test,dev]"
+      - name: Install quality, test and HF tools
+        run: python -m pip install -e ".[test,dev,hf]"
       - name: Check dependency consistency
         run: python -m pip check
       - name: Ruff
@@ -73,4 +103,7 @@ jobs:
       - name: Type-check library
         run: python -m mypy --follow-imports=skip ser_lib
       - name: Coverage by package
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
         run: python -m pytest --cov=ser_lib --cov-report=json -q && python scripts/check_coverage.py coverage.json
