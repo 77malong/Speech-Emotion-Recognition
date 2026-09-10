@@ -111,3 +111,10 @@ def test_foundation_and_config_remain_free_of_domain_reverse_imports():
     )
     _assert_tree_avoids(_SER_LIB / "foundation", forbidden)
     _assert_tree_avoids(_SER_LIB / "config", forbidden)
+
+
+def test_cli_workflows_use_engine_public_surface():
+    imports = _imports(_SER_LIB / "cli" / "workflows.py")
+    assert "ser_lib.engine" in imports
+    assert "ser_lib.engine.experiment" not in imports
+    assert "ser_lib.engine.lineage" not in imports

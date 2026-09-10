@@ -16,15 +16,13 @@ from ser_lib.artifacts import (
 from ser_lib.data import DatasetManifest
 from ser_lib.engine import (
     TrainingRunMetadata,
+    artifact_provenance_from_training_run,
     build_experiment_components,
+    evaluate_artifact as run_artifact_evaluation,
     load_checkpoint,
     load_experiment_config,
-)
-from ser_lib.engine.experiment import (
-    evaluate_artifact as run_artifact_evaluation,
     train_experiment as run_training_experiment,
 )
-from ser_lib.engine.lineage import artifact_provenance_from_training_run
 from ser_lib.inference import (
     BatchEmotionPredictor,
     EmotionPredictor,
@@ -47,7 +45,7 @@ def train_experiment(
     workers: int,
     resume: Path | None,
 ) -> dict[str, Any]:
-    """CLI 兼容入口；训练业务逻辑由 ``ser_lib.engine.experiment`` 提供。"""
+    """CLI 兼容入口；训练业务逻辑由 ``ser_lib.engine`` 提供。"""
     return run_training_experiment(
         config_path,
         split=split,
@@ -67,7 +65,7 @@ def evaluate_artifact(
     device: str,
     output: Path,
 ) -> dict[str, Any]:
-    """CLI 兼容入口；评估业务逻辑由 ``ser_lib.engine.experiment`` 提供。"""
+    """CLI 兼容入口；评估业务逻辑由 ``ser_lib.engine`` 提供。"""
     return run_artifact_evaluation(
         artifact,
         manifest_path=manifest_path,
