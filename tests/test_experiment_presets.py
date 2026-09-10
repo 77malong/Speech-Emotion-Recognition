@@ -6,32 +6,35 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ser_lib.config import parse_optimizer_config, parse_scheduler_config
-from ser_lib.data import default_registry
-from ser_lib.engine import (
+from ser_lib.config import (
     ExperimentConfig,
     build_experiment_config,
-    get_experiment_preset,
-    list_experiment_presets,
+    get_experiment_preset_payload,
+    list_experiment_preset_ids,
+    parse_optimizer_config,
+    parse_scheduler_config,
 )
+from ser_lib.data import default_registry
 from ser_lib.models.registry import model_registry
 
 
-def test_experiment_preset_catalog_is_stable_and_json_safe():
-    catalog = list_experiment_presets()
+def test_experiment_preset_ids_and_payloads_are_stable_and_json_safe():
+    preset_ids = list_experiment_preset_ids()
 
-    assert [item.preset_id for item in catalog.presets] == [
+    assert preset_ids == (
         "cnn_logmel_baseline",
         "gru_mfcc_baseline",
         "transformer_logmel_baseline",
-    ]
-    assert all(item.status == "stable" for item in catalog.presets)
-    json.dumps(catalog.to_dict())
+    )
+    for preset_id in preset_ids:
+        payload = get_experiment_preset_payload(preset_id)
+        assert payload["model"]["type"]
+        json.dumps(payload)
 
 
 def test_each_preset_builds_existing_experiment_config_and_registered_components():
-    for preset in list_experiment_presets().presets:
-        config = build_experiment_config(preset.preset_id)
+    for preset_id in list_experiment_preset_ids():
+        config = build_experiment_config(preset_id)
         assert isinstance(config, ExperimentConfig)
         model_registry.descriptor(config.model.type)
         default_registry.get_entry("representation", config.data.representation.type)
@@ -40,6 +43,15 @@ def test_each_preset_builds_existing_experiment_config_and_registered_components
         assert config.loss.type in {"cross_entropy", "focal"}
         assert config.sampling.type in {"shuffle", "weighted"}
         json.dumps(config.model_dump(mode="json"))
+
+
+def test_preset_payload_is_deep_copied():
+    first = get_experiment_preset_payload("cnn_logmel_baseline")
+    first["model"]["type"] = "mutated"
+
+    second = get_experiment_preset_payload("cnn_logmel_baseline")
+
+    assert second["model"]["type"] == "cnn_baseline"
 
 
 def test_preset_overrides_are_deep_merged_then_strictly_validated(tmp_path: Path):
@@ -66,8 +78,9 @@ def test_preset_overrides_are_deep_merged_then_strictly_validated(tmp_path: Path
 
 
 def test_preset_lookup_rejects_unknown_id():
-    assert get_experiment_preset("gru_mfcc_baseline").display_name.startswith("GRU")
+    payload = get_experiment_preset_payload("gru_mfcc_baseline")
+    assert payload["model"]["type"] == "gru_baseline"
     with pytest.raises(KeyError, match="未知 experiment preset"):
-        get_experiment_preset("missing")
+        get_experiment_preset_payload("missing")
     with pytest.raises(KeyError, match="未知 experiment preset"):
         build_experiment_config("missing")
