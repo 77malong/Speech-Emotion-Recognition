@@ -50,6 +50,12 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert ser_lib.CompatibilityReport is engine.CompatibilityReport
     assert ser_lib.inspect_compatibility is engine.inspect_compatibility
     assert models.ModelSpec.__module__ == "ser_lib.models.specs"
+    assert models.TorchModelAdapter.__module__ == "ser_lib.models.adapters.torch"
+    assert models.TORCH_ADAPTER_MODEL_ID == "torch_model_adapter"
+    assert "torch_model_adapter" in models.model_registry.names()
+    assert models.model_registry.supports_static_spec("torch_model_adapter") is True
+    assert config.TorchModelAdapterConfig.__module__ == "ser_lib.config.model"
+    assert config.TorchTensorSpecConfig.__module__ == "ser_lib.config.model"
     assert engine.CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
     assert config.StrictConfig.__module__ == "ser_lib.config.base"
     assert foundation.SchemaMigrationError.__module__ == "ser_lib.foundation.errors"
