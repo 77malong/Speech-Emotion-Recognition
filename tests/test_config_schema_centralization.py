@@ -6,6 +6,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
+from ser_lib import build_experiment_config as root_build_experiment_config
 from ser_lib.config.presets import (
     build_experiment_config as central_build_experiment_config,
 )
@@ -56,7 +57,6 @@ from ser_lib.data.transforms.waveform import PitchShiftConfig as LegacyPitchShif
 from ser_lib.data.transforms.waveform import TimeShiftConfig as LegacyTimeShiftConfig
 from ser_lib.data.transforms.waveform import TimeStretchConfig as LegacyTimeStretchConfig
 from ser_lib.data.transforms.waveform import VolumeScaleConfig as LegacyVolumeScaleConfig
-from ser_lib.engine.presets import build_experiment_config as legacy_build_experiment_config
 
 
 def test_representation_config_legacy_paths_are_identity_aliases():
@@ -135,7 +135,7 @@ def test_config_schema_modules_do_not_load_torch_execution_dependencies():
 
 
 def test_preset_build_is_central_and_payload_isolated():
-    assert central_build_experiment_config is legacy_build_experiment_config
+    assert central_build_experiment_config is root_build_experiment_config
     payload = get_experiment_preset_payload("cnn_logmel_baseline")
     payload["trainer"]["epochs"] = 999
     fresh = get_experiment_preset_payload("cnn_logmel_baseline")
