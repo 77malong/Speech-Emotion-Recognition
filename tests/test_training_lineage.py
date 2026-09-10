@@ -206,3 +206,26 @@ def test_resume_rejects_loss_change_before_model_state_is_applied(tmp_path: Path
     assert set(after) == set(before)
     for name, tensor in after.items():
         assert torch.equal(tensor, before[name])
+
+
+def test_resume_preserves_existing_best_checkpoint_reference(tmp_path: Path):
+    experiment = _experiment(tmp_path)
+    source = Trainer.from_experiment(_model(), experiment)
+    source_result = source.fit([_batch()], val_batches=[_batch()])
+    best_path = experiment.trainer.checkpoint_dir / "best.pt"
+    last_path = experiment.trainer.checkpoint_dir / "last.pt"
+
+    assert source_result.best_epoch == 1
+    assert source_result.best_checkpoint == best_path
+    assert best_path.is_file()
+    assert last_path.is_file()
+
+    resumed = Trainer.from_experiment(_model(), experiment)
+    resumed.resume_from(last_path)
+    # The checkpoint already completed the configured epoch, so this fit call
+    # runs no new epoch and must still expose the previously created best artifact.
+    result = resumed.fit([_batch()], val_batches=[_batch()])
+
+    assert result.epochs == ()
+    assert result.best_epoch == 1
+    assert result.best_checkpoint == best_path
