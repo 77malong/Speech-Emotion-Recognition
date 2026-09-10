@@ -6,16 +6,11 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from ser_lib.core import (
-    CancellationToken,
-    CheckpointEvent,
-    LifecycleEvent,
-    MetricEvent,
-    OperationCancelled,
-    ProgressEvent,
-)
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.engine import ObservabilityConfig, Trainer, TrainerConfig
+from ser_lib.engine.events import CheckpointEvent
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, LifecycleEvent, MetricEvent, ProgressEvent
 from ser_lib.models import CNNBaseline
 
 
