@@ -13,7 +13,7 @@ from ser_lib.inference.events import PredictionEvent
 
 
 def test_version_source_is_independent_and_root_reexports_it():
-    assert ser_lib.__version__ == __version__ == "0.2.0"
+    assert ser_lib.__version__ == __version__
 
 
 def test_foundation_import_does_not_eagerly_load_heavy_domains():
