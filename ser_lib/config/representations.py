@@ -104,6 +104,11 @@ class AcousticFeaturesConfig(BaseModel):
             raise ValueError(f"features 存在重复项: {self.features}")
         if self.delta_win_length % 2 == 0:
             raise ValueError(f"delta_win_length 必须是奇数，实际: {self.delta_win_length}")
+        if "jitter_shimmer_hnr" in self.features:
+            raise ValueError(
+                "jitter_shimmer_hnr 暂不可用：当前库尚未提供经过数值参考验证的 "
+                "shimmer 与 HNR 实现，拒绝返回占位测量值"
+            )
         return self
 
 
