@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from ser_lib.core import CancellationToken, OperationCancelled
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.engine import (
@@ -17,6 +16,8 @@ from ser_lib.engine import (
     load_checkpoint,
     save_checkpoint,
 )
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken
 from ser_lib.models import CNNBaseline
 
 
