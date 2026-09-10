@@ -15,6 +15,8 @@ from safetensors.torch import save_file
 
 from ser_lib._version import __version__
 from ser_lib.artifacts.manifest import ModelArtifactManifest, ModelCard
+from ser_lib.data.config import DataConfig
+from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
@@ -22,8 +24,6 @@ from ser_lib.foundation.events import (
     LifecycleEvent,
     ProgressEvent,
 )
-from ser_lib.foundation.errors import OperationCancelled
-from ser_lib.data.config import DataConfig
 from ser_lib.models.base import SERModel
 from ser_lib.models.registry import model_registry
 
@@ -121,10 +121,16 @@ def export_model_artifact(
             f"model_name={model_name!r} 与模型声明 {model.model_spec.model_id!r} 不一致"
         )
     resolved_params = model.model_config if model_params is None else dict(model_params)
-    validated_params = model_registry.validate_config(model_name, resolved_params)
+    validated_params = model_registry.validate_reconstructible(model_name, resolved_params)
     if validated_params != model.model_config:
         raise ValueError("model_params 与模型实例的实际配置不一致")
     normalized_labels = dict(labels)
+    declared_num_classes = model.model_spec.num_classes
+    if declared_num_classes is not None and len(normalized_labels) != declared_num_classes:
+        raise ValueError(
+            "labels 数量与模型 num_classes 不一致: "
+            f"{len(normalized_labels)} != {declared_num_classes}"
+        )
     card = model_card if isinstance(model_card, ModelCard) else ModelCard(**dict(model_card or {}))
     resolved_metadata = _standard_metadata(model, data_config, metadata)
 
