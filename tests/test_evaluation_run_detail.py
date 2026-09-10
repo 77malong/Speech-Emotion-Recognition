@@ -4,8 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ser_lib.engine import EvaluationRunDetail, EvaluationRunInfo
-from ser_lib.services import EvaluationService
+from ser_lib.engine import EvaluationRunDetail, EvaluationRunInfo, inspect_evaluation_run_detail
 
 
 def _aggregate_metrics() -> dict[str, float]:
@@ -103,7 +102,7 @@ def test_evaluation_run_detail_does_not_read_prediction_contents(tmp_path: Path,
 
     monkeypatch.setattr(Path, "read_text", guarded_read_text)
 
-    detail = EvaluationService.inspect_run_detail(directory)
+    detail = inspect_evaluation_run_detail(directory)
 
     assert isinstance(detail, EvaluationRunDetail)
     assert detail.run.evaluation_id == "eval-detail-demo"
@@ -122,7 +121,7 @@ def test_evaluation_run_detail_keeps_prediction_metadata_when_metrics_missing(tm
     predictions = directory / "predictions.jsonl"
     predictions.write_bytes(b"opaque-predictions")
 
-    detail = EvaluationService.inspect_run_detail(directory)
+    detail = inspect_evaluation_run_detail(directory)
 
     assert detail.report is None
     assert detail.predictions.exists is True
@@ -136,7 +135,7 @@ def test_evaluation_run_detail_reports_missing_predictions(tmp_path: Path):
     _write_run(directory)
     (directory / "metrics.json").write_text(json.dumps(_metrics_report()), encoding="utf-8")
 
-    detail = EvaluationService.inspect_run_detail(directory)
+    detail = inspect_evaluation_run_detail(directory)
 
     assert detail.report is not None
     assert detail.predictions.exists is False
@@ -151,7 +150,7 @@ def test_evaluation_run_detail_allows_run_without_prediction_sink(tmp_path: Path
     _write_run(directory, predictions_file=None)
     (directory / "metrics.json").write_text(json.dumps(_metrics_report()), encoding="utf-8")
 
-    detail = EvaluationService.inspect_run_detail(directory)
+    detail = inspect_evaluation_run_detail(directory)
 
     assert detail.report is not None
     assert detail.predictions.path is None
@@ -170,7 +169,7 @@ def test_evaluation_run_detail_keeps_report_validation_error_nonfatal(tmp_path: 
     }
     (directory / "metrics.json").write_text(json.dumps(invalid_report), encoding="utf-8")
 
-    detail = EvaluationService.inspect_run_detail(directory)
+    detail = inspect_evaluation_run_detail(directory)
 
     assert detail.report is None
     assert detail.predictions.path is None
