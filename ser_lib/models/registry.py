@@ -2,17 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from pydantic import BaseModel
 
 from ser_lib.foundation.errors import RegistryError
 from ser_lib.models.base import SERModel
+from ser_lib.models.specs import ModelSpec
 
-if TYPE_CHECKING:
-    from ser_lib.data.validation import ModelSpec
-
-ModelSpecFactory = Callable[[dict[str, Any]], "ModelSpec"]
+ModelSpecFactory = Callable[[dict[str, Any]], ModelSpec]
 
 
 @dataclass(frozen=True)
@@ -91,7 +89,7 @@ class ModelRegistry:
         except Exception as exc:
             raise RegistryError(f"模型 {name!r} 配置校验失败: {exc}") from exc
 
-    def inspect_spec(self, name: str, params: dict[str, Any]) -> "ModelSpec":
+    def inspect_spec(self, name: str, params: dict[str, Any]) -> ModelSpec:
         """仅根据配置生成 ModelSpec，不实例化模型、不加载权重。"""
         if name not in self._entries:
             raise RegistryError(f"未知模型 {name!r}，可用模型: {sorted(self._entries)}")
@@ -105,8 +103,6 @@ class ModelRegistry:
             spec = entry.spec_factory(normalized)
         except Exception as exc:
             raise RegistryError(f"模型 {name!r} ModelSpec 生成失败: {exc}") from exc
-        from ser_lib.data.validation import ModelSpec
-
         if not isinstance(spec, ModelSpec):
             raise RegistryError(
                 f"模型 {name!r} spec_factory 返回了非 ModelSpec: {type(spec)!r}"

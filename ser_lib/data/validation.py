@@ -3,6 +3,9 @@
 ``inspect_compatibility`` 返回结构化报告，适合 Web/dry-run 展示；
 ``validate_compatibility`` 保留历史 raise 语义，供 CLI、artifact loader 和训练启动
 路径继续使用。两者共享完全相同的检查逻辑。
+
+``ModelSpec`` 的正式定义已归属 ``ser_lib.models.specs``；本模块在 Stage 06
+兼容性迁入 engine 前继续重导出同一类型，避免出现第二份模型契约。
 """
 
 from __future__ import annotations
@@ -14,18 +17,7 @@ from ser_lib.data.config import BatchingConfig
 from ser_lib.data.errors import CompatibilityError
 from ser_lib.data.types import TensorSpec
 from ser_lib.foundation.diagnostics import Diagnostic
-
-
-@dataclass(frozen=True)
-class ModelSpec:
-    """模型输入规格（模型显式声明，禁止调用方猜测 tensor shape）。"""
-
-    model_id: str
-    required_inputs: dict[str, TensorSpec]
-    supports_masks: bool
-    supports_variable_length: bool
-    num_classes: int | None
-    expected_sample_rate: int | None = None
+from ser_lib.models.specs import ModelSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +64,6 @@ def inspect_compatibility(
     """检查兼容性并返回全部问题，不抛 ``CompatibilityError``。"""
     diagnostics: list[Diagnostic] = []
 
-    # 1. 所有 required input key 必须存在
     missing = sorted(set(model_spec.required_inputs) - set(representation_specs))
     if missing:
         diagnostics.append(
@@ -94,7 +85,6 @@ def inspect_compatibility(
         if actual is None:
             continue
 
-        # 2. layout 完全匹配；第一版不自动转置
         if actual.layout != required.layout:
             diagnostics.append(
                 _problem(
@@ -111,7 +101,6 @@ def inspect_compatibility(
                 )
             )
 
-        # 3. 固定 feature dimension 匹配
         if (
             required.feature_dim is not None
             and actual.feature_dim is not None
@@ -132,7 +121,6 @@ def inspect_compatibility(
                 )
             )
 
-        # 4. 可变长度输入需要模型支持 mask（dynamic padding 依赖 mask）
         if actual.temporal and batching_config.type == "dynamic" and not model_spec.supports_masks:
             diagnostics.append(
                 _problem(
@@ -148,7 +136,6 @@ def inspect_compatibility(
                 )
             )
 
-    # 5. 不支持可变长度的模型必须配置固定长度 Collator
     if not model_spec.supports_variable_length:
         if batching_config.type != "fixed":
             diagnostics.append(
@@ -182,7 +169,6 @@ def inspect_compatibility(
                     )
                 )
 
-    # 6. 类别数量一致
     if (
         num_classes is not None
         and model_spec.num_classes is not None
@@ -223,7 +209,6 @@ def inspect_compatibility(
             )
         )
 
-    # 7. 滑动窗口产生数量可变的窗口，模型需要支持可变批次语义
     if batching_config.type == "sliding" and not model_spec.supports_variable_length:
         diagnostics.append(
             _problem(

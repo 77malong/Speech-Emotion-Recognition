@@ -7,7 +7,7 @@ from typing import Any
 import torch
 from torch import nn
 from ser_lib.data.types import SERBatch
-from ser_lib.data.validation import ModelSpec
+from ser_lib.models.specs import ModelSpec
 
 @dataclass(frozen=True, slots=True)
 class ModelOutput:

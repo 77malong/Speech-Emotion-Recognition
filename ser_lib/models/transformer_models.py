@@ -10,9 +10,9 @@ from torch import nn
 
 from ser_lib.config.model import TransformerBaselineConfig
 from ser_lib.data.types import SERBatch, TensorSpec
-from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
+from ser_lib.models.specs import ModelSpec
 
 
 def _sinusoidal_positions(

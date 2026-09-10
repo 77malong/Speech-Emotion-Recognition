@@ -10,9 +10,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 
 from ser_lib.config.model import GRUBaselineConfig
 from ser_lib.data.types import SERBatch, TensorSpec
-from ser_lib.data.validation import ModelSpec
 from ser_lib.models.base import ModelOutput, SERModel
 from ser_lib.models.registry import ModelDescriptor, model_registry
+from ser_lib.models.specs import ModelSpec
 
 
 class GRUBaseline(SERModel):
