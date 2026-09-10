@@ -10,6 +10,7 @@ from ser_lib.config.experiment import ExperimentConfig
 from ser_lib.config.loader import load_versioned_config
 from ser_lib.config.model import ModelConfig
 from ser_lib.config.training import ObservabilityConfig, TrainerConfig
+from ser_lib.engine._seed import seed_experiment_rng
 
 if TYPE_CHECKING:
     from ser_lib.data.audio import AudioLoader
@@ -39,6 +40,10 @@ def build_experiment_components(
     from ser_lib.engine.compatibility import validate_compatibility
     from ser_lib.models.registry import model_registry
 
+    # ExperimentConfig owns reproducibility for components it constructs.  This must
+    # happen before model/pipeline creation so ambient process RNG state cannot affect
+    # model initialization or stochastic training transforms.
+    seed_experiment_rng(config.trainer.seed, deterministic=config.trainer.deterministic)
     model_params = model_registry.validate_config(config.model.type, config.model.params)
     model = model_registry.create(config.model.type, **model_params)
     audio_loader, pipeline = build_components(config.data, train=train)
