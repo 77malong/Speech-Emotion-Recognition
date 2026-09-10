@@ -32,7 +32,12 @@ from ser_lib.engine.evaluation_runs import (
     load_evaluation_run_info,
     write_evaluation_run_info,
 )
-from ser_lib.engine.evaluator import EvaluationResult, evaluate, write_evaluation_report
+from ser_lib.engine.evaluator import (
+    EvaluationResult,
+    PredictionSink,
+    evaluate,
+    write_evaluation_report,
+)
 from ser_lib.engine.objectives import build_weighted_sampler
 from ser_lib.engine.runs import TrainingRunInfo, load_training_run_info, write_training_run_info
 from ser_lib.engine.trainer import Trainer, TrainingResult
@@ -244,6 +249,18 @@ def _write_training_history(path: Path, result: TrainingResult) -> None:
     temporary.replace(path)
 
 
+def _write_evaluation_summary(directory: Path, result: EvaluationResult) -> None:
+    """只原子写入聚合指标，不触碰外部 prediction sink 的输出。"""
+    directory.mkdir(parents=True, exist_ok=True)
+    metrics_path = directory / "metrics.json"
+    temporary = directory / "metrics.json.tmp"
+    temporary.write_text(
+        json.dumps(result.to_dict(include_predictions=False), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary.replace(metrics_path)
+
+
 def train_experiment(
     config: ExperimentConfig | Path | str,
     *,
@@ -352,8 +369,10 @@ def evaluate_artifact(
     workers: int = 0,
     device: str = "cpu",
     output: Path | str,
+    prediction_sink: PredictionSink | None = None,
+    retain_predictions: bool = True,
 ) -> EvaluationExperimentResult:
-    """直接加载 artifact 并在标签语义一致的 DatasetManifest 上完成评估。"""
+    """加载 artifact 并评估；可流式输出预测以避免 O(N) 明细内存。"""
     from ser_lib.artifacts.loader import load_model_artifact
 
     artifact_path = Path(artifact)
@@ -396,9 +415,14 @@ def evaluate_artifact(
         device=device,
         labels=loaded.manifest.labels,
         event_context=EventContext(run_id=run_metadata.evaluation_id, split=split),
+        prediction_sink=prediction_sink,
+        retain_predictions=retain_predictions,
     )
     finished_at = datetime.now(timezone.utc)
-    write_evaluation_report(output_dir, result)
+    if retain_predictions:
+        write_evaluation_report(output_dir, result)
+    else:
+        _write_evaluation_summary(output_dir, result)
     evaluation_record = write_evaluation_run_info(
         output_dir,
         run_metadata,
