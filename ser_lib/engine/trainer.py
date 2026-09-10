@@ -30,15 +30,7 @@ from ser_lib.models.base import ModelOutput, SERModel
 
 
 class _AccumulationState:
-    """Track an online weighted-average gradient for one optimizer step.
-
-    Each microbatch loss is already a mean over its own reduction mass.  To
-    reproduce the gradient of one logical large batch without first turning
-    those means back into potentially huge numerators, accumulated gradients
-    are maintained as an online weighted average.  This keeps the gradient
-    entering AMP at mean-loss scale while preserving exact denominator
-    semantics for uneven microbatches and weighted cross entropy.
-    """
+    """Track online reduction mass for gradients and epoch-level loss metrics."""
 
     def __init__(
         self,
@@ -48,10 +40,14 @@ class _AccumulationState:
         self.accumulation_steps = accumulation_steps
         self.optimizer = optimizer
         self.pending_denominator = 0.0
+        self.epoch_loss_numerator = 0.0
+        self.epoch_loss_denominator = 0.0
         self.active = False
 
     def begin_epoch(self) -> None:
         self.pending_denominator = 0.0
+        self.epoch_loss_numerator = 0.0
+        self.epoch_loss_denominator = 0.0
         self.active = True
 
     def end_epoch(self) -> None:
@@ -71,16 +67,20 @@ class _AccumulationState:
         if denominator <= 0:
             raise ValueError("gradient accumulation denominator 必须大于 0")
 
+        detached_loss = float(loss.detach())
+        self.epoch_loss_numerator += detached_loss * denominator
+        self.epoch_loss_denominator += denominator
+
         previous_denominator = self.pending_denominator
         combined_denominator = previous_denominator + denominator
         if previous_denominator > 0:
             self._rescale_pending_gradients(previous_denominator / combined_denominator)
 
         # _TrainerCore divides the returned scalar by accumulation_steps before
-        # backward.  Compensate only in the gradient path so the effective
-        # contribution is denominator / combined_denominator.  Unlike the old
-        # numerator-based scheme this factor is bounded by one after the core
-        # division, which avoids needless FP16 gradient amplification.
+        # backward. Compensate only in the gradient path so the effective
+        # contribution is denominator / combined_denominator. The resulting
+        # gradient scale is bounded and does not turn a mean loss back into a
+        # potentially large numerator before GradScaler sees it.
         gradient_scale = (
             denominator * self.accumulation_steps / combined_denominator
         )
@@ -93,6 +93,11 @@ class _AccumulationState:
         if self.pending_denominator <= 0:
             raise RuntimeError("optimizer step 缺少 gradient accumulation denominator")
         self.pending_denominator = 0.0
+
+    def epoch_mean_loss(self) -> float:
+        if self.epoch_loss_denominator <= 0:
+            raise RuntimeError("epoch loss 缺少 reduction denominator")
+        return self.epoch_loss_numerator / self.epoch_loss_denominator
 
 
 class _AccumulationAwareLoss(torch.nn.Module):
@@ -130,7 +135,7 @@ class Trainer(_TrainerCore):
     自定义标量 ``loss_fn`` 约定为“对当前 microbatch 样本取 mean”；内置带类别权重
     的 ``ClassificationLoss`` 会使用与 PyTorch weighted cross-entropy 一致的权重
     质量作为分母。累积梯度采用在线加权平均，不会先在 AMP 反向路径中放大为 loss
-    numerator。
+    numerator；epoch loss 也使用同一 reduction denominator 口径汇总。
     """
 
     run_metadata: TrainingRunMetadata | None
@@ -228,6 +233,7 @@ class Trainer(_TrainerCore):
             result = super().train_epoch(batches, epoch=epoch)
             return replace(
                 result,
+                loss=self._accumulation_state.epoch_mean_loss(),
                 optimizer_steps=self.optimizer_step - applied_before,
             )
         finally:
