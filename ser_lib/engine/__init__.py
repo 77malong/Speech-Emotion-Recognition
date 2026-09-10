@@ -55,6 +55,12 @@ from ser_lib.engine.evaluator import (
     evaluate,
     write_evaluation_report,
 )
+from ser_lib.engine.experiment import (
+    EvaluationExperimentResult,
+    TrainingExperimentResult,
+    evaluate_artifact,
+    train_experiment,
+)
 from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.engine.optim import (
     AdamConfig,
@@ -109,6 +115,8 @@ __all__ = [
     "PresetStatus", "ExperimentPresetInfo", "ExperimentPresetCatalog",
     "list_experiment_presets", "get_experiment_preset", "build_experiment_config",
     "ExperimentValidationResult", "validate_experiment",
+    "TrainingExperimentResult", "EvaluationExperimentResult",
+    "train_experiment", "evaluate_artifact",
     "TrainingRunMetadata", "build_training_run_metadata",
     "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo", "TrainingRunDetail",
     "TrainingRunScanFailure", "TrainingRunCatalog", "write_training_run_info",
