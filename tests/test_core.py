@@ -7,21 +7,17 @@ from pathlib import Path
 import pytest
 from pydantic import Field, ValidationError
 
-from ser_lib.core import (
-    CancellationToken,
-    ConfigurationError,
-    OperationCancelled,
-    ProgressEvent,
-    SERError,
-    StrictConfig,
-    configure_library_logging,
-    get_logger,
+from ser_lib.config.base import StrictConfig
+from ser_lib.config.loader import (
     load_versioned_config,
     load_yaml_mapping,
     require_schema_version,
     resolve_config_path,
 )
 from ser_lib.data.errors import ManifestError, SERDataError
+from ser_lib.foundation.errors import ConfigurationError, OperationCancelled, SERError
+from ser_lib.foundation.events import CancellationToken, ProgressEvent
+from ser_lib.foundation.logging import configure_library_logging, get_logger
 
 
 class ExampleConfig(StrictConfig):
