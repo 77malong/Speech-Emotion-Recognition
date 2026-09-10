@@ -6,11 +6,12 @@ from pathlib import Path
 import torch
 
 from ser_lib import TrainingRunMetadata
+from ser_lib.artifacts import export_model_artifact, inspect_model_artifact
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.engine import ExperimentConfig, ModelConfig, Trainer, TrainerConfig
+from ser_lib.engine.lineage import artifact_provenance_from_training_run
 from ser_lib.models import CNNBaseline
-from ser_lib.services import ArtifactService
 
 
 def _data_config(tmp_path: Path) -> DataConfig:
@@ -109,15 +110,15 @@ def test_checkpoint_and_artifact_preserve_training_lineage(tmp_path: Path):
     assert saved_lineage["dataset_fingerprint"] == fingerprint
     assert saved_lineage["model_id"] == "cnn_baseline"
 
-    artifact_dir = ArtifactService.export(
+    artifact_dir = export_model_artifact(
         tmp_path / "artifact",
         model,
         model_name="cnn_baseline",
         data_config=experiment.data,
         labels={0: "neutral", 1: "happy"},
-        source_run=metadata,
+        metadata=artifact_provenance_from_training_run(metadata),
     )
-    manifest = ArtifactService.inspect(artifact_dir)
+    manifest = inspect_model_artifact(artifact_dir)
     assert manifest.metadata["source_run_id"] == "lineage-run"
     assert manifest.metadata["dataset_id"] == "lineage-dataset"
     assert manifest.metadata["dataset_fingerprint"] == fingerprint
