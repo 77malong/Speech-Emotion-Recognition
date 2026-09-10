@@ -62,9 +62,9 @@ def test_trainer_exposes_detailed_progress_context_and_live_metrics():
         run_id="run-test",
     )
 
-    history = trainer.fit([_batch(1), _batch(2), _batch(3)])
+    training_result = trainer.fit([_batch(1), _batch(2), _batch(3)])
 
-    assert len(history) == 1
+    assert len(training_result.epochs) == 1
     progress = [
         event for event in events
         if isinstance(event, ProgressEvent) and event.stage == "train_batch"
@@ -205,7 +205,7 @@ def test_event_callback_does_not_change_training_results_or_weights():
     plain_model = _model()
     plain_model.load_state_dict(initial_state)
     plain = Trainer(plain_model, TrainerConfig(epochs=1, seed=7))
-    plain_history = plain.fit(batches)
+    plain_result = plain.fit(batches)
 
     observed_model = _model()
     observed_model.load_state_dict(initial_state)
@@ -216,12 +216,14 @@ def test_event_callback_does_not_change_training_results_or_weights():
         event_callback=observed_events.append,
         observability=ObservabilityConfig(metric_interval_batches=1),
     )
-    observed_history = observed.fit(batches)
+    observed_result = observed.fit(batches)
 
     assert observed_events
-    assert observed_history[0].loss == pytest.approx(plain_history[0].loss, abs=1e-12)
-    assert observed_history[0].accuracy == pytest.approx(
-        plain_history[0].accuracy, abs=1e-12
+    assert observed_result.epochs[0].loss == pytest.approx(
+        plain_result.epochs[0].loss, abs=1e-12
+    )
+    assert observed_result.epochs[0].accuracy == pytest.approx(
+        plain_result.epochs[0].accuracy, abs=1e-12
     )
     for name, parameter in plain_model.state_dict().items():
         assert torch.allclose(parameter, observed_model.state_dict()[name], atol=1e-8)
