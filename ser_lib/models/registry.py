@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from pydantic import BaseModel
 
-from ser_lib.data.errors import RegistryError
+from ser_lib.foundation.errors import RegistryError
 from ser_lib.models.base import SERModel
 
 if TYPE_CHECKING:

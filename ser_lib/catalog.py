@@ -15,7 +15,6 @@ from pydantic import BaseModel
 # 导入公开包以确保内置 data/model 组件完成轻量注册。
 from ser_lib import data as _data_package  # noqa: F401
 from ser_lib import models as _models_package  # noqa: F401
-from ser_lib.data.errors import RegistryError
 from ser_lib.data.registry import ComponentDescriptor, default_registry
 from ser_lib.engine.objectives import LossConfig, SamplingConfig
 from ser_lib.engine.optim import (
@@ -25,6 +24,7 @@ from ser_lib.engine.optim import (
     SGDConfig,
     StepSchedulerConfig,
 )
+from ser_lib.foundation.errors import RegistryError
 from ser_lib.models.registry import model_registry
 
 CATALOG_SCHEMA_VERSION = 1

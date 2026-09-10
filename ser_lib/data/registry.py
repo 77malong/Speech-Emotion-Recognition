@@ -15,8 +15,8 @@ from typing import Any, Callable, Mapping
 import torch
 from pydantic import BaseModel, ValidationError
 
-from ser_lib.data.errors import RegistryError
 from ser_lib.data.types import TensorSpec
+from ser_lib.foundation.errors import RegistryError
 
 # 组件状态
 STATUS_STABLE = "stable"

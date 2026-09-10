@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 
@@ -49,9 +50,56 @@ class OperationCancelled(SERError):
     default_code = "operation_cancelled"
 
 
+class RegistryError(SERError):
+    """跨 data/models 使用的注册表操作错误。"""
+
+    default_code = "registry_error"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        uid: str | None = None,
+        path: Path | str | None = None,
+        component: str | None = None,
+        stage: str | None = None,
+    ) -> None:
+        resolved_path = Path(path) if path is not None else None
+        parts: list[str] = []
+        if uid is not None:
+            parts.append(f"uid={uid}")
+        if resolved_path is not None:
+            parts.append(f"path={resolved_path}")
+        if component is not None:
+            parts.append(f"component={component}")
+        if stage is not None:
+            parts.append(f"stage={stage}")
+        if parts:
+            message = f"{message} [{'; '.join(parts)}]"
+        super().__init__(
+            message,
+            code=self.default_code,
+            details={
+                key: value
+                for key, value in {
+                    "uid": uid,
+                    "path": str(resolved_path) if resolved_path is not None else None,
+                    "component": component,
+                    "stage": stage,
+                }.items()
+                if value is not None
+            },
+        )
+        self.uid = uid
+        self.path = resolved_path
+        self.component = component
+        self.stage = stage
+
+
 __all__ = [
     "SERError",
     "ConfigurationError",
     "SchemaMigrationError",
     "OperationCancelled",
+    "RegistryError",
 ]

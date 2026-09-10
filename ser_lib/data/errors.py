@@ -11,8 +11,11 @@
     ├── AudioDecodeError
     ├── InvalidAudioSegmentError
     ├── RepresentationError
+    ├── TransformError
     ├── CollationError
     └── CompatibilityError
+
+``RegistryError`` 已归属 foundation，本模块仅为 0.2.x 旧 import 路径重导出同一类型。
 
 异常消息必须包含 ``uid`` 与解析后的音频路径（如适用）；底层异常保留为
 ``__cause__``，保证错误可定位。每个公开领域异常拥有稳定机器可读 ``code``，
@@ -24,7 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ser_lib.foundation.errors import SERError
+from ser_lib.foundation.errors import RegistryError, SERError
 
 
 class SERDataError(SERError):
@@ -138,12 +141,6 @@ class CompatibilityError(SERDataError):
     """表示、批处理与模型输入要求之间的兼容性校验失败。"""
 
     default_code = "compatibility_error"
-
-
-class RegistryError(SERDataError):
-    """注册表操作失败：重复注册、未知组件、schema 校验失败等。"""
-
-    default_code = "registry_error"
 
 
 def wrap_error(
