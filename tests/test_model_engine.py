@@ -13,8 +13,8 @@ from ser_lib.data.config import BatchingConfig
 from ser_lib.data.pipeline import SamplePipeline
 from ser_lib.data.representations.spectral import LogMelRepresentation
 from ser_lib.data.types import SERSample, TensorSpec
-from ser_lib.data.validation import validate_compatibility
 from ser_lib.engine.checkpoint import load_checkpoint, save_checkpoint
+from ser_lib.engine.compatibility import validate_compatibility
 from ser_lib.engine.evaluator import evaluate
 from ser_lib.engine.trainer import Trainer, TrainerConfig
 from ser_lib.models.base import ModelOutput

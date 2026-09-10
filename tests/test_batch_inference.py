@@ -16,7 +16,6 @@ from ser_lib.data import (
     SERSample,
     TensorSpec,
 )
-from ser_lib.data.validation import ModelSpec
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.inference import (
@@ -25,7 +24,7 @@ from ser_lib.inference import (
     PredictionResult,
     write_batch_predictions,
 )
-from ser_lib.models import ModelOutput, SERModel
+from ser_lib.models import ModelOutput, ModelSpec, SERModel
 
 
 class FakePredictor:

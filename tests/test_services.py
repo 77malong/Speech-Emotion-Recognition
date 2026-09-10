@@ -5,9 +5,8 @@ import torch
 
 from ser_lib.data import SERBatch, TensorSpec
 from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
-from ser_lib.data.validation import ModelSpec
 from ser_lib.engine import Trainer, TrainerConfig
-from ser_lib.models import CNNBaseline, ModelOutput, SERModel
+from ser_lib.models import CNNBaseline, ModelOutput, ModelSpec, SERModel
 from ser_lib.services import (
     ArtifactService,
     CatalogService,

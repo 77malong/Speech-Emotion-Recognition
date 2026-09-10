@@ -6,9 +6,11 @@ import pytest
 
 from ser_lib import CompatibilityReport as RootCompatibilityReport
 from ser_lib import inspect_compatibility as root_inspect_compatibility
-from ser_lib.data import BatchingConfig, CompatibilityReport, ModelSpec, TensorSpec
-from ser_lib.data.errors import CompatibilityError
-from ser_lib.data.validation import inspect_compatibility, validate_compatibility
+from ser_lib.data import BatchingConfig, TensorSpec
+from ser_lib.data.errors import CompatibilityError as DataCompatibilityError
+from ser_lib.engine import CompatibilityReport, inspect_compatibility, validate_compatibility
+from ser_lib.foundation.errors import CompatibilityError
+from ser_lib.models import ModelSpec
 
 
 def test_compatible_report_is_empty_and_json_safe():
@@ -32,6 +34,7 @@ def test_compatible_report_is_empty_and_json_safe():
 
     assert RootCompatibilityReport is CompatibilityReport
     assert root_inspect_compatibility is inspect_compatibility
+    assert DataCompatibilityError is CompatibilityError
     assert report == CompatibilityReport(compatible=True, diagnostics=())
     assert report.to_dict() == {"compatible": True, "diagnostics": []}
     json.dumps(report.to_dict(), ensure_ascii=False)

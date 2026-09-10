@@ -7,11 +7,10 @@ import pytest
 import torch
 
 from ser_lib.data import SERBatch, TensorSpec
-from ser_lib.data.validation import ModelSpec
 from ser_lib.engine import evaluate, write_evaluation_report
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, LifecycleEvent, ProgressEvent
-from ser_lib.models import ModelOutput, SERModel
+from ser_lib.models import ModelOutput, ModelSpec, SERModel
 
 
 class ScoreModel(SERModel):

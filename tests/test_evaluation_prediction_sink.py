@@ -5,9 +5,8 @@ import pytest
 import torch
 
 from ser_lib.data import SERBatch, TensorSpec
-from ser_lib.data.validation import ModelSpec
 from ser_lib.engine import JsonlPredictionSink, PredictionRecord, evaluate
-from ser_lib.models import ModelOutput, SERModel
+from ser_lib.models import ModelOutput, ModelSpec, SERModel
 
 
 class ScoreModel(SERModel):
