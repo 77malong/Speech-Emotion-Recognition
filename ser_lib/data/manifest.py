@@ -349,15 +349,49 @@ class DatasetManifest:
             else:
                 by_split.setdefault(split, []).append(record)
 
+        original_parent = meta.yaml_path.parent.resolve()
+        planned_paths: dict[str, Path] = {}
+        for split_name in by_split:
+            split_file = meta.splits.get(split_name)
+            if split_file is None:
+                relative = Path(f"{split_name}.jsonl")
+            else:
+                try:
+                    relative = split_file.resolve().relative_to(original_parent)
+                except ValueError:
+                    # External split files are not copied back outside the target dataset.
+                    relative = Path(f"{split_name}.jsonl")
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ManifestError(
+                    f"split '{split_name}' 的写入路径越出 dataset 目录: {relative}",
+                    path=yaml_path,
+                )
+            planned_paths[split_name] = relative
+
+        if unassigned:
+            planned_paths["unassigned"] = Path("unassigned.jsonl")
+
+        destinations: dict[str, str] = {}
+        for split_name, relative in planned_paths.items():
+            key = relative.as_posix().casefold()
+            previous = destinations.get(key)
+            if previous is not None:
+                raise ManifestError(
+                    f"split 写入路径冲突: '{previous}' 与 '{split_name}' 都指向 {relative}",
+                    path=yaml_path,
+                )
+            destinations[key] = split_name
+
+        # All target paths are known and conflict-free before the first data write.
         splits_section: dict[str, str] = {}
         for split_name, records in by_split.items():
-            split_file = meta.splits.get(split_name)
-            file_name = split_file.name if split_file else f"{split_name}.jsonl"
-            write_jsonl(records, yaml_path.parent / file_name)
-            splits_section[split_name] = file_name
+            relative = planned_paths[split_name]
+            write_jsonl(records, yaml_path.parent / relative)
+            splits_section[split_name] = relative.as_posix()
         if unassigned:
-            write_jsonl(unassigned, yaml_path.parent / "unassigned.jsonl")
-            splits_section["unassigned"] = "unassigned.jsonl"
+            relative = planned_paths["unassigned"]
+            write_jsonl(unassigned, yaml_path.parent / relative)
+            splits_section["unassigned"] = relative.as_posix()
 
         doc: dict[str, Any] = {
             "schema_version": meta.schema_version,
