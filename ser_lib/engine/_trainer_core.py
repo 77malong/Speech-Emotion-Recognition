@@ -15,26 +15,26 @@ from typing import Any, Literal
 import torch
 import torch.nn.functional as F
 
-from ser_lib.core.events import (
-    CancellationCheck,
-    CheckpointEvent,
-    EventCallback,
-    EventContext,
-    LibraryEvent,
-    LifecycleEvent,
-    MetricEvent,
-    ProgressEvent,
-)
-from ser_lib.core.exceptions import OperationCancelled
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
 from ser_lib.engine.eta import EtaEstimator
+from ser_lib.engine.events import CheckpointEvent
 from ser_lib.engine.optim import (
     SchedulerConfig,
     build_optimizer,
     build_scheduler,
     parse_optimizer_config,
     parse_scheduler_config,
+)
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import (
+    CancellationCheck,
+    EventCallback,
+    EventContext,
+    LibraryEvent,
+    LifecycleEvent,
+    MetricEvent,
+    ProgressEvent,
 )
 from ser_lib.models.base import SERModel
 
