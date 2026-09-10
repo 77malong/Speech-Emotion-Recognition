@@ -6,7 +6,6 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from ser_lib.core import CancellationToken, MetricEvent, OperationCancelled, ProgressEvent
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.data.errors import CompatibilityError
@@ -20,6 +19,8 @@ from ser_lib.engine import (
     parse_optimizer_config,
     parse_scheduler_config,
 )
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, MetricEvent, ProgressEvent
 from ser_lib.models import CNNBaseline
 
 
