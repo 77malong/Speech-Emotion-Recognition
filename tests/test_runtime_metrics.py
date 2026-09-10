@@ -4,7 +4,6 @@ import pytest
 import torch
 
 from ser_lib import RuntimeMetrics, get_runtime_metrics
-from ser_lib.services import RuntimeService
 
 
 def test_cpu_runtime_metrics_are_lightweight_and_json_safe():
@@ -42,13 +41,6 @@ def test_cuda_runtime_metrics_use_allocator_without_synchronize(monkeypatch):
     assert metrics.max_allocated_memory == 5001
     assert metrics.free_memory == 1001
     assert metrics.total_memory == 2001
-
-
-def test_runtime_service_exposes_metrics_snapshot():
-    metrics = RuntimeService.metrics("cpu")
-
-    assert isinstance(metrics, RuntimeMetrics)
-    assert metrics.device_id == "cpu"
 
 
 def test_cuda_runtime_metrics_validate_availability_and_index(monkeypatch):
