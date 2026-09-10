@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 
-from ser_lib.core import EventContext, PredictionEvent, ProgressEvent
 from ser_lib.data import AudioRecord
+from ser_lib.foundation.events import EventContext, ProgressEvent
 from ser_lib.inference import BatchEmotionPredictor, PredictionResult
+from ser_lib.inference.events import PredictionEvent
 
 
 class FakePredictor:
