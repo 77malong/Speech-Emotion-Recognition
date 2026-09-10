@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 import ser_lib
 import ser_lib.artifacts as artifacts
-import ser_lib.core as core
+import ser_lib.config as config
 import ser_lib.data as data
 import ser_lib.engine as engine
+import ser_lib.foundation as foundation
 import ser_lib.inference as inference
 import ser_lib.models as models
 import ser_lib.services as services
@@ -23,7 +26,8 @@ def _assert_explicit_public_surface(module) -> None:
 def test_package_public_surfaces_are_resolvable_and_unique():
     for module in (
         ser_lib,
-        core,
+        foundation,
+        config,
         data,
         engine,
         artifacts,
@@ -43,10 +47,9 @@ def test_new_stabilization_types_have_intentional_public_paths():
     assert ser_lib.EtaSnapshot is engine.EtaSnapshot
     assert ser_lib.EtaEstimator is engine.EtaEstimator
 
-    assert hasattr(core, "SchemaMigration")
-    assert hasattr(core, "MigrationRegistry")
-    assert hasattr(core, "SchemaMigrationError")
-    assert hasattr(core, "migrate_schema_payload")
+    assert ser_lib.Diagnostic is foundation.Diagnostic
+    assert config.StrictConfig.__module__ == "ser_lib.config.base"
+    assert foundation.SchemaMigrationError.__module__ == "ser_lib.foundation.errors"
 
 
 def test_services_are_public_only_from_service_facade_not_root_package():
@@ -66,7 +69,8 @@ def test_services_are_public_only_from_service_facade_not_root_package():
 def test_internal_modules_are_not_required_for_stable_imports():
     for module_name in (
         "ser_lib",
-        "ser_lib.core",
+        "ser_lib.foundation",
+        "ser_lib.config",
         "ser_lib.data",
         "ser_lib.engine",
         "ser_lib.artifacts",
@@ -76,3 +80,8 @@ def test_internal_modules_are_not_required_for_stable_imports():
     ):
         module = importlib.import_module(module_name)
         assert module.__all__
+
+
+def test_retired_core_namespace_is_not_importable():
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("ser_lib.core")
