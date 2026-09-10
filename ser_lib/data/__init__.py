@@ -40,7 +40,6 @@ from ser_lib.data.types import (
     AudioData, AudioRecord, RepresentationOutput, SERBatch, SERSample, TensorSpec,
     validate_sample_contract,
 )
-from ser_lib.data.validation import CompatibilityReport, ModelSpec, inspect_compatibility, validate_compatibility
 
 register_importers()
 register_representations()
@@ -63,7 +62,6 @@ __all__ = [
     "SERCollator", "CollateStrategy", "build_collator", "CachedRepresentation",
     "Registry", "default_registry", "ComponentDescriptor", "register_representations", "register_transforms",
     "DataConfig", "ComponentConfig", "AudioSettings", "CacheSettings", "BatchingConfig", "load_data_config",
-    "ModelSpec", "CompatibilityReport", "inspect_compatibility", "validate_compatibility",
     "AudioProbeFailure", "DurationHistogramBin", "DatasetAudioProfile", "DatasetSummary", "DatasetProfile",
     "profile_manifest_audio", "summarize_manifest", "profile_dataset",
     "RecordView", "RecordPage", "query_records", "DatasetFingerprint", "fingerprint_manifest",
