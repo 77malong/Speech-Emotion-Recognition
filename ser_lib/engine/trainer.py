@@ -127,11 +127,6 @@ class _AccumulationState:
         if previous_denominator > 0:
             self._rescale_pending_gradients(previous_denominator / combined_denominator)
 
-        # _TrainerCore divides the returned scalar by accumulation_steps before
-        # backward. Compensate only in the gradient path so the effective
-        # contribution is denominator / combined_denominator. The resulting
-        # gradient scale is bounded and does not turn a mean loss back into a
-        # potentially large numerator before GradScaler sees it.
         gradient_scale = denominator * self.accumulation_steps / combined_denominator
         scaled = loss * gradient_scale
         self.pending_denominator = combined_denominator
@@ -171,19 +166,7 @@ class _AccumulationAwareLoss(torch.nn.Module):
 
 
 class Trainer(_TrainerCore):
-    """SER 唯一公开训练器。
-
-    低层直接构造时，未显式提供 optimizer 会使用 ``AdamWConfig`` 的标准默认值；
-    完整实验应使用 ``Trainer.from_experiment``，optimizer 由
-    ``ExperimentConfig.optimizer`` 构造。lineage 是 Trainer 自身状态，checkpoint
-    保存和恢复不再依赖 Service 私有子类。
-
-    梯度累积按一个逻辑大 batch 的归约语义执行：不同大小 microbatch 与尾部不足
-    ``gradient_accumulation_steps`` 的分组都会按实际有效归约分母重新归一化。显式
-    自定义标量 ``loss_fn`` 默认约定为“对当前 microbatch 样本取 mean”；需要其他
-    归约质量时可提供 ``reduction_denominator(targets)``。累积梯度采用在线加权平均，
-    不会先在 AMP 反向路径中放大为 loss numerator；epoch loss 也使用同一 denominator。
-    """
+    """SER 唯一公开训练器。"""
 
     run_metadata: TrainingRunMetadata | None
 
@@ -237,7 +220,6 @@ class Trainer(_TrainerCore):
             )
 
     def attach_sampling_generator(self, generator: torch.Generator | None) -> None:
-        """绑定训练 sampler 的独立 RNG，使 checkpoint/resume 可恢复抽样序列。"""
         if generator is not None and not isinstance(generator, torch.Generator):
             raise TypeError("sampling generator 必须是 torch.Generator 或 None")
         self._sampling_generator = generator
@@ -324,7 +306,6 @@ class Trainer(_TrainerCore):
         dataset_id: str | None = None,
         dataset_fingerprint: str | None = None,
     ) -> "Trainer":
-        """按完整实验配置构造 Trainer，并记录调用方已知的训练 lineage。"""
         trainer = cast(
             Trainer,
             super().from_experiment(
@@ -356,7 +337,6 @@ class Trainer(_TrainerCore):
         on_epoch_end: Callable[[EpochResult], None] | None = None,
         start_epoch: int | None = None,
     ) -> TrainingResult:
-        """执行训练并直接返回稳定的终态 ``TrainingResult``。"""
         super().fit(
             train_batches,
             val_batches=val_batches,
@@ -383,6 +363,10 @@ class Trainer(_TrainerCore):
             resolved_metadata["sampling_generator_state"] = (
                 self._sampling_generator.get_state().cpu()
             )
+        if kind == "best":
+            resolved_metadata["best_checkpoint"] = path.name
+        elif self._best_checkpoint is not None:
+            resolved_metadata["best_checkpoint"] = self._best_checkpoint.name
         previous_last_checkpoint = self._last_checkpoint
         saved = super()._save_checkpoint_with_event(
             path,
@@ -396,9 +380,10 @@ class Trainer(_TrainerCore):
         return saved
 
     def resume_from(self, path, *, restore_rng: bool = True) -> dict:
-        """在应用训练状态前校验完整实验 lineage，并保留当前有效配置。"""
+        """在应用训练状态前校验完整实验 lineage，并恢复可发现的 best artifact。"""
         from ser_lib.engine.checkpoint import load_checkpoint
 
+        checkpoint_path = Path(path)
         current_run_metadata = self.run_metadata
         saved_run_metadata: TrainingRunMetadata | None = None
 
@@ -414,7 +399,7 @@ class Trainer(_TrainerCore):
                     )
 
         payload = load_checkpoint(
-            path,
+            checkpoint_path,
             self.model,
             self.optimizer,
             scheduler=self.scheduler,
@@ -429,7 +414,7 @@ class Trainer(_TrainerCore):
         if not isinstance(epoch, int) or epoch < 0:
             raise ValueError("checkpoint epoch 非法")
         self.last_completed_epoch = epoch
-        self._last_checkpoint = Path(path)
+        self._last_checkpoint = checkpoint_path
         metadata = payload.get("metadata") or {}
         if metadata.get("monitor") in (None, self.config.monitor):
             best_metric = metadata.get("best_metric")
@@ -438,6 +423,23 @@ class Trainer(_TrainerCore):
             self.best_metric = float(best_metric) if best_metric is not None else None
             self.best_epoch = int(best_epoch) if best_epoch is not None else None
             self.epochs_without_improvement = int(without_improvement)
+
+        if self.best_epoch is not None:
+            raw_best_checkpoint = metadata.get("best_checkpoint")
+            if raw_best_checkpoint is not None:
+                if not isinstance(raw_best_checkpoint, str) or not raw_best_checkpoint:
+                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
+                relative_best = Path(raw_best_checkpoint)
+                if relative_best.is_absolute() or len(relative_best.parts) != 1:
+                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
+                best_path = checkpoint_path.parent / relative_best
+                if not best_path.is_file():
+                    raise FileNotFoundError(f"checkpoint 引用的 best artifact 不存在: {best_path}")
+                self._best_checkpoint = best_path
+            else:
+                legacy_best = checkpoint_path.parent / "best.pt"
+                self._best_checkpoint = legacy_best if legacy_best.is_file() else None
+
         saved_run_id = metadata.get("run_id")
         if not self._run_id_explicit and isinstance(saved_run_id, str) and saved_run_id:
             self.run_id = saved_run_id
