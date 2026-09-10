@@ -4,7 +4,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ser_lib.engine import EvaluationRunDetail, EvaluationRunInfo, inspect_evaluation_run_detail
+import pytest
+from pydantic import ValidationError
+
+from ser_lib.engine import (
+    EvaluationRunInfo,
+    inspect_evaluation_prediction_file,
+    inspect_evaluation_report,
+    load_evaluation_run_info,
+)
 
 
 def _aggregate_metrics() -> dict[str, float]:
@@ -86,7 +94,7 @@ def _write_run(directory: Path, *, predictions_file: str | None = "predictions.j
     )
 
 
-def test_evaluation_run_detail_does_not_read_prediction_contents(tmp_path: Path, monkeypatch):
+def test_evaluation_metadata_report_and_prediction_stat_are_independent(tmp_path: Path, monkeypatch):
     directory = tmp_path / "evaluation"
     _write_run(directory)
     (directory / "metrics.json").write_text(json.dumps(_metrics_report()), encoding="utf-8")
@@ -97,68 +105,61 @@ def test_evaluation_run_detail_does_not_read_prediction_contents(tmp_path: Path,
 
     def guarded_read_text(self: Path, *args, **kwargs):
         if self.name == "predictions.jsonl":
-            raise AssertionError("run detail must not read predictions.jsonl")
+            raise AssertionError("metadata inspection must not read predictions.jsonl")
         return original_read_text(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", guarded_read_text)
 
-    detail = inspect_evaluation_run_detail(directory)
+    run = load_evaluation_run_info(directory)
+    report = inspect_evaluation_report(directory)
+    prediction_file = inspect_evaluation_prediction_file(run)
 
-    assert isinstance(detail, EvaluationRunDetail)
-    assert detail.run.evaluation_id == "eval-detail-demo"
-    assert detail.report is not None
-    assert detail.report.sample_count == 4
-    assert detail.predictions.exists is True
-    assert detail.predictions.path == predictions.as_posix()
-    assert detail.predictions.size_bytes == predictions.stat().st_size
-    assert detail.diagnostics == ()
-    json.dumps(detail.to_dict())
+    assert run.evaluation_id == "eval-detail-demo"
+    assert report.sample_count == 4
+    assert prediction_file.exists is True
+    assert prediction_file.path == predictions.as_posix()
+    assert prediction_file.size_bytes == predictions.stat().st_size
 
 
-def test_evaluation_run_detail_keeps_prediction_metadata_when_metrics_missing(tmp_path: Path):
+def test_prediction_stat_remains_available_when_metrics_are_missing(tmp_path: Path):
     directory = tmp_path / "evaluation"
     _write_run(directory)
     predictions = directory / "predictions.jsonl"
     predictions.write_bytes(b"opaque-predictions")
 
-    detail = inspect_evaluation_run_detail(directory)
+    run = load_evaluation_run_info(directory)
+    prediction_file = inspect_evaluation_prediction_file(run)
 
-    assert detail.report is None
-    assert detail.predictions.exists is True
-    assert detail.predictions.size_bytes == len(b"opaque-predictions")
-    assert [item.code for item in detail.diagnostics] == ["evaluation_report_unavailable"]
-    json.dumps(detail.to_dict())
+    assert prediction_file.exists is True
+    assert prediction_file.size_bytes == len(b"opaque-predictions")
+    with pytest.raises(FileNotFoundError, match="metrics.json"):
+        inspect_evaluation_report(directory)
 
 
-def test_evaluation_run_detail_reports_missing_predictions(tmp_path: Path):
+def test_prediction_stat_reports_missing_file(tmp_path: Path):
     directory = tmp_path / "evaluation"
     _write_run(directory)
-    (directory / "metrics.json").write_text(json.dumps(_metrics_report()), encoding="utf-8")
 
-    detail = inspect_evaluation_run_detail(directory)
+    run = load_evaluation_run_info(directory)
+    prediction_file = inspect_evaluation_prediction_file(run)
 
-    assert detail.report is not None
-    assert detail.predictions.exists is False
-    assert detail.predictions.size_bytes is None
-    assert [item.code for item in detail.diagnostics] == [
-        "evaluation_predictions_unavailable"
-    ]
+    assert prediction_file.exists is False
+    assert prediction_file.size_bytes is None
 
 
-def test_evaluation_run_detail_allows_run_without_prediction_sink(tmp_path: Path):
+def test_prediction_stat_allows_run_without_prediction_sink(tmp_path: Path):
     directory = tmp_path / "evaluation"
     _write_run(directory, predictions_file=None)
-    (directory / "metrics.json").write_text(json.dumps(_metrics_report()), encoding="utf-8")
 
-    detail = inspect_evaluation_run_detail(directory)
+    run = load_evaluation_run_info(directory)
+    prediction_file = inspect_evaluation_prediction_file(run)
 
-    assert detail.report is not None
-    assert detail.predictions.path is None
-    assert detail.predictions.exists is False
-    assert detail.diagnostics == ()
+    assert prediction_file.path is None
+    assert prediction_file.exists is False
+    assert prediction_file.size_bytes is None
 
 
-def test_evaluation_run_detail_keeps_report_validation_error_nonfatal(tmp_path: Path):
+def test_report_validation_error_is_not_hidden_by_detail_wrapper(tmp_path: Path):
     directory = tmp_path / "evaluation"
     _write_run(directory, predictions_file=None)
     invalid_report = {
@@ -169,9 +170,5 @@ def test_evaluation_run_detail_keeps_report_validation_error_nonfatal(tmp_path: 
     }
     (directory / "metrics.json").write_text(json.dumps(invalid_report), encoding="utf-8")
 
-    detail = inspect_evaluation_run_detail(directory)
-
-    assert detail.report is None
-    assert detail.predictions.path is None
-    assert [item.code for item in detail.diagnostics] == ["evaluation_report_unavailable"]
-    assert detail.diagnostics[0].details["error_type"] == "ValidationError"
+    with pytest.raises(ValidationError):
+        inspect_evaluation_report(directory)
