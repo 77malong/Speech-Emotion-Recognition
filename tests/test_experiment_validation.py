@@ -118,7 +118,10 @@ def test_hf_dry_run_does_not_import_transformers_or_load_weights(monkeypatch, tm
     def forbidden_create(*args, **kwargs):
         raise AssertionError("dry-run must not instantiate hf model")
 
-    monkeypatch.setattr("ser_lib.models.pretrained._transformers", forbidden_transformers)
+    monkeypatch.setattr(
+        "ser_lib.models.adapters.huggingface._transformers",
+        forbidden_transformers,
+    )
     monkeypatch.setattr(model_registry, "create", forbidden_create)
 
     result = validate_experiment(config)
