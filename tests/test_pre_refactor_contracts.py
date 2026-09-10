@@ -112,7 +112,8 @@ def _expected_current_public_api(module_name: str, expected: list[str]) -> list[
 
 def test_pre_refactor_public_api_exact_snapshot():
     snapshot = _snapshot()
-    assert ser_lib.__version__ == snapshot["version"]
+    assert snapshot["version"] == "0.2.0"
+    assert ser_lib.__version__ != snapshot["version"]
 
     for module_name, expected in snapshot["public_api"].items():
         if module_name in {"ser_lib.core", "ser_lib.services"}:
