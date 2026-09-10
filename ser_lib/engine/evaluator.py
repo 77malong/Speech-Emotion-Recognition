@@ -251,6 +251,9 @@ def evaluate(
     evaluation 的便捷覆盖。能获取 ``len(batches)`` 时进度事件会提供 ``total``，
     否则保持 ``None``。
 
+    ``event_callback`` 是同步 fail-fast hook：callback 异常会终止评估并传播给调用方；
+    评估器仍保证在退出前恢复模型原始 train/eval 状态。
+
     Sliding collator 产生的窗口被视为独立行；原始样本级窗口聚合属于推理层，
     评估器不会根据重复 UID 隐式猜测聚合策略。
     """
@@ -286,22 +289,22 @@ def evaluate(
     total_samples = 0
     started = time.perf_counter()
 
-    emit(
-        LifecycleEvent(
-            "evaluation",
-            "started",
-            details={
-                "num_classes": num_classes,
-                "total_batches": base_context.total_batches,
-                "device": str(target_device),
-                "prediction_sink": prediction_sink is not None,
-                "retain_predictions": retain_predictions,
-            },
-            context=base_context,
-        )
-    )
-
     try:
+        emit(
+            LifecycleEvent(
+                "evaluation",
+                "started",
+                details={
+                    "num_classes": num_classes,
+                    "total_batches": base_context.total_batches,
+                    "device": str(target_device),
+                    "prediction_sink": prediction_sink is not None,
+                    "retain_predictions": retain_predictions,
+                },
+                context=base_context,
+            )
+        )
+
         for batch_index, batch in enumerate(batches, start=1):
             if cancellation is not None:
                 cancellation.raise_if_cancelled()
@@ -318,8 +321,10 @@ def evaluate(
             if torch.any(labels_tensor < 0) or torch.any(labels_tensor >= num_classes):
                 raise ValueError("评估标签超出 [0, num_classes) 范围")
             loss = (
-                loss_fn(output.logits, labels_tensor) if loss_fn is not None
-                else output.loss if output.loss is not None
+                loss_fn(output.logits, labels_tensor)
+                if loss_fn is not None
+                else output.loss
+                if output.loss is not None
                 else F.cross_entropy(output.logits, labels_tensor)
             )
             if not torch.isfinite(loss):
