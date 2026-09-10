@@ -108,6 +108,7 @@ class EvaluationExperimentResult:
     evaluation: EvaluationResult
     run: EvaluationRunInfo
     evaluation_record: Path
+    metric_unit: str
 
     def to_dict(self) -> dict[str, Any]:
         """返回与既有 CLI ``evaluate`` 输出兼容的 JSON-safe 字典。"""
@@ -118,6 +119,7 @@ class EvaluationExperimentResult:
             "source_run_id": self.run.source_run_id,
             "dataset_id": self.run.dataset_id,
             "dataset_fingerprint": self.run.dataset_fingerprint,
+            "metric_unit": self.metric_unit,
             **self.evaluation.summary_dict(),
         }
 
@@ -177,7 +179,9 @@ def _validate_artifact_label_semantics(
 ) -> None:
     expected = {int(index): str(name).strip() for index, name in artifact_labels.items()}
     actual = _canonical_dataset_labels(manifest_labels, source="evaluation manifest labels")
-    if sorted(expected) != list(range(len(expected))) or any(not name for name in expected.values()):
+    if sorted(expected) != list(range(len(expected))) or any(
+        not name for name in expected.values()
+    ):
         raise ValueError(f"artifact labels 非法，无法验证语义: {expected}")
     if expected != actual:
         raise ValueError(
@@ -249,13 +253,32 @@ def _write_training_history(path: Path, result: TrainingResult) -> None:
     temporary.replace(path)
 
 
-def _write_evaluation_summary(directory: Path, result: EvaluationResult) -> None:
-    """只原子写入聚合指标，不触碰外部 prediction sink 的输出。"""
+def _evaluation_metric_unit(preprocessing: Mapping[str, Any]) -> str:
+    """把 artifact batching 配置映射为机器可读的评估指标单位。"""
+    batching = preprocessing.get("batching")
+    if isinstance(batching, Mapping):
+        batching_type = batching.get("type")
+        if batching_type == "sliding":
+            return "window"
+        if batching_type in {"dynamic", "fixed"}:
+            return "sample"
+    return "batch_row"
+
+
+def _write_evaluation_summary(
+    directory: Path,
+    result: EvaluationResult,
+    *,
+    metric_unit: str,
+) -> None:
+    """原子写聚合指标和指标单位，不触碰 prediction sink 的输出。"""
     directory.mkdir(parents=True, exist_ok=True)
     metrics_path = directory / "metrics.json"
     temporary = directory / "metrics.json.tmp"
+    payload = result.to_dict(include_predictions=False)
+    payload["metric_unit"] = metric_unit
     temporary.write_text(
-        json.dumps(result.to_dict(include_predictions=False), ensure_ascii=False, indent=2),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     temporary.replace(metrics_path)
@@ -372,7 +395,7 @@ def evaluate_artifact(
     prediction_sink: PredictionSink | None = None,
     retain_predictions: bool = True,
 ) -> EvaluationExperimentResult:
-    """加载 artifact 并评估；可流式输出预测以避免 O(N) 明细内存。"""
+    """加载 artifact 并评估；可流式输出预测并显式标注指标统计单位。"""
     from ser_lib.artifacts.loader import load_model_artifact
 
     artifact_path = Path(artifact)
@@ -382,6 +405,7 @@ def evaluate_artifact(
     manifest = DatasetManifest.load(manifest_source)
     _validate_artifact_label_semantics(loaded.manifest.labels, manifest.meta.labels)
     dataset_fingerprint = fingerprint_manifest(manifest)
+    metric_unit = _evaluation_metric_unit(loaded.manifest.preprocessing)
 
     raw_source_run_id = loaded.manifest.metadata.get("source_run_id")
     if raw_source_run_id is not None and (
@@ -421,8 +445,7 @@ def evaluate_artifact(
     finished_at = datetime.now(timezone.utc)
     if retain_predictions:
         write_evaluation_report(output_dir, result)
-    else:
-        _write_evaluation_summary(output_dir, result)
+    _write_evaluation_summary(output_dir, result, metric_unit=metric_unit)
     evaluation_record = write_evaluation_run_info(
         output_dir,
         run_metadata,
@@ -436,6 +459,7 @@ def evaluate_artifact(
         evaluation=result,
         run=run_info,
         evaluation_record=evaluation_record,
+        metric_unit=metric_unit,
     )
 
 
