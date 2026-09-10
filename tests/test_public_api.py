@@ -14,6 +14,22 @@ import ser_lib.inference as inference
 import ser_lib.models as models
 
 
+_ROOT_API = [
+    "SERDataset",
+    "SERBatch",
+    "SERModel",
+    "Trainer",
+    "TrainingResult",
+    "evaluate",
+    "train_experiment",
+    "evaluate_artifact",
+    "EmotionPredictor",
+    "PredictionResult",
+    "export_model_artifact",
+    "load_model_artifact",
+]
+
+
 def _assert_explicit_public_surface(module) -> None:
     public = tuple(module.__all__)
     assert len(public) == len(set(public))
@@ -35,20 +51,25 @@ def test_package_public_surfaces_are_resolvable_and_unique():
     ):
         _assert_explicit_public_surface(module)
     assert ser_lib.__version__ == "0.2.0"
+    assert ser_lib.__all__ == _ROOT_API
+
+
+def test_root_only_exposes_high_level_lazy_conveniences():
+    assert ser_lib.SERDataset is data.SERDataset
+    assert ser_lib.SERBatch is data.SERBatch
+    assert ser_lib.SERModel is models.SERModel
+    assert ser_lib.Trainer is engine.Trainer
+    assert ser_lib.TrainingResult is engine.TrainingResult
+    assert ser_lib.evaluate is engine.evaluate
+    assert ser_lib.train_experiment is engine.train_experiment
+    assert ser_lib.evaluate_artifact is engine.evaluate_artifact
+    assert ser_lib.EmotionPredictor is inference.EmotionPredictor
+    assert ser_lib.PredictionResult is inference.PredictionResult
+    assert ser_lib.export_model_artifact is artifacts.export_model_artifact
+    assert ser_lib.load_model_artifact is artifacts.load_model_artifact
 
 
 def test_canonical_domain_types_have_intentional_public_paths():
-    assert ser_lib.ArtifactEntry is artifacts.ArtifactEntry
-    assert ser_lib.ComponentDescriptor is data.ComponentDescriptor
-    assert ser_lib.build_experiment_config is config.build_experiment_config
-    assert ser_lib.iter_evaluation_predictions is engine.iter_evaluation_predictions
-    assert ser_lib.EvaluationPredictionFileInfo is engine.EvaluationPredictionFileInfo
-    assert ser_lib.EtaSnapshot is engine.EtaSnapshot
-    assert ser_lib.EtaEstimator is engine.EtaEstimator
-
-    assert ser_lib.Diagnostic is foundation.Diagnostic
-    assert ser_lib.CompatibilityReport is engine.CompatibilityReport
-    assert ser_lib.inspect_compatibility is engine.inspect_compatibility
     assert models.ModelSpec.__module__ == "ser_lib.models.specs"
     assert models.TorchModelAdapter.__module__ == "ser_lib.models.adapters.torch"
     assert models.TORCH_ADAPTER_MODEL_ID == "torch_model_adapter"
@@ -67,7 +88,7 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors"
 
 
-def test_application_wrappers_are_absent_from_public_surfaces():
+def test_application_wrappers_and_old_root_shortcuts_are_absent():
     retired = {
         "RecordView",
         "RecordPage",
@@ -91,6 +112,21 @@ def test_application_wrappers_are_absent_from_public_surfaces():
     for module in (ser_lib, data, engine, artifacts):
         assert retired.isdisjoint(module.__all__), module.__name__
         assert all(not hasattr(module, name) for name in retired), module.__name__
+
+    domain_only = {
+        "Diagnostic",
+        "ComponentDescriptor",
+        "ModelCard",
+        "ModelArtifactManifest",
+        "CheckpointCatalog",
+        "EvaluationRunCatalog",
+        "TrainingRunCatalog",
+        "StreamingEmotionRecognizer",
+        "get_runtime_metrics",
+        "build_experiment_config",
+    }
+    assert domain_only.isdisjoint(ser_lib.__all__)
+    assert all(not hasattr(ser_lib, name) for name in domain_only)
 
 
 def test_internal_modules_are_not_required_for_stable_imports():
