@@ -13,9 +13,18 @@ from ser_lib.inference import (
 
 
 class FakePredictor:
-    def __init__(self, target_rate: int, probabilities=(0.25, 0.75)) -> None:
+    def __init__(
+        self,
+        target_rate: int,
+        probabilities=(0.25, 0.75),
+        *,
+        normalize_peak: bool = False,
+    ) -> None:
         self.audio_loader = SimpleNamespace(
-            config=SimpleNamespace(target_sample_rate=target_rate)
+            config=SimpleNamespace(
+                target_sample_rate=target_rate,
+                normalize_peak=normalize_peak,
+            )
         )
         self.labels = {0: "neutral", 1: "happy"}
         self.probabilities = list(probabilities)
@@ -41,6 +50,14 @@ def _session(predictor, **updates):
             **updates,
         ),
     )
+
+
+def test_streaming_rejects_global_peak_normalization_instead_of_ignoring_it():
+    with pytest.raises(ValueError, match="normalize_peak"):
+        _session(FakePredictor(8, normalize_peak=True))
+
+    session = _session(FakePredictor(8, normalize_peak=False))
+    assert session.target_rate == 8
 
 
 def test_streaming_windows_are_independent_of_chunk_partition():
