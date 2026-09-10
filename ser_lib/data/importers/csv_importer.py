@@ -1,4 +1,9 @@
-"""CSV importer：映射音频路径列、标签列与可选元数据列。"""
+"""CSV importer：映射音频路径列、标签列与可选元数据列。
+
+``root`` 属于生成后的 DatasetManifest：相对 root 以目标 ``dataset.yaml`` 所在
+目录为基准解析。CSV 记录中的相对 ``audio_path`` 保持原样，避免在 scan 与 manifest
+解析阶段重复应用 root。
+"""
 
 from __future__ import annotations
 
@@ -116,8 +121,6 @@ class CsvImporter:
                         )
                         continue
                     audio_path = Path(path_value)
-                    if not audio_path.is_absolute() and cfg.root is not None:
-                        audio_path = Path(cfg.root) / audio_path
 
                     label: int | None = None
                     if cfg.label_column:
