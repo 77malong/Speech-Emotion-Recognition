@@ -1,14 +1,14 @@
 """Hugging Face audio models adapted to the stable SER model contract.
 
-The adapter keeps Transformers optional, defaults to local-only loading and persists
-feature-extractor state as JSON-safe configuration rather than executable code.
+Transformers remains optional. Loading defaults to local files only, remote code is
+never trusted, and feature-extractor state is persisted as JSON-safe configuration.
 """
 
 from __future__ import annotations
 
 import importlib
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from torch import nn
@@ -23,7 +23,7 @@ _SUPPORTED_PROCESSORS = {"Wav2Vec2FeatureExtractor"}
 _VERIFIED_AUDIO_FAMILIES = {"wav2vec2", "hubert", "wavlm"}
 
 
-def _transformers():
+def _transformers() -> Any:
     try:
         return importlib.import_module("transformers")
     except ImportError as exc:
@@ -51,10 +51,13 @@ def _snapshot_processor(processor: object) -> HFProcessorConfig:
     raw = to_dict()
     if not isinstance(raw, dict):
         raise ValueError("Hugging Face processor.to_dict() 必须返回映射")
-    return HFProcessorConfig(class_name=class_name, config=raw)
+    return HFProcessorConfig.model_validate({"class_name": class_name, "config": raw})
 
 
-def _load_processor(transformers: object, config: HFAudioClassifierConfig):
+def _load_processor(
+    transformers: Any,
+    config: HFAudioClassifierConfig,
+) -> tuple[Any | None, HFProcessorConfig | None]:
     if config.processor_config is not None:
         class_name = config.processor_config.class_name
         if class_name not in _SUPPORTED_PROCESSORS:
@@ -88,30 +91,30 @@ def _load_processor(transformers: object, config: HFAudioClassifierConfig):
             "processor sampling_rate 与 expected_sample_rate 不一致: "
             f"{sampling_rate} != {config.expected_sample_rate}"
         )
-    feature_size = snapshot.config.get("feature_size", 1)
-    if feature_size != 1:
-        raise ValueError("首期 HF waveform adapter 只支持 feature_size=1")
     return processor, snapshot
 
 
-def _set_label_mapping(hf_config: object, labels: Mapping[int, str]) -> None:
+def _set_label_mapping(hf_config: Any, labels: Mapping[int, str]) -> None:
     id2label = {int(index): str(label) for index, label in labels.items()}
     label2id = {label: index for index, label in id2label.items()}
-    setattr(hf_config, "num_labels", len(id2label))
-    setattr(hf_config, "id2label", id2label)
-    setattr(hf_config, "label2id", label2id)
+    hf_config.num_labels = len(id2label)
+    hf_config.id2label = id2label
+    hf_config.label2id = label2id
 
 
-def _label_mapping_matches(hf_config: object, labels: Mapping[int, str]) -> bool:
+def _label_mapping_matches(hf_config: Any, labels: Mapping[int, str]) -> bool:
     expected = {int(index): str(label) for index, label in labels.items()}
     raw_id2label = getattr(hf_config, "id2label", None)
     if not isinstance(raw_id2label, Mapping):
         return False
-    actual = {int(index): str(label) for index, label in raw_id2label.items()}
+    try:
+        actual = {int(index): str(label) for index, label in raw_id2label.items()}
+    except (TypeError, ValueError):
+        return False
     return actual == expected and int(getattr(hf_config, "num_labels", -1)) == len(expected)
 
 
-def _build_hf_model(transformers: object, config: HFAudioClassifierConfig):
+def _build_hf_model(transformers: Any, config: HFAudioClassifierConfig) -> Any:
     if config.encoder_config is not None:
         raw = dict(config.encoder_config)
         model_type = raw.pop("model_type", None)
@@ -127,10 +130,8 @@ def _build_hf_model(transformers: object, config: HFAudioClassifierConfig):
                         "label_names 不一致；如需重置分类头必须显式设置 reset_classifier_head=True"
                     )
                 _set_label_mapping(hf_config, config.label_names)
-            model = transformers.AutoModelForAudioClassification.from_config(hf_config)
-        else:
-            model = transformers.AutoModel.from_config(hf_config)
-        return model
+            return transformers.AutoModelForAudioClassification.from_config(hf_config)
+        return transformers.AutoModel.from_config(hf_config)
 
     source = config.pretrained_model_name_or_path
     if config.strategy == "audio_classification":
@@ -182,9 +183,9 @@ class HFAudioClassifier(SERModel):
         revision: str | None = None,
         freeze_encoder: bool = False,
         dropout: float = 0.1,
-        pooling: str = "mean",
+        pooling: Literal["mean", "max"] = "mean",
         expected_sample_rate: int = 16000,
-        strategy: str = "encoder_head",
+        strategy: Literal["encoder_head", "audio_classification"] = "encoder_head",
         reset_classifier_head: bool = False,
         label_names: dict[int, str] | None = None,
         processor_name_or_path: str | None = None,
@@ -210,19 +211,15 @@ class HFAudioClassifier(SERModel):
             processor_revision=processor_revision,
         )
         transformers = _transformers()
-        self.encoder = _build_hf_model(transformers, config)
+        self.encoder: Any = _build_hf_model(transformers, config)
         serialized = self.encoder.config.to_dict()
         if not isinstance(serialized, dict) or not serialized.get("model_type"):
             raise ValueError("Hugging Face model config.to_dict() 必须包含 model_type")
 
         model_type = str(serialized["model_type"])
-        if model_type in _VERIFIED_AUDIO_FAMILIES:
-            self.verified_family = model_type
-        else:
-            self.verified_family = None
-
+        self.verified_family = model_type if model_type in _VERIFIED_AUDIO_FAMILIES else None
         self.processor, processor_snapshot = _load_processor(transformers, config)
-        self.processor_config = processor_snapshot
+        self.processor_config: HFProcessorConfig | None = processor_snapshot
         self.num_classes = config.num_classes
         self.encoder_config = serialized
         self.local_files_only = config.local_files_only
@@ -235,6 +232,8 @@ class HFAudioClassifier(SERModel):
         self.reset_classifier_head = config.reset_classifier_head
         self.label_names = _normalize_label_names(config.label_names)
         self.processor_revision = config.processor_revision
+        self.dropout: nn.Module
+        self.classifier: nn.Linear | None
 
         if self.strategy == "encoder_head":
             hidden_size = getattr(self.encoder.config, "hidden_size", None)
@@ -334,7 +333,9 @@ class HFAudioClassifier(SERModel):
         return mask
 
     def _prepare_waveform(
-        self, waveform: torch.Tensor, valid: torch.Tensor
+        self,
+        waveform: torch.Tensor,
+        valid: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
         if self.processor_config is None:
             return waveform, valid.to(torch.long)
@@ -366,14 +367,14 @@ class HFAudioClassifier(SERModel):
                 encoded_lengths = lengths
                 for kernel, stride in zip(kernels, strides):
                     encoded_lengths = torch.div(
-                        encoded_lengths - int(kernel), int(stride), rounding_mode="floor"
+                        encoded_lengths - int(kernel),
+                        int(stride),
+                        rounding_mode="floor",
                     ) + 1
             elif encoded_time == valid.shape[1]:
                 encoded_lengths = lengths
             else:
-                raise ValueError(
-                    "HF encoder 发生时间下采样但未提供可验证的输出长度变换"
-                )
+                raise ValueError("HF encoder 发生时间下采样但未提供可验证的输出长度变换")
         encoded_lengths = encoded_lengths.to(device=valid.device, dtype=torch.long)
         if torch.any(encoded_lengths <= 0) or torch.any(encoded_lengths > encoded_time):
             raise ValueError("HF encoder 输出长度计算结果超出有效范围")
@@ -390,10 +391,7 @@ class HFAudioClassifier(SERModel):
 
         valid = self._mask(batch, waveform)
         input_values, attention_mask = self._prepare_waveform(waveform, valid)
-        options: dict[str, Any] = {
-            "input_values": input_values,
-            "return_dict": True,
-        }
+        options: dict[str, Any] = {"input_values": input_values, "return_dict": True}
         if attention_mask is not None:
             options["attention_mask"] = attention_mask
         output = self.encoder(**options)
@@ -420,7 +418,8 @@ class HFAudioClassifier(SERModel):
             embeddings = hidden.masked_fill(
                 ~encoded_valid.unsqueeze(-1), float("-inf")
             ).max(1).values
-        assert isinstance(self.classifier, nn.Linear)
+        if self.classifier is None:
+            raise RuntimeError("encoder_head strategy 缺少 SER classifier")
         return ModelOutput(
             logits=self.classifier(self.dropout(embeddings)),
             embeddings=embeddings,
