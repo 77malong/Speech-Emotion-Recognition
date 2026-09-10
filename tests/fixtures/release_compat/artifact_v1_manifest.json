@@ -3,7 +3,7 @@
   "library_version": "0.1.0",
   "model_name": "cnn_baseline",
   "model_params": {
-    "feature_dim": 4,
+    "feature_dim": 16,
     "num_classes": 2,
     "hidden_dim": 6,
     "dropout": 0.0
@@ -34,7 +34,7 @@
         "n_fft": 256,
         "win_length": 256,
         "hop_length": 80,
-        "n_mels": 4
+        "n_mels": 16
       }
     },
     "waveform_transforms": [],
