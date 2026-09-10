@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -84,6 +87,27 @@ def run_manifest_conversion(
         return result
 
 
+def _commit_staged_directory(staging: Path, destination: Path) -> None:
+    """Replace a dataset directory with rollback on commit-time exceptions."""
+    if destination.exists() and not destination.is_dir():
+        raise ValueError(f"导入目标已存在且不是目录: {destination}")
+
+    backup: Path | None = None
+    if destination.exists():
+        backup = destination.parent / f".{destination.name}.backup-{uuid.uuid4().hex}"
+        destination.replace(backup)
+
+    try:
+        staging.replace(destination)
+    except BaseException:
+        if backup is not None and backup.exists() and not destination.exists():
+            backup.replace(destination)
+        raise
+    else:
+        if backup is not None:
+            shutil.rmtree(backup, ignore_errors=True)
+
+
 def run_single_manifest_conversion(
     *,
     importer_id: str,
@@ -100,30 +124,50 @@ def run_single_manifest_conversion(
     cancellation: CancellationCheck | None = None,
     event_context: EventContext | None = None,
 ) -> DatasetManifest:
-    """执行单 JSONL manifest importer 的标准 convert 流程。"""
+    """执行单 JSONL manifest importer 的标准 convert 流程。
+
+    所有输出先写到目标同级 staging 目录，并在那里完成 ``DatasetManifest.load``
+    验证。只有 staging 完整有效后才替换正式目标；提交阶段发生异常时恢复原目录，
+    避免“导入失败但旧数据集已经被覆盖”。
+    """
     destination = Path(destination)
 
     def build(preview: ImportPreview, task: ImportTask):
         resolved_records = list(records(preview) if records is not None else preview.records)
-        destination.mkdir(parents=True, exist_ok=True)
-        task.check()
-        write_jsonl(resolved_records, destination / "manifest.jsonl")
-        task.progress(2, 3, message="manifest written")
-        document: dict[str, Any] = {
-            "schema_version": 1,
-            "dataset_id": dataset_id,
-            "root": str(root),
-            "splits": {"default": "manifest.jsonl"},
-        }
-        if labels is not None:
-            resolved_labels = dict(labels(preview))
-            if resolved_labels:
-                document["labels"] = resolved_labels
-        (destination / "dataset.yaml").write_text(
-            yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(
+            tempfile.mkdtemp(
+                prefix=f".{destination.name}.import-",
+                dir=destination.parent,
+            )
         )
-        return DatasetManifest.load(destination / "dataset.yaml"), None
+        try:
+            task.check()
+            write_jsonl(resolved_records, staging / "manifest.jsonl")
+            task.progress(2, 3, message="manifest staged")
+            document: dict[str, Any] = {
+                "schema_version": 1,
+                "dataset_id": dataset_id,
+                "root": str(root),
+                "splits": {"default": "manifest.jsonl"},
+            }
+            if labels is not None:
+                resolved_labels = dict(labels(preview))
+                if resolved_labels:
+                    document["labels"] = resolved_labels
+            (staging / "dataset.yaml").write_text(
+                yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            # Validate the complete candidate before touching the existing target.
+            DatasetManifest.load(staging / "dataset.yaml")
+            task.check()
+            _commit_staged_directory(staging, destination)
+            return DatasetManifest.load(destination / "dataset.yaml"), None
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
 
     return run_manifest_conversion(
         importer_id=importer_id,
