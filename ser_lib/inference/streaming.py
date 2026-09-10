@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
 import torch
+import torchaudio
 
 from ser_lib.config.inference import StreamingConfig
 from ser_lib.data.types import AudioData
@@ -32,51 +34,123 @@ class StreamingLatency:
 
 
 class _LinearResampler:
-    """分块方式无关、仅保留下一插值点所需状态的线性重采样器。"""
+    """历史私有名称下的有状态带限 sinc 重采样器。
+
+    实际滤波由 ``torchaudio.functional.resample`` 完成。流式状态只保留有限左右
+    上下文，并把可丢弃 buffer 起点对齐到源/目标采样率的有理相位周期，因此不同
+    chunk 切分得到相同的全局输出相位，同时避免逐输出采样点的 Python 插值循环。
+
+    非 final push 会保留一个保守的右侧滤波 lookahead；flush 时再输出尾部。这个
+    lookahead 同时是流式重采样相对纯采样窗口增加的算法延迟。
+    """
+
+    _FILTER_WIDTH = 6
+    _ROLLOFF = 0.99
 
     def __init__(self, source_rate: int, target_rate: int) -> None:
-        self.source_rate = source_rate
-        self.target_rate = target_rate
+        if source_rate <= 0 or target_rate <= 0:
+            raise ValueError("source_rate/target_rate 必须为正")
+        self.source_rate = int(source_rate)
+        self.target_rate = int(target_rate)
+        divisor = math.gcd(self.source_rate, self.target_rate)
+        self._phase_period = self.source_rate // divisor
+        if self.source_rate == self.target_rate:
+            self.lookahead_samples = 0
+        else:
+            base_rate = min(self.source_rate, self.target_rate) * self._ROLLOFF
+            self.lookahead_samples = max(
+                1,
+                math.ceil(self._FILTER_WIDTH * self.source_rate / base_rate),
+            )
         self._buffer = torch.empty(0, dtype=torch.float32)
         self._buffer_start = 0
         self._input_count = 0
         self._output_count = 0
 
-    def push(self, samples: torch.Tensor, *, final: bool = False) -> torch.Tensor:
-        if samples.numel():
-            self._buffer = torch.cat((self._buffer, samples.cpu()))
-            self._input_count += int(samples.numel())
-        output: list[torch.Tensor] = []
-        while True:
-            numerator = self._output_count * self.source_rate
-            left = numerator // self.target_rate
-            remainder = numerator % self.target_rate
-            right = left + (1 if remainder else 0)
-            if right >= self._input_count:
-                if not final or left >= self._input_count:
-                    break
-                right = left
-                remainder = 0
-            local_left = left - self._buffer_start
-            local_right = right - self._buffer_start
-            fraction = remainder / self.target_rate
-            value = self._buffer[local_left] * (1.0 - fraction)
-            if local_right != local_left:
-                value = value + self._buffer[local_right] * fraction
-            output.append(value)
-            self._output_count += 1
-        next_left = (self._output_count * self.source_rate) // self.target_rate
-        discard = max(
-            0, min(next_left - self._buffer_start, self._buffer.numel())
+    @property
+    def buffered_input_samples(self) -> int:
+        return int(self._buffer.numel())
+
+    def _target_output_count(self, source_count: int) -> int:
+        if source_count <= 0:
+            return 0
+        return math.ceil(source_count * self.target_rate / self.source_rate)
+
+    def _stable_output_count(self, *, final: bool) -> int:
+        if final:
+            return self._target_output_count(self._input_count)
+        stable_source = max(self._input_count - self.lookahead_samples, 0)
+        return self._target_output_count(stable_source)
+
+    def _resample_buffer(self) -> torch.Tensor:
+        if not self._buffer.numel():
+            return torch.empty(0, dtype=torch.float32)
+        if self.source_rate == self.target_rate:
+            return self._buffer
+        return torchaudio.functional.resample(
+            self._buffer,
+            self.source_rate,
+            self.target_rate,
+            lowpass_filter_width=self._FILTER_WIDTH,
+            rolloff=self._ROLLOFF,
         )
-        if discard:
+
+    def _discard_consumed_left_context(self) -> None:
+        if self.source_rate == self.target_rate:
+            discard_until = self._input_count
+        else:
+            next_source = (
+                self._output_count * self.source_rate // self.target_rate
+            )
+            desired_start = max(next_source - self.lookahead_samples, 0)
+            discard_until = (
+                desired_start // self._phase_period
+            ) * self._phase_period
+        discard_until = min(discard_until, self._input_count)
+        discard = discard_until - self._buffer_start
+        if discard > 0:
             self._buffer = self._buffer[discard:]
-            self._buffer_start += discard
-        return (
-            torch.stack(output)
-            if output
-            else torch.empty(0, dtype=torch.float32)
-        )
+            self._buffer_start = discard_until
+
+    def push(self, samples: torch.Tensor, *, final: bool = False) -> torch.Tensor:
+        values = torch.as_tensor(samples, dtype=torch.float32).reshape(-1).cpu()
+        if values.numel():
+            self._buffer = torch.cat((self._buffer, values))
+            self._input_count += int(values.numel())
+
+        if self.source_rate == self.target_rate:
+            if not self._buffer.numel():
+                return torch.empty(0, dtype=torch.float32)
+            output = self._buffer.clone()
+            self._output_count += int(output.numel())
+            self._buffer = torch.empty(0, dtype=torch.float32)
+            self._buffer_start = self._input_count
+            return output
+
+        stop = self._stable_output_count(final=final)
+        start = self._output_count
+        if stop <= start:
+            return torch.empty(0, dtype=torch.float32)
+
+        if self._buffer_start % self._phase_period != 0:
+            raise RuntimeError("streaming resampler buffer 相位未对齐")
+        output_offset = self._buffer_start * self.target_rate // self.source_rate
+        local_start = start - output_offset
+        local_stop = stop - output_offset
+        if local_start < 0:
+            raise RuntimeError("streaming resampler 丢失了必要的左侧滤波上下文")
+
+        local_output = self._resample_buffer()
+        if local_stop > int(local_output.numel()):
+            raise RuntimeError("streaming resampler 右侧滤波上下文不足")
+        output = local_output[local_start:local_stop].clone()
+        self._output_count = stop
+        if final:
+            self._buffer = torch.empty(0, dtype=torch.float32)
+            self._buffer_start = self._input_count
+        else:
+            self._discard_consumed_left_context()
+        return output
 
     def reset(self) -> None:
         self._buffer = torch.empty(0, dtype=torch.float32)
@@ -113,9 +187,9 @@ class StreamingEmotionRecognizer:
     @property
     def latency(self) -> StreamingLatency:
         lookahead = (
-            0.0
-            if self.config.input_sample_rate == self.target_rate
-            else 1000.0 / self.config.input_sample_rate
+            self._resampler.lookahead_samples
+            * 1000.0
+            / self.config.input_sample_rate
         )
         return StreamingLatency(
             float(self.config.window_ms),
