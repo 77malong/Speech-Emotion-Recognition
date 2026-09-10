@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import CancellationCheck, EventCallback
 from ser_lib.data.types import SERBatch
 from ser_lib.engine.checkpoint_catalog import (
     CheckpointCatalog,
@@ -27,6 +25,8 @@ from ser_lib.engine.runs import (
 from ser_lib.engine.training_history import TrainingHistoryInfo, load_training_history
 from ser_lib.engine.trainer import EpochResult, Trainer, TrainingResult
 from ser_lib.engine.validation import ExperimentValidationResult, validate_experiment
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.events import CancellationCheck, EventCallback
 from ser_lib.models.base import SERModel
 
 
