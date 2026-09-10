@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import torch
 
 from ser_lib.artifacts import export_model_artifact, inspect_model_artifact
+from ser_lib.config.training import LossConfig
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.engine import (
@@ -129,19 +131,36 @@ def test_checkpoint_and_artifact_preserve_training_lineage(tmp_path: Path):
     assert manifest.metadata["dataset_fingerprint"] == fingerprint
 
 
-def test_resume_restores_saved_lineage_when_run_id_is_not_explicit(tmp_path: Path):
+def test_resume_restores_saved_run_identity_but_keeps_current_effective_config(
+    tmp_path: Path,
+):
     fingerprint = "c" * 64
-    experiment = _experiment(tmp_path)
+    source_experiment = _experiment(tmp_path)
     source = Trainer.from_experiment(
         _model(),
-        experiment,
+        source_experiment,
         run_id="original-run",
         dataset_fingerprint=fingerprint,
     )
     source.fit([_batch()])
 
-    resumed = Trainer.from_experiment(_model(), experiment)
-    resumed.resume_from(experiment.trainer.checkpoint_dir / "last.pt")
+    resumed_experiment = source_experiment.model_copy(
+        update={
+            "trainer": source_experiment.trainer.model_copy(
+                update={
+                    "epochs": 2,
+                    "checkpoint_dir": tmp_path / "continued-checkpoints",
+                }
+            ),
+            "output_dir": tmp_path / "continued-run",
+        }
+    )
+    resumed = Trainer.from_experiment(
+        _model(),
+        resumed_experiment,
+        dataset_fingerprint=fingerprint,
+    )
+    resumed.resume_from(source_experiment.trainer.checkpoint_dir / "last.pt")
     metadata = resumed.run_metadata
 
     assert resumed.run_id == "original-run"
@@ -149,3 +168,41 @@ def test_resume_restores_saved_lineage_when_run_id_is_not_explicit(tmp_path: Pat
     assert metadata.run_id == "original-run"
     assert metadata.dataset_fingerprint == fingerprint
     assert metadata.created_at.tzinfo is not None
+    assert metadata.config["trainer"]["epochs"] == 2
+    assert metadata.config["trainer"]["checkpoint_dir"] == str(
+        tmp_path / "continued-checkpoints"
+    )
+    assert metadata.config["output_dir"] == str(tmp_path / "continued-run")
+
+
+def test_resume_rejects_loss_change_before_model_state_is_applied(tmp_path: Path):
+    fingerprint = "d" * 64
+    source_experiment = _experiment(tmp_path)
+    source = Trainer.from_experiment(
+        _model(),
+        source_experiment,
+        run_id="source-run",
+        dataset_fingerprint=fingerprint,
+    )
+    source.fit([_batch()])
+
+    incompatible = source_experiment.model_copy(
+        update={"loss": LossConfig(type="focal", focal_gamma=2.0)}
+    )
+    target_model = _model()
+    before = {
+        name: tensor.detach().clone() for name, tensor in target_model.state_dict().items()
+    }
+    resumed = Trainer.from_experiment(
+        target_model,
+        incompatible,
+        dataset_fingerprint=fingerprint,
+    )
+
+    with pytest.raises(ValueError, match="experiment config"):
+        resumed.resume_from(source_experiment.trainer.checkpoint_dir / "last.pt")
+
+    after = target_model.state_dict()
+    assert set(after) == set(before)
+    for name, tensor in after.items():
+        assert torch.equal(tensor, before[name])
