@@ -18,7 +18,7 @@ Page/View/Detail 或跨领域 ComponentCatalog facade。未列入各模块 `__al
 | `ser_lib.benchmark` | 可序列化微基准和同环境回归比较 |
 | `ser_lib.cli` | `ser` 命令入口 |
 
-当前版本为 `0.2.0`，尚未承诺 1.0 级别的长期兼容性。本轮边界重构会删除已经明确判定为应用包装的旧入口；规范路径以各领域子包为准。
+当前待发布版本为 `0.3.0`，尚未承诺 1.0 级别的长期兼容性。本轮边界重构包含 breaking Python API 调整；规范路径以各领域子包为准，迁移说明见 `CHANGELOG.md`。
 
 ## 根包便利入口
 
