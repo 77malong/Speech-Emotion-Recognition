@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import shutil
+import struct
+import wave
 from pathlib import Path
 
 import pytest
@@ -13,7 +17,7 @@ from ser_lib.artifacts import (
     verify_model_artifact,
 )
 from ser_lib.data import DatasetManifest
-from ser_lib.engine import load_checkpoint, load_experiment_config
+from ser_lib.engine import load_checkpoint, load_experiment_config, train_experiment
 from ser_lib.models import CNNBaseline
 
 
@@ -33,6 +37,23 @@ def _cnn(*, feature_dim: int = 4) -> CNNBaseline:
     )
 
 
+def _write_wav(path: Path, *, frequency: float = 220.0) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames = bytearray()
+    for index in range(1600):
+        frames.extend(
+            struct.pack(
+                "<h",
+                int(5000 * math.sin(2 * math.pi * frequency * index / 16000)),
+            )
+        )
+    with wave.open(str(path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16000)
+        output.writeframes(frames)
+
+
 def test_legacy_experiment_v1_fixture_loads_with_relative_paths_preserved():
     config = load_experiment_config(_FIXTURE_DIR / "experiment_v1.yaml")
 
@@ -42,11 +63,32 @@ def test_legacy_experiment_v1_fixture_loads_with_relative_paths_preserved():
     assert config.trainer.checkpoint_dir == (_FIXTURE_DIR / "checkpoints").resolve()
     assert config.model.type == "cnn_baseline"
     assert config.model.params == {
-        "feature_dim": 4,
+        "feature_dim": 16,
         "num_classes": 2,
         "hidden_dim": 6,
         "dropout": 0.0,
     }
+
+
+def test_legacy_experiment_v1_fixture_executes_training_path(tmp_path: Path):
+    fixture = tmp_path / "release_compat"
+    fixture.mkdir()
+    for name in ("experiment_v1.yaml", "dataset_v1.yaml", "dataset_train_v1.jsonl"):
+        shutil.copy2(_FIXTURE_DIR / name, fixture / name)
+    _write_wav(fixture / "audio" / "legacy.wav")
+
+    execution = train_experiment(
+        fixture / "experiment_v1.yaml",
+        split="train",
+        batch_size=1,
+        workers=0,
+    )
+
+    assert execution.training.status == "completed"
+    assert execution.training.epochs[0].sample_count == 1
+    assert execution.last_checkpoint is not None
+    assert execution.last_checkpoint.is_file()
+    assert execution.run.dataset_id == "legacy-release-fixture"
 
 
 def test_legacy_dataset_fixture_without_schema_version_still_reads():
