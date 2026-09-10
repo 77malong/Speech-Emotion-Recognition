@@ -1,32 +1,24 @@
-"""CLI 的薄编排层；领域行为统一通过 Service facade。"""
+"""CLI 的薄编排层；可复用实验执行委托给 engine 公共 API。"""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
-from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, cast
-
-from torch.utils.data import DataLoader
+from typing import Any, Literal
 
 from ser_lib.artifacts import ModelCard
-from ser_lib.data import DatasetManifest, SERDataset, fingerprint_manifest
+from ser_lib.data import DatasetManifest
 from ser_lib.engine import (
     TrainingRunMetadata,
     build_experiment_components,
-    build_weighted_sampler,
     load_checkpoint,
     load_experiment_config,
 )
-from ser_lib.foundation.events import EventContext
-from ser_lib.services import (
-    ArtifactService,
-    EvaluationService,
-    InferenceService,
-    TrainingService,
+from ser_lib.engine.experiment import (
+    evaluate_artifact as run_artifact_evaluation,
+    train_experiment as run_training_experiment,
 )
+from ser_lib.services import ArtifactService, InferenceService
 
 
 def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
@@ -34,40 +26,6 @@ def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
         index: str(values.get("en") or values.get("zh") or index)
         for index, values in sorted(meta_labels.items())
     }
-
-
-def _loader(
-    manifest,
-    split,
-    components,
-    *,
-    batch_size,
-    workers,
-    shuffle=False,
-    sampling=None,
-    seed=42,
-    num_classes=None,
-):
-    records = manifest.resolved_records(split)
-    dataset = SERDataset(records, components.audio_loader, components.pipeline)
-    sampler = None
-    if sampling is not None:
-        if num_classes is None:
-            raise ValueError("构建训练 sampler 时必须提供 num_classes")
-        sampler = build_weighted_sampler(
-            dataset.get_labels(),
-            num_classes=num_classes,
-            config=sampling,
-            seed=seed,
-        )
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle and sampler is None,
-        sampler=sampler,
-        num_workers=workers,
-        collate_fn=components.collator,
-    )
 
 
 def train_experiment(
@@ -78,94 +36,14 @@ def train_experiment(
     workers: int,
     resume: Path | None,
 ) -> dict[str, Any]:
-    config = load_experiment_config(config_path)
-    if config.trainer.checkpoint_dir is None:
-        config = config.model_copy(
-            update={
-                "trainer": config.trainer.model_copy(
-                    update={"checkpoint_dir": config.output_dir / "checkpoints"}
-                )
-            }
-        )
-    components = build_experiment_components(config, train=True)
-    manifest = DatasetManifest.load(config.data.manifest)
-    dataset_fingerprint = fingerprint_manifest(manifest)
-    batches = _loader(
-        manifest,
-        split,
-        components,
+    """CLI 兼容入口；训练业务逻辑由 ``ser_lib.engine.experiment`` 提供。"""
+    return run_training_experiment(
+        config_path,
+        split=split,
         batch_size=batch_size,
         workers=workers,
-        shuffle=True,
-        sampling=config.sampling,
-        seed=config.trainer.seed,
-        num_classes=components.model.model_spec.num_classes,
-    )
-    trainer = TrainingService.create_trainer(
-        components.model,
-        config,
-        dataset_id=manifest.meta.dataset_id,
-        dataset_fingerprint=dataset_fingerprint.digest,
-    )
-    val_batches = None
-    if "val" in manifest.meta.splits:
-        validation_components = build_experiment_components(config, train=False)
-        val_batches = _loader(
-            manifest,
-            "val",
-            validation_components,
-            batch_size=batch_size,
-            workers=workers,
-        )
-    if resume is not None:
-        trainer.resume_from(resume)
-    config.output_dir.mkdir(parents=True, exist_ok=True)
-    metrics_log = config.output_dir / "metrics.jsonl"
-    if resume is None:
-        metrics_log.write_text("", encoding="utf-8")
-
-    def log_epoch(result) -> None:
-        with metrics_log.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(json.dumps(asdict(result), ensure_ascii=False) + "\n")
-            stream.flush()
-
-    training_result = TrainingService.run(
-        trainer,
-        lambda: batches,
-        val_batches=(lambda: val_batches) if val_batches is not None else None,
-        on_epoch_end=log_epoch,
-    )
-    history = list(training_result.epochs)
-    history_path = config.output_dir / "history.json"
-    temporary = history_path.with_suffix(".json.tmp")
-    temporary.write_text(
-        json.dumps([asdict(item) for item in history], ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    temporary.replace(history_path)
-    run_info = TrainingService.save_run(config.output_dir, trainer, training_result)
-    last_checkpoint = (
-        cast(Path, config.trainer.checkpoint_dir)
-        / f"epoch-{trainer.last_completed_epoch:04d}.pt"
-        if trainer.last_completed_epoch
-        else resume
-    )
-    return {
-        "output_dir": str(config.output_dir),
-        "run_id": run_info.run_id,
-        "run_record": str(config.output_dir / "run.json"),
-        "dataset_id": run_info.dataset_id,
-        "dataset_fingerprint": run_info.dataset_fingerprint,
-        "last_checkpoint": str(last_checkpoint) if last_checkpoint else None,
-        "best_checkpoint": str(config.trainer.checkpoint_dir / "best.pt")
-        if trainer.best_epoch is not None and config.trainer.checkpoint_dir
-        else None,
-        "best_epoch": trainer.best_epoch,
-        "best_metric": trainer.best_metric,
-        "metrics_log": str(metrics_log),
-        "history": [asdict(item) for item in history],
-        "resumed_from": str(resume) if resume else None,
-    }
+        resume=resume,
+    ).to_dict()
 
 
 def evaluate_artifact(
@@ -178,60 +56,16 @@ def evaluate_artifact(
     device: str,
     output: Path,
 ) -> dict[str, Any]:
-    loaded = ArtifactService.load(artifact, map_location=device)
-    manifest = DatasetManifest.load(
-        manifest_path or loaded.manifest.preprocessing["manifest"]
-    )
-    dataset_fingerprint = fingerprint_manifest(manifest)
-    raw_source_run_id = loaded.manifest.metadata.get("source_run_id")
-    if raw_source_run_id is not None and (
-        not isinstance(raw_source_run_id, str) or not raw_source_run_id.strip()
-    ):
-        raise ValueError("artifact metadata.source_run_id 必须是非空字符串")
-    source_run_id = cast(str | None, raw_source_run_id)
-    run_metadata = EvaluationService.create_run_metadata(
-        source_artifact=artifact,
-        source_run_id=source_run_id,
-        dataset_id=manifest.meta.dataset_id,
-        dataset_fingerprint=dataset_fingerprint.digest,
-        model_name=loaded.manifest.model_name,
+    """CLI 兼容入口；评估业务逻辑由 ``ser_lib.engine.experiment`` 提供。"""
+    return run_artifact_evaluation(
+        artifact,
+        manifest_path=manifest_path,
         split=split,
-        device=device,
-    )
-    batches = _loader(
-        manifest,
-        split,
-        loaded,
         batch_size=batch_size,
         workers=workers,
-    )
-    started_at = datetime.now(timezone.utc)
-    result = EvaluationService.run(
-        loaded.model,
-        batches,
-        num_classes=len(loaded.manifest.labels),
         device=device,
-        labels=loaded.manifest.labels,
-        event_context=EventContext(run_id=run_metadata.evaluation_id, split=split),
-    )
-    finished_at = datetime.now(timezone.utc)
-    EvaluationService.write_report(output, result)
-    run_info = EvaluationService.save_run(
-        output,
-        run_metadata,
-        result,
-        started_at=started_at,
-        finished_at=finished_at,
-    )
-    return {
-        "output_dir": str(output),
-        "evaluation_id": run_info.evaluation_id,
-        "evaluation_record": str(output / "evaluation.json"),
-        "source_run_id": run_info.source_run_id,
-        "dataset_id": run_info.dataset_id,
-        "dataset_fingerprint": run_info.dataset_fingerprint,
-        **result.summary_dict(),
-    }
+        output=output,
+    ).to_dict()
 
 
 def predict_artifact(
