@@ -13,7 +13,7 @@ from ser_lib.engine.checkpoint_catalog import (
     scan_checkpoints as scan_checkpoint_files,
 )
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig
-from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
+from ser_lib.engine.lineage import TrainingRunMetadata
 from ser_lib.engine.runs import (
     TrainingRunCatalog,
     TrainingRunDetail,
@@ -31,7 +31,7 @@ from ser_lib.models.base import SERModel
 
 
 class TrainingService:
-    """训练应用层 facade；Trainer 本身负责训练状态与 checkpoint lineage。"""
+    """训练兼容 facade；可复用训练能力以 engine API 为正式入口。"""
 
     @staticmethod
     def validate(
@@ -51,33 +51,17 @@ class TrainingService:
         dataset_id: str | None = None,
         dataset_fingerprint: str | None = None,
     ) -> Trainer:
-        """构造可追踪 Trainer，不读取 manifest 或隐式计算 fingerprint。
-
-        ``dataset_id`` 可以由已经加载 manifest 的 CLI/Web 显式传入；未提供时
-        使用 ``ExperimentConfig.data.dataset_id``。这避免 Trainer 为补 lineage
-        偷偷执行文件系统 I/O。
-        """
-        trainer = Trainer.from_experiment(
+        """兼容入口；正式构造与 lineage 由 ``Trainer.from_experiment`` 负责。"""
+        return Trainer.from_experiment(
             model,
             experiment,
             event_callback=event_callback,
             cancellation=cancellation,
             observability=observability,
             run_id=run_id,
-        )
-        from ser_lib import __version__
-
-        trainer.run_metadata = build_training_run_metadata(
-            run_id=trainer.run_id,
-            dataset_id=dataset_id if dataset_id is not None else experiment.data.dataset_id,
+            dataset_id=dataset_id,
             dataset_fingerprint=dataset_fingerprint,
-            model_id=model.model_spec.model_id,
-            config=experiment.model_dump(mode="json"),
-            seed=experiment.trainer.seed,
-            device=str(trainer.device),
-            library_version=__version__,
         )
-        return trainer
 
     @staticmethod
     def get_run_metadata(trainer: Trainer) -> TrainingRunMetadata | None:
@@ -92,16 +76,13 @@ class TrainingService:
         on_epoch_end: Callable[[EpochResult], None] | None = None,
         start_epoch: int | None = None,
     ) -> TrainingResult:
-        """执行 Trainer.fit，并直接返回 Web 需要的 TrainingResult。"""
-        trainer.fit(
+        """兼容入口；直接返回公开 ``Trainer.fit`` 的 ``TrainingResult``。"""
+        return trainer.fit(
             train_batches,
             val_batches=val_batches,
             on_epoch_end=on_epoch_end,
             start_epoch=start_epoch,
         )
-        if trainer.last_result is None:
-            raise RuntimeError("Trainer.fit 完成后未生成 TrainingResult")
-        return trainer.last_result
 
     @staticmethod
     def save_run(
