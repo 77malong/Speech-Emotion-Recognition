@@ -12,7 +12,6 @@ from ser_lib.inference import (
     PredictionResult,
     write_batch_predictions,
 )
-from ser_lib.services import InferenceService
 
 
 class FakePredictor:
@@ -89,15 +88,14 @@ def test_unknown_length_iterable_is_consumed_chunk_by_chunk(tmp_path: Path):
     assert all(event.total is None for event in progress)
 
 
-def test_inference_service_forwards_sink_and_retention_options(tmp_path: Path):
+def test_batch_predictor_forwards_sink_and_retention_options(tmp_path: Path):
     audio = tmp_path / "audio.wav"
     audio.write_bytes(b"audio")
-    output = tmp_path / "service.jsonl"
+    output = tmp_path / "direct.jsonl"
 
     with JsonlBatchPredictionSink(output) as sink:
-        result = InferenceService.predict_records(
-            FakePredictor(),
-            [AudioRecord("service", audio)],
+        result = BatchEmotionPredictor(FakePredictor()).predict_records(
+            [AudioRecord("direct", audio)],
             result_sink=sink,
             retain_results=False,
         )
@@ -105,7 +103,7 @@ def test_inference_service_forwards_sink_and_retention_options(tmp_path: Path):
     assert result.total == 1
     assert result.succeeded == 1
     assert result.retained_results == 0
-    assert json.loads(output.read_text(encoding="utf-8"))["uid"] == "service"
+    assert json.loads(output.read_text(encoding="utf-8"))["uid"] == "direct"
 
 
 def test_declared_total_mismatch_is_rejected(tmp_path: Path):
