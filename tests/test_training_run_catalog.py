@@ -18,11 +18,11 @@ from ser_lib.engine import (
     TrainingRunInfo,
     load_training_run_info,
     scan_training_runs,
+    write_training_run_info,
 )
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.models import CNNBaseline
-from ser_lib.services import TrainingService
 
 
 def _experiment(tmp_path: Path) -> ExperimentConfig:
@@ -71,22 +71,30 @@ def _batch():
 
 
 def _completed_run(tmp_path: Path):
-    trainer = TrainingService.create_trainer(
+    trainer = Trainer.from_experiment(
         _model(),
         _experiment(tmp_path),
         run_id="run-catalog-demo",
         dataset_id="manifest-demo",
         dataset_fingerprint="d" * 64,
     )
-    result = TrainingService.run(trainer, [_batch()])
+    result = trainer.fit([_batch()])
     return trainer, result
 
 
-def test_training_service_persists_and_inspects_run_record(tmp_path: Path):
+def _save_run(directory: Path, trainer: Trainer, result) -> TrainingRunInfo:
+    metadata = trainer.run_metadata
+    if metadata is None:
+        raise ValueError("Trainer 没有 TrainingRunMetadata，无法保存训练运行记录")
+    path = write_training_run_info(directory, metadata, result)
+    return load_training_run_info(path)
+
+
+def test_direct_api_persists_and_inspects_run_record(tmp_path: Path):
     trainer, result = _completed_run(tmp_path)
     run_dir = tmp_path / "runs" / "demo"
 
-    info = TrainingService.save_run(run_dir, trainer, result)
+    info = _save_run(run_dir, trainer, result)
 
     assert isinstance(info, TrainingRunInfo)
     assert info.run_id == "run-catalog-demo"
@@ -101,7 +109,7 @@ def test_training_service_persists_and_inspects_run_record(tmp_path: Path):
     assert (run_dir / "run.json").is_file()
     json.dumps(info.to_dict())
 
-    by_directory = TrainingService.inspect_run(run_dir)
+    by_directory = load_training_run_info(run_dir)
     by_file = load_training_run_info(run_dir / "run.json")
     assert by_directory == by_file == info
 
@@ -109,7 +117,7 @@ def test_training_service_persists_and_inspects_run_record(tmp_path: Path):
 def test_run_record_tracks_actual_directory_after_move(tmp_path: Path):
     trainer, result = _completed_run(tmp_path)
     original = tmp_path / "runs" / "original"
-    TrainingService.save_run(original, trainer, result)
+    _save_run(original, trainer, result)
     moved = tmp_path / "runs" / "moved"
     original.rename(moved)
 
@@ -123,19 +131,19 @@ def test_run_catalog_is_lightweight_isolates_failures_and_emits_progress(tmp_pat
     trainer, result = _completed_run(tmp_path)
     runs_root = tmp_path / "runs"
     good = runs_root / "good"
-    TrainingService.save_run(good, trainer, result)
+    _save_run(good, trainer, result)
     bad = runs_root / "nested" / "bad"
     bad.mkdir(parents=True)
     (bad / "run.json").write_text("{broken", encoding="utf-8")
     events = []
 
-    shallow = TrainingService.scan_runs(runs_root, event_callback=events.append)
+    shallow = scan_training_runs(runs_root, event_callback=events.append)
     assert shallow.total == 1
     assert len(shallow.runs) == 1
     assert shallow.failures == ()
 
     events.clear()
-    catalog = TrainingService.scan_runs(
+    catalog = scan_training_runs(
         runs_root,
         recursive=True,
         event_callback=events.append,
@@ -174,7 +182,7 @@ def test_run_catalog_supports_fail_fast_cancellation_and_missing_root(tmp_path: 
 def test_run_record_validation_rejects_corruption(tmp_path: Path):
     trainer, result = _completed_run(tmp_path)
     run_dir = tmp_path / "run"
-    info = TrainingService.save_run(run_dir, trainer, result)
+    info = _save_run(run_dir, trainer, result)
     payload = info.to_dict()
 
     payload["schema_version"] = 2
@@ -202,7 +210,7 @@ def test_run_record_validation_rejects_corruption(tmp_path: Path):
 
 def test_run_record_rejects_mismatched_ids_and_untracked_trainer(tmp_path: Path):
     trainer, result = _completed_run(tmp_path)
-    metadata = TrainingService.get_run_metadata(trainer)
+    metadata = trainer.run_metadata
     assert metadata is not None
 
     with pytest.raises(ValueError, match="run_id"):
@@ -213,6 +221,6 @@ def test_run_record_rejects_mismatched_ids_and_untracked_trainer(tmp_path: Path)
         )
 
     direct = Trainer(_model(), TrainerConfig(epochs=1))
-    direct_result = TrainingService.run(direct, [_batch()])
+    direct_result = direct.fit([_batch()])
     with pytest.raises(ValueError, match="TrainingRunMetadata"):
-        TrainingService.save_run(tmp_path / "direct", direct, direct_result)
+        _save_run(tmp_path / "direct", direct, direct_result)
