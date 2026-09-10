@@ -165,10 +165,47 @@ def test_weighted_sampler_generator_state_is_restored_on_resume(tmp_path: Path):
     assert list(resumed_sampler) == expected_next_indices
 
 
-def test_checkpoint_rejects_model_or_trainer_config_before_loading(tmp_path: Path):
+def test_checkpoint_allows_runtime_only_trainer_config_changes(tmp_path: Path):
     source = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
-    path = save_checkpoint(tmp_path / "state.pt", source, None, epoch=1,
-                           trainer_config={"epochs": 2})
+    path = save_checkpoint(
+        tmp_path / "state.pt",
+        source,
+        None,
+        epoch=1,
+        trainer_config={
+            "epochs": 2,
+            "checkpoint_dir": "old-checkpoints",
+            "save_last": True,
+            "save_best": True,
+            "gradient_accumulation_steps": 2,
+        },
+    )
+    matching = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
+    payload = load_checkpoint(
+        path,
+        matching,
+        expected_trainer_config={
+            "epochs": 8,
+            "checkpoint_dir": "new-checkpoints",
+            "save_last": False,
+            "save_best": False,
+            "gradient_accumulation_steps": 2,
+        },
+    )
+    assert payload["epoch"] == 1
+
+
+def test_checkpoint_rejects_model_or_algorithmic_trainer_config_before_loading(
+    tmp_path: Path,
+):
+    source = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
+    path = save_checkpoint(
+        tmp_path / "state.pt",
+        source,
+        None,
+        epoch=1,
+        trainer_config={"epochs": 2, "gradient_accumulation_steps": 2},
+    )
     target = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=7, dropout=0)
     before = {key: value.detach().clone() for key, value in target.state_dict().items()}
     with pytest.raises(ValueError, match="模型配置"):
@@ -180,7 +217,11 @@ def test_checkpoint_rejects_model_or_trainer_config_before_loading(tmp_path: Pat
         key: value.detach().clone() for key, value in matching.state_dict().items()
     }
     with pytest.raises(ValueError, match="trainer_config"):
-        load_checkpoint(path, matching, expected_trainer_config={"epochs": 3})
+        load_checkpoint(
+            path,
+            matching,
+            expected_trainer_config={"epochs": 3, "gradient_accumulation_steps": 3},
+        )
     assert all(
         torch.equal(value, before_matching[key])
         for key, value in matching.state_dict().items()
