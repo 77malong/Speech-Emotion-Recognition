@@ -54,6 +54,58 @@ def test_dataset_manifest_rejects_uid_repeated_across_splits(tmp_path: Path):
         DatasetManifest.load(tmp_path / "dataset.yaml")
 
 
+def test_dataset_manifest_rejects_overlapping_audio_segments_across_splits(
+    tmp_path: Path,
+):
+    (tmp_path / "train.jsonl").write_text(
+        '{"uid":"train-a","audio_path":"shared.wav","label":0,'
+        '"start_ms":0,"end_ms":1000}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "val.jsonl").write_text(
+        '{"uid":"val-a","audio_path":"shared.wav","label":0,'
+        '"start_ms":900,"end_ms":1500}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "dataset.yaml").write_text(
+        "schema_version: 1\n"
+        "dataset_id: overlap-demo\n"
+        "root: .\n"
+        "splits: {train: train.jsonl, val: val.jsonl}\n"
+        "labels: {0: {en: neutral}}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ManifestError, match="音频片段跨 split 重叠"):
+        DatasetManifest.load(tmp_path / "dataset.yaml")
+
+
+def test_dataset_manifest_allows_adjacent_audio_segments_across_splits(
+    tmp_path: Path,
+):
+    (tmp_path / "train.jsonl").write_text(
+        '{"uid":"train-a","audio_path":"shared.wav","label":0,'
+        '"start_ms":0,"end_ms":1000}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "val.jsonl").write_text(
+        '{"uid":"val-a","audio_path":"shared.wav","label":0,'
+        '"start_ms":1000,"end_ms":1500}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "dataset.yaml").write_text(
+        "schema_version: 1\n"
+        "dataset_id: adjacent-demo\n"
+        "root: .\n"
+        "splits: {train: train.jsonl, val: val.jsonl}\n"
+        "labels: {0: {en: neutral}}\n",
+        encoding="utf-8",
+    )
+
+    manifest = DatasetManifest.load(tmp_path / "dataset.yaml")
+    assert [record.uid for record in manifest.records] == ["train-a", "val-a"]
+
+
 def test_manifest_resolves_audio_relative_to_declared_root(tmp_path: Path):
     root = tmp_path / "音频 root"
     root.mkdir()
