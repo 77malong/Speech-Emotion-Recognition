@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.core import CancellationToken, OperationCancelled, ProgressEvent
 from ser_lib.data import (
     DatasetEditConflictError,
     DatasetEditor,
@@ -17,6 +16,8 @@ from ser_lib.data import (
     restore_dataset_revision,
     scan_dataset_revisions,
 )
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.services import DatasetService
 
 
