@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from ser_lib.engine import EvaluationRunCatalog, scan_evaluation_runs
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
-from ser_lib.services import EvaluationService
 
 
 def _record(evaluation_id: str, created_at: datetime) -> dict:
@@ -70,7 +69,7 @@ def test_evaluation_catalog_scans_shallow_sorts_and_isolates_failures(tmp_path: 
     (bad / "evaluation.json").write_text("{}", encoding="utf-8")
     events = []
 
-    catalog = EvaluationService.scan_runs(root, event_callback=events.append)
+    catalog = scan_evaluation_runs(root, event_callback=events.append)
 
     assert isinstance(catalog, EvaluationRunCatalog)
     assert [run.evaluation_id for run in catalog.runs] == ["eval_new", "eval_old"]
