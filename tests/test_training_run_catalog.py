@@ -8,7 +8,6 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from ser_lib.core import CancellationToken, OperationCancelled, ProgressEvent
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.engine import (
@@ -20,6 +19,8 @@ from ser_lib.engine import (
     load_training_run_info,
     scan_training_runs,
 )
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.models import CNNBaseline
 from ser_lib.services import TrainingService
 
