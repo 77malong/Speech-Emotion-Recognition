@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import torch
 
-from ser_lib import RuntimeCapabilities, get_runtime_capabilities
+from ser_lib.runtime import RuntimeCapabilities, get_runtime_capabilities
 
 
 def test_runtime_capabilities_are_json_safe_and_include_cpu():

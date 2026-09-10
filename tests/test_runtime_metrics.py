@@ -3,7 +3,7 @@ import json
 import pytest
 import torch
 
-from ser_lib import RuntimeMetrics, get_runtime_metrics
+from ser_lib.runtime import RuntimeMetrics, get_runtime_metrics
 
 
 def test_cpu_runtime_metrics_are_lightweight_and_json_safe():

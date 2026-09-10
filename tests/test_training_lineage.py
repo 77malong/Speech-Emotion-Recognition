@@ -5,11 +5,16 @@ from pathlib import Path
 
 import torch
 
-from ser_lib import TrainingRunMetadata
 from ser_lib.artifacts import export_model_artifact, inspect_model_artifact
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
-from ser_lib.engine import ExperimentConfig, ModelConfig, Trainer, TrainerConfig
+from ser_lib.engine import (
+    ExperimentConfig,
+    ModelConfig,
+    Trainer,
+    TrainerConfig,
+    TrainingRunMetadata,
+)
 from ser_lib.engine.lineage import artifact_provenance_from_training_run
 from ser_lib.models import CNNBaseline
 

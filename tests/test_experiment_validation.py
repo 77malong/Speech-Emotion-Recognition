@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ser_lib import ExperimentValidationResult as RootExperimentValidationResult
-from ser_lib import validate_experiment as root_validate_experiment
 from ser_lib.data import BatchingConfig
 from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
 from ser_lib.engine import ExperimentValidationResult, validate_experiment
@@ -76,8 +74,6 @@ def test_valid_dry_run_is_json_safe_and_does_not_create_model_or_output(monkeypa
     monkeypatch.setattr(model_registry, "create", forbidden_create)
     result = validate_experiment(config)
 
-    assert RootExperimentValidationResult is ExperimentValidationResult
-    assert root_validate_experiment is validate_experiment
     assert result.valid is True
     assert result.diagnostics == ()
     assert result.summary["dataset_id"] == "dry-run"

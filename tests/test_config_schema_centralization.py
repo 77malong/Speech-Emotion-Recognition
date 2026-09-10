@@ -6,7 +6,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from ser_lib import build_experiment_config as root_build_experiment_config
+from ser_lib.config import build_experiment_config as public_build_experiment_config
 from ser_lib.config.presets import (
     build_experiment_config as central_build_experiment_config,
 )
@@ -135,7 +135,7 @@ def test_config_schema_modules_do_not_load_torch_execution_dependencies():
 
 
 def test_preset_build_is_central_and_payload_isolated():
-    assert central_build_experiment_config is root_build_experiment_config
+    assert central_build_experiment_config is public_build_experiment_config
     payload = get_experiment_preset_payload("cnn_logmel_baseline")
     payload["trainer"]["epochs"] = 999
     fresh = get_experiment_preset_payload("cnn_logmel_baseline")
