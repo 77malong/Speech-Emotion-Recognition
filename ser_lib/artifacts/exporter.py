@@ -131,6 +131,8 @@ def export_model_artifact(
             "labels 数量与模型 num_classes 不一致: "
             f"{len(normalized_labels)} != {declared_num_classes}"
         )
+    model.validate_artifact_labels(normalized_labels)
+    processor_config = model.artifact_processor_config
     card = model_card if isinstance(model_card, ModelCard) else ModelCard(**dict(model_card or {}))
     resolved_metadata = _standard_metadata(model, data_config, metadata)
 
@@ -195,6 +197,8 @@ def export_model_artifact(
         _write_json(temporary / "model_config.json", validated_params)
         _write_json(temporary / "labels.json", normalized_labels)
         _write_json(temporary / "metrics.json", dict(metrics or {}))
+        if processor_config is not None:
+            _write_json(temporary / "processor_config.json", processor_config)
         (temporary / "README.md").write_text(
             _model_card_markdown(card, model_name, normalized_labels),
             encoding="utf-8",
@@ -211,6 +215,8 @@ def export_model_artifact(
             "metrics.json",
             "README.md",
         ]
+        if processor_config is not None:
+            component_files.append("processor_config.json")
         total_hash_bytes = sum(
             (temporary / name).stat().st_size for name in component_files
         )
@@ -298,6 +304,7 @@ def export_model_artifact(
             weights_sha256=hashes["weights.safetensors"],
             files_sha256=hashes,
             preprocessing=preprocessing,
+            processor=processor_config,
             labels=normalized_labels,
             metrics=dict(metrics or {}),
             model_card=card,
