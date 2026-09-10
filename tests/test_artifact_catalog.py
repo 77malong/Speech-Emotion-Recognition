@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from ser_lib.artifacts import export_model_artifact, scan_model_artifacts
+from ser_lib.artifacts import ArtifactEntry, export_model_artifact, scan_model_artifacts
 from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.foundation.events import ProgressEvent
 from ser_lib.models import CNNBaseline
@@ -28,15 +28,16 @@ def _config(tmp_path: Path) -> DataConfig:
     )
 
 
-def test_artifact_catalog_scans_without_hashing_and_exposes_management_metadata(
+def test_artifact_catalog_scans_without_hashing_and_returns_manifest_entry(
     tmp_path: Path,
     monkeypatch,
 ):
     model = CNNBaseline(feature_dim=16, num_classes=2, hidden_dim=4, dropout=0)
     root = tmp_path / "models"
     root.mkdir()
+    artifact_dir = root / "model-a"
     export_model_artifact(
-        root / "model-a",
+        artifact_dir,
         model,
         model_name="cnn_baseline",
         data_config=_config(tmp_path),
@@ -62,17 +63,15 @@ def test_artifact_catalog_scans_without_hashing_and_exposes_management_metadata(
 
     assert len(catalog.artifacts) == 1
     assert len(catalog.failures) == 1
-    info = catalog.artifacts[0]
-    assert info.model_name == "cnn_baseline"
-    assert info.dataset_id == "catalog-dataset"
-    assert info.dataset_fingerprint == "abc123"
-    assert info.source_run_id == "run-123"
-    assert info.created_at
-    assert info.artifact_id
-    assert info.parameter_count == sum(parameter.numel() for parameter in model.parameters())
-    assert info.weights_bytes > 0
-    assert info.total_bytes > info.weights_bytes
-    assert info.metrics == {"uar": 0.75}
+    entry = catalog.artifacts[0]
+    assert isinstance(entry, ArtifactEntry)
+    assert entry.path == artifact_dir.as_posix()
+    assert entry.manifest.model_name == "cnn_baseline"
+    assert entry.manifest.preprocessing["dataset_id"] == "catalog-dataset"
+    assert entry.manifest.metadata["dataset_fingerprint"] == "abc123"
+    assert entry.manifest.metadata["source_run_id"] == "run-123"
+    assert entry.manifest.metrics == {"uar": 0.75}
+    assert entry.weights_bytes > 0
     assert catalog.failures[0].directory.endswith("broken")
     json.dumps(catalog.to_dict())
 
@@ -97,4 +96,4 @@ def test_artifact_scan_supports_recursive_catalog(tmp_path: Path):
     assert scan_model_artifacts(root).artifacts == ()
     recursive = scan_model_artifacts(root, recursive=True)
     assert len(recursive.artifacts) == 1
-    assert recursive.artifacts[0].model_name == "cnn_baseline"
+    assert recursive.artifacts[0].manifest.model_name == "cnn_baseline"
