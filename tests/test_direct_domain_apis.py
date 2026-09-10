@@ -13,7 +13,7 @@ from ser_lib.data import (
     SERBatch,
     TensorSpec,
     fingerprint_manifest,
-    query_records,
+    iter_records,
     summarize_manifest,
 )
 from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
@@ -105,14 +105,13 @@ def test_dataset_and_runtime_workflows_use_direct_domain_apis(tmp_path: Path):
     manifest = _dataset(tmp_path)
 
     summary = summarize_manifest(manifest)
-    page = query_records(manifest, split="train", limit=10)
+    records = list(iter_records(manifest, split="train"))
     fingerprint = fingerprint_manifest(manifest)
     editor = DatasetEditor(manifest)
 
     assert summary.dataset_id == "direct-api-demo"
     assert summary.total_records == 2
-    assert page.total == 1
-    assert page.items[0].uid == "a"
+    assert [record.uid for record in records] == ["a"]
     assert len(fingerprint.digest) == 64
     editor.move_records(["a"], "val")
     assert editor.dirty is True
