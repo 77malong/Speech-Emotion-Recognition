@@ -4,9 +4,16 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 import torch
+from pydantic import ValidationError
 
-from ser_lib.engine import TrainingRunDetail, TrainingRunInfo, inspect_training_run_detail
+from ser_lib.engine import (
+    TrainingRunInfo,
+    load_training_history,
+    load_training_run_info,
+    scan_checkpoints,
+)
 
 
 def _write_run(run_dir: Path, checkpoint_dir: Path) -> TrainingRunInfo:
@@ -72,7 +79,7 @@ def _write_history(run_dir: Path) -> None:
     )
 
 
-def test_training_run_detail_aggregates_lightweight_sources(
+def test_run_history_and_checkpoint_scan_are_independent_lightweight_sources(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -86,79 +93,65 @@ def test_training_run_detail_aggregates_lightweight_sources(
     (checkpoint_dir / "epoch-0002.pt").write_bytes(b"opaque")
 
     def fail_torch_load(*args, **kwargs):
-        raise AssertionError("TrainingRunDetail must not call torch.load")
+        raise AssertionError("checkpoint catalog must not call torch.load")
 
     monkeypatch.setattr(torch, "load", fail_torch_load)
 
-    detail = inspect_training_run_detail(run_dir)
+    run = load_training_run_info(run_dir)
+    history = load_training_history(run_dir)
+    checkpoints = scan_checkpoints(checkpoint_dir)
 
-    assert isinstance(detail, TrainingRunDetail)
-    assert detail.run.run_id == "run-detail-demo"
-    assert detail.history is not None
-    assert detail.history.epoch_count == 2
-    assert {item.name for item in detail.checkpoints.checkpoints} == {
+    assert run.run_id == "run-detail-demo"
+    assert history.epoch_count == 2
+    assert {item.name for item in checkpoints.checkpoints} == {
         "best.pt",
         "last.pt",
         "epoch-0002.pt",
     }
-    assert detail.diagnostics == ()
-    json.dumps(detail.to_dict())
 
 
-def test_training_run_detail_tolerates_missing_history_and_checkpoints(tmp_path: Path):
+def test_missing_history_and_checkpoint_directory_are_explicit_errors(tmp_path: Path):
     run_dir = tmp_path / "run"
     checkpoint_dir = tmp_path / "missing-checkpoints"
     _write_run(run_dir, checkpoint_dir)
 
-    detail = inspect_training_run_detail(run_dir)
-
-    assert detail.history is None
-    assert detail.checkpoints.checkpoints == ()
-    assert detail.checkpoints.failures == ()
-    assert detail.checkpoints.root == checkpoint_dir.as_posix()
-    assert [item.code for item in detail.diagnostics] == [
-        "training_history_unavailable",
-        "training_checkpoint_directory_missing",
-    ]
-    json.dumps(detail.to_dict())
+    assert load_training_run_info(run_dir).run_id == "run-detail-demo"
+    with pytest.raises(FileNotFoundError, match="history.json"):
+        load_training_history(run_dir)
+    with pytest.raises(NotADirectoryError, match="checkpoint"):
+        scan_checkpoints(checkpoint_dir)
 
 
-def test_training_run_detail_uses_run_directory_after_move(tmp_path: Path):
+def test_run_and_history_use_actual_directory_after_move(tmp_path: Path):
     original = tmp_path / "original"
     checkpoint_dir = tmp_path / "checkpoints"
     _write_run(original, checkpoint_dir)
     _write_history(original)
-    checkpoint_dir.mkdir(parents=True)
 
     moved = tmp_path / "moved"
     original.rename(moved)
 
-    detail = inspect_training_run_detail(moved)
+    run = load_training_run_info(moved)
+    history = load_training_history(moved)
 
-    assert detail.run.directory == moved.as_posix()
-    assert detail.history is not None
-    assert detail.history.directory == moved.as_posix()
+    assert run.directory == moved.as_posix()
+    assert history.directory == moved.as_posix()
 
 
-def test_training_run_detail_keeps_corrupt_history_nonfatal(tmp_path: Path):
+def test_corrupt_history_error_is_not_hidden_by_detail_wrapper(tmp_path: Path):
     run_dir = tmp_path / "run"
     checkpoint_dir = tmp_path / "checkpoints"
     _write_run(run_dir, checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True)
     (run_dir / "history.json").write_text("{broken", encoding="utf-8")
 
-    detail = inspect_training_run_detail(run_dir)
-
-    assert detail.history is None
-    assert [item.code for item in detail.diagnostics] == ["training_history_unavailable"]
-    assert detail.diagnostics[0].details["error_type"] == "JSONDecodeError"
+    with pytest.raises(json.JSONDecodeError):
+        load_training_history(run_dir)
 
 
-def test_training_run_detail_keeps_history_validation_error_nonfatal(tmp_path: Path):
+def test_history_validation_error_is_not_hidden_by_detail_wrapper(tmp_path: Path):
     run_dir = tmp_path / "run"
     checkpoint_dir = tmp_path / "checkpoints"
     _write_run(run_dir, checkpoint_dir)
-    checkpoint_dir.mkdir(parents=True)
     (run_dir / "history.json").write_text(
         json.dumps(
             [
@@ -175,9 +168,5 @@ def test_training_run_detail_keeps_history_validation_error_nonfatal(tmp_path: P
         encoding="utf-8",
     )
 
-    detail = inspect_training_run_detail(run_dir)
-
-    assert detail.history is None
-    assert detail.checkpoints.checkpoints == ()
-    assert [item.code for item in detail.diagnostics] == ["training_history_unavailable"]
-    assert detail.diagnostics[0].details["error_type"] == "ValidationError"
+    with pytest.raises(ValidationError):
+        load_training_history(run_dir)
