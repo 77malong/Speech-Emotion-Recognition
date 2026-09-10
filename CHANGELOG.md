@@ -2,7 +2,7 @@
 
 本项目遵循语义化版本。当前内容尚未发布。
 
-## [Unreleased]
+## [0.3.0] - Unreleased
 
 ### Added
 
@@ -42,6 +42,7 @@
 
 ### Breaking API migration
 
+`0.3.0` 明确承载本轮 breaking Python API 边界调整；不把删除/迁移后的公开 API 面继续伪装成 `0.2.0` 的兼容更新。
 以下是本轮核心边界重构中的典型 Python API 迁移：
 
 ```python
