@@ -12,12 +12,12 @@ from torch import nn
 import ser_lib
 from scripts.check_coverage import DEFAULT_THRESHOLDS
 from ser_lib.artifacts import ModelArtifactManifest
-from ser_lib.core import EVENT_SCHEMA_VERSION
 from ser_lib.data import DATASET_REVISION_SCHEMA_VERSION
 from ser_lib.data.config import AudioSettings, load_data_config
 from ser_lib.data.manifest import MANIFEST_SCHEMA_VERSION
 from ser_lib.engine import EVALUATION_RUN_SCHEMA_VERSION, RUN_RECORD_SCHEMA_VERSION
 from ser_lib.engine.checkpoint import CHECKPOINT_FORMAT_VERSION
+from ser_lib.foundation.events import EVENT_SCHEMA_VERSION
 from ser_lib.models import HFAudioClassifier, model_registry
 
 
@@ -33,8 +33,13 @@ def test_pre_refactor_public_api_exact_snapshot():
     assert ser_lib.__version__ == snapshot["version"]
 
     for module_name, expected in snapshot["public_api"].items():
+        if module_name == "ser_lib.core":
+            continue
         module = importlib.import_module(module_name)
         assert list(module.__all__) == expected, module_name
+
+    # Stage 01 的历史快照继续记录已退役 namespace，不能通过改 fixture 抹掉基线证据。
+    assert snapshot["public_api"]["ser_lib.core"]
 
 
 def test_pre_refactor_persistent_format_versions_are_locked():
@@ -100,8 +105,12 @@ def test_audio_settings_round_trip_unknown_field_and_config_relative_path(tmp_pa
 def test_pre_refactor_coverage_thresholds_and_ci_matrix_are_recorded():
     snapshot = _snapshot()
     for prefix, minimum in snapshot["coverage_thresholds"].items():
+        if prefix == "ser_lib/core/":
+            continue
         assert DEFAULT_THRESHOLDS[prefix] == minimum
+    assert "ser_lib/core/" not in DEFAULT_THRESHOLDS
     assert DEFAULT_THRESHOLDS["ser_lib/foundation/"] == 85.0
+    assert DEFAULT_THRESHOLDS["ser_lib/config/"] == 85.0
 
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
