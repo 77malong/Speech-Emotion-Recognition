@@ -12,48 +12,18 @@ from ser_lib.foundation.events import CancellationCheck, EventCallback, Progress
 
 
 @dataclass(frozen=True, slots=True)
-class ArtifactInfo:
-    """模型管理列表所需的轻量、JSON-safe Artifact 信息。"""
+class ArtifactEntry:
+    """Artifact 扫描的最小资源条目；manifest 保持领域原始结构。"""
 
-    artifact_id: str
-    directory: str
-    model_name: str
-    schema_version: int
-    library_version: str
-    weights_format: str
-    weights_file: str
+    path: str
+    manifest: ModelArtifactManifest
     weights_bytes: int
-    total_bytes: int
-    num_classes: int
-    labels: dict[int, str]
-    metrics: dict[str, float]
-    dataset_id: str | None
-    dataset_fingerprint: str | None
-    source_run_id: str | None
-    created_at: str | None
-    parameter_count: int | None
-    metadata: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "artifact_id": self.artifact_id,
-            "directory": self.directory,
-            "model_name": self.model_name,
-            "schema_version": self.schema_version,
-            "library_version": self.library_version,
-            "weights_format": self.weights_format,
-            "weights_file": self.weights_file,
+            "path": self.path,
+            "manifest": self.manifest.model_dump(mode="json"),
             "weights_bytes": self.weights_bytes,
-            "total_bytes": self.total_bytes,
-            "num_classes": self.num_classes,
-            "labels": dict(self.labels),
-            "metrics": dict(self.metrics),
-            "dataset_id": self.dataset_id,
-            "dataset_fingerprint": self.dataset_fingerprint,
-            "source_run_id": self.source_run_id,
-            "created_at": self.created_at,
-            "parameter_count": self.parameter_count,
-            "metadata": dict(self.metadata),
         }
 
 
@@ -74,7 +44,7 @@ class ArtifactScanFailure:
 @dataclass(frozen=True, slots=True)
 class ArtifactCatalog:
     root: str
-    artifacts: tuple[ArtifactInfo, ...]
+    artifacts: tuple[ArtifactEntry, ...]
     failures: tuple[ArtifactScanFailure, ...]
 
     @property
@@ -90,54 +60,12 @@ class ArtifactCatalog:
         }
 
 
-def _optional_str(value: Any) -> str | None:
-    return value if isinstance(value, str) and value else None
-
-
-def _optional_nonnegative_int(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
-
-
-def _artifact_info(directory: Path, manifest: ModelArtifactManifest) -> ArtifactInfo:
-    metadata = dict(manifest.metadata)
-    artifact_id = _optional_str(metadata.get("artifact_id")) or directory.name
-    dataset_id = _optional_str(metadata.get("dataset_id"))
-    if dataset_id is None:
-        dataset_id = _optional_str(manifest.preprocessing.get("dataset_id"))
-
-    declared_files = (
-        set(manifest.files_sha256)
-        if manifest.schema_version >= 2
-        else {manifest.weights_file}
-    )
-    declared_files.add(manifest.weights_file)
-    total_bytes = (directory / "manifest.json").stat().st_size
-    for name in declared_files:
-        total_bytes += (directory / name).stat().st_size
-
+def _artifact_entry(directory: Path, manifest: ModelArtifactManifest) -> ArtifactEntry:
     weights_path = directory / manifest.weights_file
-    return ArtifactInfo(
-        artifact_id=artifact_id,
-        directory=directory.as_posix(),
-        model_name=manifest.model_name,
-        schema_version=manifest.schema_version,
-        library_version=manifest.library_version,
-        weights_format=manifest.weights_format,
-        weights_file=manifest.weights_file,
+    return ArtifactEntry(
+        path=directory.as_posix(),
+        manifest=manifest,
         weights_bytes=weights_path.stat().st_size,
-        total_bytes=total_bytes,
-        num_classes=len(manifest.labels),
-        labels=dict(manifest.labels),
-        metrics=dict(manifest.metrics),
-        dataset_id=dataset_id,
-        dataset_fingerprint=_optional_str(metadata.get("dataset_fingerprint")),
-        source_run_id=(
-            _optional_str(metadata.get("source_run_id"))
-            or _optional_str(metadata.get("run_id"))
-        ),
-        created_at=_optional_str(metadata.get("created_at")),
-        parameter_count=_optional_nonnegative_int(metadata.get("parameter_count")),
-        metadata=metadata,
     )
 
 
@@ -168,12 +96,12 @@ def scan_model_artifacts(
     event_callback: EventCallback | None = None,
     cancellation: CancellationCheck | None = None,
 ) -> ArtifactCatalog:
-    """扫描 Artifact 根目录；只调用轻量 inspect，绝不计算文件 SHA256。"""
+    """扫描 Artifact 根目录；只调用轻量 inspect/stat，绝不计算文件 SHA256。"""
     root_path = Path(root)
     if not root_path.is_dir():
         raise NotADirectoryError(f"Artifact Catalog 根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
-    artifacts: list[ArtifactInfo] = []
+    artifacts: list[ArtifactEntry] = []
     failures: list[ArtifactScanFailure] = []
     total = len(candidates)
 
@@ -182,7 +110,7 @@ def scan_model_artifacts(
             cancellation.raise_if_cancelled()
         try:
             manifest = inspect_model_artifact(directory)
-            artifacts.append(_artifact_info(directory, manifest))
+            artifacts.append(_artifact_entry(directory, manifest))
         except Exception as exc:
             if fail_fast:
                 raise
@@ -208,7 +136,10 @@ def scan_model_artifacts(
             )
 
     artifacts.sort(
-        key=lambda item: (item.model_name.casefold(), item.artifact_id.casefold())
+        key=lambda item: (
+            item.manifest.model_name.casefold(),
+            item.path.casefold(),
+        )
     )
     return ArtifactCatalog(
         root=root_path.as_posix(),
@@ -218,7 +149,7 @@ def scan_model_artifacts(
 
 
 __all__ = [
-    "ArtifactInfo",
+    "ArtifactEntry",
     "ArtifactScanFailure",
     "ArtifactCatalog",
     "scan_model_artifacts",
