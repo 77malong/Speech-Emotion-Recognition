@@ -24,8 +24,13 @@ def _load_json(name: str) -> dict:
     return json.loads((_FIXTURE_DIR / name).read_text(encoding="utf-8"))
 
 
-def _cnn() -> CNNBaseline:
-    return CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0.0)
+def _cnn(*, feature_dim: int = 4) -> CNNBaseline:
+    return CNNBaseline(
+        feature_dim=feature_dim,
+        num_classes=2,
+        hidden_dim=6,
+        dropout=0.0,
+    )
 
 
 def test_legacy_experiment_v1_fixture_loads_with_relative_paths_preserved():
@@ -89,7 +94,7 @@ def test_legacy_checkpoint_v1_fixture_restores_model_state(tmp_path: Path):
 def test_legacy_artifact_v1_requires_explicit_pickle_authorization(tmp_path: Path):
     artifact = tmp_path / "artifact-v1"
     artifact.mkdir()
-    source = _cnn()
+    source = _cnn(feature_dim=16)
     weights = artifact / "model_state.pt"
     torch.save(source.state_dict(), weights)
 
