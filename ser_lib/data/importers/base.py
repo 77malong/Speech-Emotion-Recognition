@@ -12,18 +12,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, Protocol
 
-from ser_lib.core.diagnostics import Diagnostic
-from ser_lib.core.events import (
+from ser_lib.data.manifest import DatasetManifest
+from ser_lib.data.registry import ComponentDescriptor
+from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.diagnostics import Diagnostic
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
     EventContext,
     LifecycleEvent,
     ProgressEvent,
 )
-from ser_lib.core.exceptions import OperationCancelled
-from ser_lib.data.manifest import DatasetManifest
-from ser_lib.data.registry import ComponentDescriptor
-from ser_lib.data.types import AudioRecord
 
 ImportOperation = Literal["scan", "convert"]
 
