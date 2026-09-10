@@ -12,6 +12,12 @@ from ser_lib.models.base import SERModel
 
 
 CHECKPOINT_FORMAT_VERSION = 2
+_RUNTIME_ONLY_TRAINER_CONFIG_FIELDS = {
+    "epochs",
+    "checkpoint_dir",
+    "save_best",
+    "save_last",
+}
 
 
 def _rng_state() -> dict[str, Any]:
@@ -31,6 +37,15 @@ def _restore_rng_state(state: dict[str, Any]) -> None:
         torch.set_rng_state(state["torch_cpu"].cpu())
     if "torch_cuda" in state and torch.cuda.is_available():
         torch.cuda.set_rng_state_all(state["torch_cuda"])
+
+
+def _resume_trainer_signature(config: dict[str, Any]) -> dict[str, Any]:
+    """Return only trainer fields that must stay stable for numerical resume semantics."""
+    return {
+        key: value
+        for key, value in config.items()
+        if key not in _RUNTIME_ONLY_TRAINER_CONFIG_FIELDS
+    }
 
 
 def save_checkpoint(
@@ -106,7 +121,10 @@ def load_checkpoint(
         raise ValueError("checkpoint 与当前模型配置不一致")
     if expected_trainer_config is not None:
         saved_trainer_config = payload.get("trainer_config")
-        if saved_trainer_config and saved_trainer_config != expected_trainer_config:
+        if saved_trainer_config and (
+            _resume_trainer_signature(saved_trainer_config)
+            != _resume_trainer_signature(expected_trainer_config)
+        ):
             raise ValueError("checkpoint trainer_config 与当前训练配置不一致")
     model_state = payload.get("model_state")
     if not isinstance(model_state, dict):
