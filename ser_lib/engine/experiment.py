@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,6 +120,66 @@ def _resolve_experiment_config(config: ExperimentConfig | Path | str) -> Experim
     return load_experiment_config(config) if isinstance(config, (Path, str)) else config
 
 
+def _canonical_dataset_labels(
+    labels: Mapping[int, Mapping[str, Any]],
+    *,
+    source: str,
+) -> dict[int, str]:
+    """Extract stable label names used to prove integer-id semantic equivalence."""
+    if not labels:
+        raise ValueError(f"{source} 未声明 labels，无法验证整数标签的语义")
+    keys = sorted(int(index) for index in labels)
+    if keys != list(range(len(keys))):
+        raise ValueError(f"{source} labels 必须从 0 开始连续，实际: {keys}")
+
+    resolved: dict[int, str] = {}
+    for index in keys:
+        metadata = labels[index]
+        name: str | None = None
+        for field in ("en", "zh", "name"):
+            raw = metadata.get(field)
+            if isinstance(raw, str) and raw.strip():
+                name = raw.strip()
+                break
+        if name is None:
+            raise ValueError(
+                f"{source} 无法确定 label={index} 的语义；"
+                "labels 元数据必须提供非空 en、zh 或 name"
+            )
+        resolved[index] = name
+    return resolved
+
+
+def _validate_training_label_semantics(
+    configured: Mapping[int, Mapping[str, Any]] | None,
+    manifest_labels: Mapping[int, Mapping[str, Any]],
+) -> None:
+    if configured is None:
+        return
+    expected = _canonical_dataset_labels(configured, source="experiment data.labels")
+    actual = _canonical_dataset_labels(manifest_labels, source="manifest labels")
+    if expected != actual:
+        raise ValueError(
+            "训练标签语义与 manifest 不一致："
+            f"experiment={expected}, manifest={actual}"
+        )
+
+
+def _validate_artifact_label_semantics(
+    artifact_labels: Mapping[int, str],
+    manifest_labels: Mapping[int, Mapping[str, Any]],
+) -> None:
+    expected = {int(index): str(name).strip() for index, name in artifact_labels.items()}
+    actual = _canonical_dataset_labels(manifest_labels, source="evaluation manifest labels")
+    if sorted(expected) != list(range(len(expected))) or any(not name for name in expected.values()):
+        raise ValueError(f"artifact labels 非法，无法验证语义: {expected}")
+    if expected != actual:
+        raise ValueError(
+            "artifact 标签语义与 manifest 不一致："
+            f"artifact={expected}, manifest={actual}"
+        )
+
+
 def _loader(
     manifest: DatasetManifest,
     split: str,
@@ -201,8 +262,9 @@ def train_experiment(
             }
         )
 
-    components = build_experiment_components(resolved, train=True)
     manifest = DatasetManifest.load(resolved.data.manifest)
+    _validate_training_label_semantics(resolved.data.labels, manifest.meta.labels)
+    components = build_experiment_components(resolved, train=True)
     dataset_fingerprint = fingerprint_manifest(manifest)
     batches = _loader(
         manifest,
@@ -296,7 +358,7 @@ def evaluate_artifact(
     device: str = "cpu",
     output: Path | str,
 ) -> EvaluationExperimentResult:
-    """直接加载 artifact 并在指定 DatasetManifest 上完成评估与 lineage 落盘。"""
+    """直接加载 artifact 并在标签语义一致的 DatasetManifest 上完成评估。"""
     from ser_lib.artifacts.loader import load_model_artifact
 
     artifact_path = Path(artifact)
@@ -304,6 +366,7 @@ def evaluate_artifact(
     loaded = load_model_artifact(artifact_path, map_location=device)
     manifest_source = manifest_path or loaded.manifest.preprocessing["manifest"]
     manifest = DatasetManifest.load(manifest_source)
+    _validate_artifact_label_semantics(loaded.manifest.labels, manifest.meta.labels)
     dataset_fingerprint = fingerprint_manifest(manifest)
 
     raw_source_run_id = loaded.manifest.metadata.get("source_run_id")
