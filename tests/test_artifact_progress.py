@@ -3,13 +3,9 @@ from pathlib import Path
 import pytest
 
 from ser_lib.artifacts import export_model_artifact, verify_model_artifact
-from ser_lib.core import (
-    CancellationToken,
-    LifecycleEvent,
-    OperationCancelled,
-    ProgressEvent,
-)
 from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.foundation.events import CancellationToken, LifecycleEvent, ProgressEvent
+from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.models import CNNBaseline
 
 
