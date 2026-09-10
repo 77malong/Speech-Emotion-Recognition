@@ -117,4 +117,27 @@ def build_training_run_metadata(
     )
 
 
-__all__ = ["TrainingRunMetadata", "build_training_run_metadata"]
+def artifact_provenance_from_training_run(
+    source_run: TrainingRunMetadata,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """把训练 lineage 转成 artifact 可接收的通用 metadata。
+
+    artifacts 层只接收 JSON-safe provenance 映射，不反向依赖 engine 类型；调用方
+    若已显式提供同名 metadata，则保持调用方值优先，与旧 ArtifactService 行为一致。
+    """
+    resolved = dict(metadata or {})
+    resolved.setdefault("source_run_id", source_run.run_id)
+    if source_run.dataset_id is not None:
+        resolved.setdefault("dataset_id", source_run.dataset_id)
+    if source_run.dataset_fingerprint is not None:
+        resolved.setdefault("dataset_fingerprint", source_run.dataset_fingerprint)
+    return resolved
+
+
+__all__ = [
+    "TrainingRunMetadata",
+    "build_training_run_metadata",
+    "artifact_provenance_from_training_run",
+]
