@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-import ser_lib.core.config as legacy_core_config
+import ser_lib.config.base as config_base
+import ser_lib.config.loader as config_loader
 import ser_lib.data.config as legacy_data_config
 from ser_lib.config import (
     AudioConfig,
@@ -67,12 +68,12 @@ def test_config_package_has_no_runtime_domain_reverse_imports():
         ), path.name
 
 
-def test_core_config_compatibility_exports_are_identity_shims():
-    assert legacy_core_config.StrictConfig is StrictConfig
-    assert legacy_core_config.resolve_config_path is resolve_config_path
-    assert legacy_core_config.require_schema_version is require_schema_version
-    assert legacy_core_config.load_yaml_mapping is load_yaml_mapping
-    assert legacy_core_config.load_versioned_config is load_versioned_config
+def test_config_public_exports_are_identity_with_canonical_modules():
+    assert config_base.StrictConfig is StrictConfig
+    assert config_loader.resolve_config_path is resolve_config_path
+    assert config_loader.require_schema_version is require_schema_version
+    assert config_loader.load_yaml_mapping is load_yaml_mapping
+    assert config_loader.load_versioned_config is load_versioned_config
 
 
 def test_data_config_old_names_are_aliases_of_canonical_schema():
