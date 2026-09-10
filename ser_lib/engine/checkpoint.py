@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from ser_lib.models.base import SERModel
@@ -24,6 +25,7 @@ _RUNTIME_ONLY_TRAINER_CONFIG_FIELDS = {
 def _rng_state() -> dict[str, Any]:
     state: dict[str, Any] = {
         "python": random.getstate(),
+        "numpy": np.random.get_state(),
         "torch_cpu": torch.get_rng_state(),
     }
     if torch.cuda.is_available():
@@ -34,6 +36,8 @@ def _rng_state() -> dict[str, Any]:
 def _restore_rng_state(state: dict[str, Any]) -> None:
     if "python" in state:
         random.setstate(state["python"])
+    if "numpy" in state:
+        np.random.set_state(state["numpy"])
     if "torch_cpu" in state:
         torch.set_rng_state(state["torch_cpu"].cpu())
     if "torch_cuda" in state and torch.cuda.is_available():
