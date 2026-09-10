@@ -1,9 +1,4 @@
-"""可复用的训练与 artifact 评估实验编排。
-
-该模块承接原先 CLI/Service 中具有 Python SDK 价值的执行流程；CLI 只负责参数与
-输出适配。这里不引入新的 Trainer/Evaluator 包装层，训练仍走 :class:`Trainer`，
-评估仍走 :func:`evaluate`。
-"""
+"""高层实验工作流：从稳定配置直接训练或评估 artifact。"""
 
 from __future__ import annotations
 
@@ -12,47 +7,48 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import torch
 from torch.utils.data import DataLoader
 
 from ser_lib._version import __version__
-from ser_lib.config.experiment import ExperimentConfig
+from ser_lib.artifacts.manifest import ModelArtifactManifest
+from ser_lib.config.data import DataConfig
 from ser_lib.data.collate import SERCollator, build_collator
 from ser_lib.data.dataset import SERDataset
 from ser_lib.data.fingerprint import fingerprint_manifest
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.pipeline import SamplePipeline, build_components
 from ser_lib.engine.compatibility import validate_compatibility
-from ser_lib.engine.config import build_experiment_components, load_experiment_config
-from ser_lib.engine.evaluation_runs import (
-    EvaluationRunInfo,
-    build_evaluation_run_metadata,
-    load_evaluation_run_info,
-    write_evaluation_run_info,
-)
+from ser_lib.engine.config import ExperimentConfig, load_experiment_config
 from ser_lib.engine.evaluator import (
     EvaluationResult,
     PredictionSink,
     evaluate,
     write_evaluation_report,
 )
+from ser_lib.engine.lineage import (
+    EvaluationRunInfo,
+    TrainingRunInfo,
+    build_evaluation_run_metadata,
+    load_evaluation_run_info,
+    load_training_run_info,
+    write_evaluation_run_info,
+    write_training_run_info,
+)
 from ser_lib.engine.objectives import build_weighted_sampler
-from ser_lib.engine.runs import TrainingRunInfo, load_training_run_info, write_training_run_info
 from ser_lib.engine.trainer import Trainer, TrainingResult
-from ser_lib.foundation.events import EventContext
+from ser_lib.models.base import SERModel
+from ser_lib.models.registry import model_registry
 
 
-class _DataComponents(Protocol):
-    @property
-    def audio_loader(self) -> Any: ...
-
-    @property
-    def pipeline(self) -> SamplePipeline: ...
-
-    @property
-    def collator(self) -> SERCollator: ...
+@dataclass(frozen=True, slots=True)
+class _DataComponents:
+    audio_loader: Any
+    pipeline: SamplePipeline
+    collator: SERCollator
+    model: SERModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,8 +60,6 @@ class _ValidationComponents:
 
 @dataclass(frozen=True, slots=True)
 class TrainingExperimentResult:
-    """一次完整实验训练的 typed 结果与持久化位置。"""
-
     output_dir: Path
     training: TrainingResult
     run: TrainingRunInfo
@@ -76,56 +70,71 @@ class TrainingExperimentResult:
     last_checkpoint: Path | None
     best_checkpoint: Path | None
 
-    def to_dict(self) -> dict[str, Any]:
-        """返回与既有 CLI ``train`` 输出兼容的 JSON-safe 字典。"""
+    def to_dict(self) -> dict[str, object]:
         return {
             "output_dir": str(self.output_dir),
-            "run_id": self.run.run_id,
+            "training": self.training.to_dict(),
+            "run": self.run.to_dict(),
             "run_record": str(self.run_record),
-            "dataset_id": self.run.dataset_id,
-            "dataset_fingerprint": self.run.dataset_fingerprint,
-            "last_checkpoint": (
-                str(self.last_checkpoint) if self.last_checkpoint is not None else None
-            ),
-            "best_checkpoint": (
-                str(self.best_checkpoint) if self.best_checkpoint is not None else None
-            ),
-            "best_epoch": self.training.best_epoch,
-            "best_metric": self.training.best_metric,
             "metrics_log": str(self.metrics_log),
-            "history": [asdict(item) for item in self.training.epochs],
-            "resumed_from": (
-                str(self.resumed_from) if self.resumed_from is not None else None
-            ),
+            "history_path": str(self.history_path),
+            "resumed_from": str(self.resumed_from) if self.resumed_from is not None else None,
+            "last_checkpoint": str(self.last_checkpoint) if self.last_checkpoint is not None else None,
+            "best_checkpoint": str(self.best_checkpoint) if self.best_checkpoint is not None else None,
         }
 
 
 @dataclass(frozen=True, slots=True)
 class EvaluationExperimentResult:
-    """一次 artifact + dataset 评估的 typed 结果与持久化记录。"""
-
     output_dir: Path
     evaluation: EvaluationResult
     run: EvaluationRunInfo
-    evaluation_record: Path
-    metric_unit: str
+    run_record: Path
+    metrics_path: Path
+    predictions_path: Path | None
+    metric_unit: str = "sample"
 
-    def to_dict(self) -> dict[str, Any]:
-        """返回与既有 CLI ``evaluate`` 输出兼容的 JSON-safe 字典。"""
+    def to_dict(self) -> dict[str, object]:
         return {
             "output_dir": str(self.output_dir),
-            "evaluation_id": self.run.evaluation_id,
-            "evaluation_record": str(self.evaluation_record),
-            "source_run_id": self.run.source_run_id,
-            "dataset_id": self.run.dataset_id,
-            "dataset_fingerprint": self.run.dataset_fingerprint,
+            "evaluation": self.evaluation.to_dict(),
+            "run": self.run.to_dict(),
+            "run_record": str(self.run_record),
+            "metrics_path": str(self.metrics_path),
+            "predictions_path": (
+                str(self.predictions_path) if self.predictions_path is not None else None
+            ),
             "metric_unit": self.metric_unit,
-            **self.evaluation.summary_dict(),
         }
 
 
 def _resolve_experiment_config(config: ExperimentConfig | Path | str) -> ExperimentConfig:
-    return load_experiment_config(config) if isinstance(config, (Path, str)) else config
+    return config if isinstance(config, ExperimentConfig) else load_experiment_config(config)
+
+
+def build_experiment_components(
+    config: ExperimentConfig,
+    *,
+    train: bool,
+) -> _DataComponents:
+    from ser_lib.engine._seed import seed_random_components
+
+    seed_random_components(config.trainer.seed, deterministic=config.trainer.deterministic)
+    audio_loader, pipeline = build_components(config.data, train=train)
+    model = cast(SERModel, model_registry.create(config.model.type, **config.model.params))
+    validate_compatibility(
+        pipeline.output_specs,
+        model.model_spec,
+        config.data.batching,
+        num_classes=config.data.num_classes,
+        sample_rate=config.data.audio.target_sample_rate,
+    )
+    return _DataComponents(
+        audio_loader=audio_loader,
+        pipeline=pipeline,
+        collator=build_collator(pipeline.output_specs, config.data.batching),
+        model=model,
+    )
 
 
 def _canonical_dataset_labels(
@@ -133,42 +142,40 @@ def _canonical_dataset_labels(
     *,
     source: str,
 ) -> dict[int, str]:
-    """Extract stable label names used to prove integer-id semantic equivalence."""
     if not labels:
-        raise ValueError(f"{source} 未声明 labels，无法验证整数标签的语义")
-    keys = sorted(int(index) for index in labels)
-    if keys != list(range(len(keys))):
-        raise ValueError(f"{source} labels 必须从 0 开始连续，实际: {keys}")
-
-    resolved: dict[int, str] = {}
-    for index in keys:
-        metadata = labels[index]
-        name: str | None = None
-        for field in ("en", "zh", "name"):
-            raw = metadata.get(field)
-            if isinstance(raw, str) and raw.strip():
-                name = raw.strip()
-                break
-        if name is None:
-            raise ValueError(
-                f"{source} 无法确定 label={index} 的语义；"
-                "labels 元数据必须提供非空 en、zh 或 name"
-            )
-        resolved[index] = name
-    return resolved
+        raise ValueError(f"{source} 缺少 labels，无法验证标签语义")
+    normalized: dict[int, str] = {}
+    for raw_index, names in labels.items():
+        index = int(raw_index)
+        if not isinstance(names, Mapping):
+            raise ValueError(f"{source}[{index}] 必须是语言→名称映射")
+        selected = names.get("en")
+        if not isinstance(selected, str) or not selected.strip():
+            candidates = [
+                str(value).strip()
+                for _, value in sorted(names.items(), key=lambda item: str(item[0]))
+                if isinstance(value, str) and value.strip()
+            ]
+            if not candidates:
+                raise ValueError(f"{source}[{index}] 缺少非空标签名称")
+            selected = candidates[0]
+        normalized[index] = selected.strip()
+    if sorted(normalized) != list(range(len(normalized))):
+        raise ValueError(f"{source} 必须使用连续标签 id 0..N-1，实际: {sorted(normalized)}")
+    return normalized
 
 
 def _validate_training_label_semantics(
-    configured: Mapping[int, Mapping[str, Any]] | None,
+    experiment_labels: Mapping[int, Mapping[str, Any]],
     manifest_labels: Mapping[int, Mapping[str, Any]],
 ) -> None:
-    if configured is None:
+    if not experiment_labels:
         return
-    expected = _canonical_dataset_labels(configured, source="experiment data.labels")
+    expected = _canonical_dataset_labels(experiment_labels, source="experiment data.labels")
     actual = _canonical_dataset_labels(manifest_labels, source="manifest labels")
     if expected != actual:
         raise ValueError(
-            "训练标签语义与 manifest 不一致："
+            "experiment 标签语义与 manifest 不一致："
             f"experiment={expected}, manifest={actual}"
         )
 
@@ -245,16 +252,38 @@ def _build_validation_components(
 
 
 def _write_training_history(path: Path, result: TrainingResult) -> None:
+    """原子维护完整 run history；TrainingResult 仍只描述本次 fit segment。"""
+    by_epoch: dict[int, dict[str, Any]] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"history.json 不是合法 JSON: {path}") from exc
+        if not isinstance(existing, list):
+            raise ValueError("history.json 顶层必须是 epoch 列表")
+        for item in existing:
+            if not isinstance(item, dict):
+                raise ValueError("history.json epoch 记录必须是映射")
+            epoch = item.get("epoch")
+            if not isinstance(epoch, int) or epoch < 1:
+                raise ValueError("history.json epoch 必须是正整数")
+            if epoch in by_epoch:
+                raise ValueError(f"history.json 包含重复 epoch={epoch}")
+            by_epoch[epoch] = dict(item)
+
+    for item in result.epochs:
+        by_epoch[item.epoch] = asdict(item)
+
+    payload = [by_epoch[epoch] for epoch in sorted(by_epoch)]
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(
-        json.dumps([asdict(item) for item in result.epochs], ensure_ascii=False, indent=2),
+        json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     temporary.replace(path)
 
 
 def _evaluation_metric_unit(preprocessing: Mapping[str, Any]) -> str:
-    """把 artifact batching 配置映射为机器可读的评估指标单位。"""
     batching = preprocessing.get("batching")
     if isinstance(batching, Mapping):
         batching_type = batching.get("type")
@@ -271,7 +300,6 @@ def _write_evaluation_summary(
     *,
     metric_unit: str,
 ) -> None:
-    """原子写聚合指标和指标单位，不触碰 prediction sink 的输出。"""
     directory.mkdir(parents=True, exist_ok=True)
     metrics_path = directory / "metrics.json"
     temporary = directory / "metrics.json.tmp"
@@ -292,7 +320,6 @@ def train_experiment(
     workers: int = 0,
     resume: Path | str | None = None,
 ) -> TrainingExperimentResult:
-    """从实验配置直接完成训练、lineage、history 与 run record 持久化。"""
     resolved = _resolve_experiment_config(config)
     if resolved.trainer.checkpoint_dir is None:
         resolved = resolved.model_copy(
@@ -395,7 +422,6 @@ def evaluate_artifact(
     prediction_sink: PredictionSink | None = None,
     retain_predictions: bool = True,
 ) -> EvaluationExperimentResult:
-    """加载 artifact 并评估；可流式输出预测并显式标注指标统计单位。"""
     from ser_lib.artifacts.loader import load_model_artifact
 
     artifact_path = Path(artifact)
@@ -458,7 +484,9 @@ def evaluate_artifact(
         output_dir=output_dir,
         evaluation=result,
         run=run_info,
-        evaluation_record=evaluation_record,
+        run_record=evaluation_record,
+        metrics_path=output_dir / "metrics.json",
+        predictions_path=(output_dir / "predictions.jsonl") if retain_predictions else None,
         metric_unit=metric_unit,
     )
 
@@ -466,6 +494,7 @@ def evaluate_artifact(
 __all__ = [
     "TrainingExperimentResult",
     "EvaluationExperimentResult",
+    "build_experiment_components",
     "train_experiment",
     "evaluate_artifact",
 ]
