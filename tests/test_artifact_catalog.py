@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 
 from ser_lib.artifacts import scan_model_artifacts
-from ser_lib.core import ProgressEvent
 from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.foundation.events import ProgressEvent
 from ser_lib.models import CNNBaseline
 from ser_lib.services import ArtifactService
 
