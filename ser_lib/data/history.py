@@ -398,6 +398,37 @@ def scan_dataset_revisions(
     )
 
 
+def _trusted_restore_targets(
+    dataset: DatasetManifest,
+    record: _RevisionRecordModel,
+) -> dict[str, Path]:
+    """Resolve restore destinations only from the currently trusted manifest.
+
+    ``target_path`` remains useful evidence for detecting a modified revision record,
+    but it never grants write authority. Revisions whose logical file set or recorded
+    targets no longer match the current dataset declaration must be rejected before
+    staging any file.
+    """
+    targets: dict[str, Path] = {"dataset.yaml": dataset.meta.yaml_path.resolve()}
+    targets.update(
+        {
+            f"split:{split_name}": split_path.resolve()
+            for split_name, split_path in dataset.meta.splits.items()
+        }
+    )
+    if set(record.files) != set(targets):
+        raise ValueError(
+            "revision 文件集合与当前 DatasetManifest 声明不一致，拒绝恢复"
+        )
+    for logical_name, target in targets.items():
+        recorded_target = Path(record.files[logical_name].target_path).resolve()
+        if recorded_target != target:
+            raise ValueError(
+                f"revision target_path 与当前 DatasetManifest 不一致: {logical_name}"
+            )
+    return targets
+
+
 def restore_dataset_revision(
     manifest: DatasetManifest | Path | str,
     revision: Path | str,
@@ -426,6 +457,7 @@ def restore_dataset_revision(
     if Path(record.source_manifest).resolve() != dataset.meta.yaml_path.resolve():
         raise ValueError("revision 不属于当前 manifest 路径")
     inspect_dataset_revision(directory, verify=True, cancellation=cancellation)
+    trusted_targets = _trusted_restore_targets(dataset, record)
 
     staged: dict[Path, Path] = {}
     backups: dict[Path, Path | None] = {}
@@ -445,7 +477,7 @@ def restore_dataset_revision(
                 cancellation.raise_if_cancelled()
             file_info = record.files[logical_name]
             source = directory / file_info.snapshot_file
-            target = Path(file_info.target_path)
+            target = trusted_targets[logical_name]
             target.parent.mkdir(parents=True, exist_ok=True)
             staged[target] = _stage_file(source, target)
             staged_bytes += file_info.size_bytes
@@ -469,7 +501,7 @@ def restore_dataset_revision(
         for target in staged:
             backups[target] = _backup_file(target)
         yaml_path = dataset.meta.yaml_path.resolve()
-        targets = [Path(record.files[name].target_path) for name in ordered]
+        targets = list(trusted_targets.values())
         targets.sort(key=lambda item: item.resolve() == yaml_path)
         try:
             for target in targets:
