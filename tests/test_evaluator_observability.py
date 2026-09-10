@@ -7,15 +7,10 @@ from pathlib import Path
 import pytest
 import torch
 
-from ser_lib.core import (
-    CancellationToken,
-    EventContext,
-    LifecycleEvent,
-    OperationCancelled,
-    ProgressEvent,
-)
 from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
 from ser_lib.engine import evaluate, write_evaluation_report
+from ser_lib.foundation.errors import OperationCancelled
+from ser_lib.foundation.events import CancellationToken, EventContext, LifecycleEvent, ProgressEvent
 from ser_lib.models import CNNBaseline
 
 
