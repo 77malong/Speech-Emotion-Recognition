@@ -8,6 +8,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 
+from ser_lib._version import __version__
 from ser_lib.engine import (
     EVALUATION_RUN_SCHEMA_VERSION,
     ClassMetrics,
@@ -108,7 +109,7 @@ def test_evaluation_metadata_defaults_library_version_and_run_can_be_saved(tmp_p
         created_at=created,
     )
     assert metadata.evaluation_id.startswith("eval_")
-    assert metadata.library_version == "0.2.0"
+    assert metadata.library_version == __version__
 
     started = created + timedelta(milliseconds=1)
     finished = started + timedelta(milliseconds=5)
