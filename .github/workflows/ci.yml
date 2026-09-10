@@ -35,7 +35,7 @@ jobs:
           python -m venv --system-site-packages .wheel-smoke
           .wheel-smoke/bin/python -m pip install --no-deps dist/*.whl
           cd .wheel-smoke
-          bin/python -c "import importlib.util, ser_lib; assert importlib.util.find_spec('ser_lib.core') is None; print(ser_lib.__version__)"
+          bin/python -c "import importlib.util, ser_lib; assert importlib.util.find_spec('ser_lib.core') is None; assert importlib.util.find_spec('ser_lib.services') is None; print(ser_lib.__version__)"
       - name: Run tests
         run: python -m pytest -q
       - name: End-to-end training smoke test
