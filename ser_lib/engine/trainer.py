@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import cast
 
 import torch
 
-from ser_lib.data.types import move_batch_to_device
+from ser_lib._version import __version__
+from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.engine._trainer_core import (
     EpochResult,
     ObservabilityConfig,
@@ -19,7 +20,7 @@ from ser_lib.engine._trainer_core import (
     seed_everything,
 )
 from ser_lib.engine.config import ExperimentConfig
-from ser_lib.engine.lineage import TrainingRunMetadata
+from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.engine.optim import AdamWConfig, build_optimizer
 from ser_lib.foundation.events import CancellationCheck, EventCallback
 from ser_lib.models.base import SERModel
@@ -77,9 +78,11 @@ class Trainer(_TrainerCore):
         cancellation: CancellationCheck | None = None,
         observability: ObservabilityConfig | None = None,
         run_id: str | None = None,
+        dataset_id: str | None = None,
+        dataset_fingerprint: str | None = None,
     ) -> "Trainer":
-        """按完整 ExperimentConfig 构造当前公开 Trainer 类型。"""
-        return cast(
+        """按完整实验配置构造 Trainer，并记录调用方已知的训练 lineage。"""
+        trainer = cast(
             Trainer,
             super().from_experiment(
                 model,
@@ -90,6 +93,36 @@ class Trainer(_TrainerCore):
                 run_id=run_id,
             ),
         )
+        trainer.run_metadata = build_training_run_metadata(
+            run_id=trainer.run_id,
+            dataset_id=dataset_id if dataset_id is not None else experiment.data.dataset_id,
+            dataset_fingerprint=dataset_fingerprint,
+            model_id=model.model_spec.model_id,
+            config=experiment.model_dump(mode="json"),
+            seed=experiment.trainer.seed,
+            device=str(trainer.device),
+            library_version=__version__,
+        )
+        return trainer
+
+    def fit(  # type: ignore[override]
+        self,
+        train_batches: Iterable[SERBatch] | Callable[[], Iterable[SERBatch]],
+        *,
+        val_batches: Iterable[SERBatch] | Callable[[], Iterable[SERBatch]] | None = None,
+        on_epoch_end: Callable[[EpochResult], None] | None = None,
+        start_epoch: int | None = None,
+    ) -> TrainingResult:
+        """执行训练并直接返回稳定的终态 ``TrainingResult``。"""
+        super().fit(
+            train_batches,
+            val_batches=val_batches,
+            on_epoch_end=on_epoch_end,
+            start_epoch=start_epoch,
+        )
+        if self.last_result is None:
+            raise RuntimeError("Trainer.fit 完成后未生成 TrainingResult")
+        return self.last_result
 
     def _save_checkpoint_with_event(
         self,
