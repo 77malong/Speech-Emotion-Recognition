@@ -117,6 +117,11 @@ class EvaluationExperimentResult:
     predictions_path: Path | None
     metric_unit: str = "sample"
 
+    @property
+    def evaluation_record(self) -> Path:
+        """0.2.x compatibility alias for the persisted evaluation run record."""
+        return self.run_record
+
     def to_dict(self) -> dict[str, object]:
         return {
             "output_dir": str(self.output_dir),
