@@ -1,5 +1,7 @@
 # 开发审查与证据
 
+- [修复合并后的追加审查](SER_LIB_POST_FIX_REVIEW.md)：基线 `3e4c66a`，合并验证 504 passed；另确认 1 项 P1、1 项 P2、1 项 P3，尚未修复。复现入口 `python -m scripts.audit_post_fix_review`。
+
 修复复验：最新报告中的 LO-01～LO-05 已在基于 `2667803` 的工作区修复，完整测试为 **498 passed**。修复后验证入口为 `python -m pytest -q tests/test_latest_only_review_fixes.py`；下述缺陷探针仅用于注明的原始审查基线。
 
 - [latest-only 完成版严格审查（2026-09-11）](SER_LIB_LATEST_ONLY_REVIEW_2026-09-11.md)：基线 `2e4839a`，确认 3 项 P1、2 项 P2；当前复现入口为 `python -m scripts.audit_latest_only_review`。以下旧报告和复现说明均按其历史基线解读。
