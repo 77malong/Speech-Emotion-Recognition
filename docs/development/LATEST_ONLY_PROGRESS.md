@@ -68,3 +68,10 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 将事件体系收敛为 `foundation/events/` 包：共享 context、序列号、JSON-safe helper 与 cancellation 协议位于 `base.py`；进度/指标/日志/生命周期事件位于 `lifecycle.py`；checkpoint 与 prediction 事件分别归入 `training.py` 与 `inference.py`。删除 `foundation/events.py`、`engine/events.py`、`inference/events.py`，所有事件继续共享同一个全局 sequence 计数器。
 
 边界测试同步递归检查 foundation 子包，确认 foundation 不反向依赖 data/models/engine/inference/artifacts/cli，并显式确认旧 errors/events 文件不存在。Stage 6 的实际测试与 CI 结果以该提交对应的 GitHub Actions run 为准，不在提交前预写验收结论。
+
+
+## Stage 7：Trainer 单实现收敛
+
+删除 `ser_lib/engine/_trainer_core.py` 与 `ser_lib/engine/trainer.py`，新增 `ser_lib/engine/training/`。训练结果类型迁入 `results.py`，gradient accumulation 状态与 loss wrapper 迁入 `accumulation.py`，训练生命周期、验证、checkpoint、resume、lineage、sampling RNG、AMP step accounting 全部合并到唯一的 `training/trainer.py::Trainer`。
+
+当前结构不再存在 `Trainer(_TrainerCore)` 双层行为链；生产代码、脚本和测试统一使用 `ser_lib.engine.training` 或 `ser_lib.engine` 公共入口。Stage 7 的 CI 验收由该提交触发的 GitHub Actions 结果确认。

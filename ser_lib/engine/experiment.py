@@ -38,7 +38,7 @@ from ser_lib.engine.runs import (
     write_training_run_info,
 )
 from ser_lib.engine.objectives import build_weighted_sampler
-from ser_lib.engine.trainer import Trainer, TrainingResult
+from ser_lib.engine.training import Trainer, TrainingResult
 from ser_lib.foundation.events import EventContext
 from ser_lib.models.base import SERModel
 from ser_lib.models.registry import model_registry

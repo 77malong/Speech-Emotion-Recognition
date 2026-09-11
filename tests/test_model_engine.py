@@ -16,7 +16,7 @@ from ser_lib.data.types import SERSample, TensorSpec
 from ser_lib.engine.checkpoint import load_checkpoint, save_checkpoint
 from ser_lib.engine.compatibility import validate_compatibility
 from ser_lib.engine.evaluator import evaluate
-from ser_lib.engine.trainer import Trainer, TrainerConfig
+from ser_lib.engine.training import Trainer, TrainerConfig
 from ser_lib.models.base import ModelOutput
 from ser_lib.models.cnn_models import CNNBaseline, CNNBaselineConfig
 from ser_lib.models.registry import model_registry

@@ -9,7 +9,7 @@ import ser_lib.engine as engine
 import ser_lib.models as models
 from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.engine.compatibility import CompatibilityReport
-from ser_lib.engine.trainer import move_batch_to_device as trainer_move_batch_to_device
+from ser_lib.engine.training import move_batch_to_device as trainer_move_batch_to_device
 from ser_lib.foundation.errors import CompatibilityError, RegistryError
 from ser_lib.inference import StreamingLatency
 from ser_lib.models.specs import ModelSpec
@@ -88,10 +88,16 @@ def test_models_do_not_import_dataset_implementation():
     _assert_tree_avoids(_SER_LIB / "models", ("ser_lib.data.dataset",))
 
 
+def test_retired_trainer_modules_are_absent():
+    assert not (_SER_LIB / "engine" / "trainer.py").exists()
+    assert not (_SER_LIB / "engine" / "_trainer_core.py").exists()
+    assert (_SER_LIB / "engine" / "training" / "trainer.py").is_file()
+
+
 def test_inference_does_not_import_trainer_implementation():
     _assert_tree_avoids(
         _SER_LIB / "inference",
-        ("ser_lib.engine.trainer", "ser_lib.engine._trainer_core"),
+        ("ser_lib.engine.training.trainer",),
     )
 
 

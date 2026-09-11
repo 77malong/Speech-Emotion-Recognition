@@ -6,21 +6,24 @@ import logging
 import random
 import time
 import uuid
-from collections.abc import Callable, Iterable, Sequence, Sized
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable, Mapping, Sequence, Sized
+from dataclasses import replace
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import torch
 import torch.nn.functional as F
 
+from ser_lib._version import __version__
 from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
 from ser_lib.engine.eta import EtaEstimator
+from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.foundation.events import CheckpointEvent
 from ser_lib.engine.optim import (
+    AdamWConfig,
     SchedulerConfig,
     build_optimizer,
     build_scheduler,
@@ -38,72 +41,11 @@ from ser_lib.foundation.events import (
     MetricEvent,
     ProgressEvent,
 )
-from ser_lib.models.base import SERModel
+from ser_lib.models.base import ModelOutput, SERModel
+from ser_lib.engine.training.accumulation import _AccumulationAwareLoss, _AccumulationState
+from ser_lib.engine.training.results import EpochResult, TrainingResult, TrainingStatus
 
 logger = logging.getLogger(__name__)
-
-TrainingStatus = Literal["completed", "early_stopped", "cancelled", "failed"]
-
-
-@dataclass(frozen=True, slots=True)
-class EpochResult:
-    epoch: int
-    loss: float
-    accuracy: float
-    sample_count: int
-    optimizer_steps: int = 0
-    validation: dict[str, float] | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """返回适合 JSON 序列化的 epoch 结果。"""
-        return {
-            "epoch": self.epoch,
-            "loss": self.loss,
-            "accuracy": self.accuracy,
-            "sample_count": self.sample_count,
-            "optimizer_steps": self.optimizer_steps,
-            "validation": dict(self.validation) if self.validation is not None else None,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingResult:
-    """一次 ``Trainer.fit`` 调用的稳定、JSON-safe 终态结果。"""
-
-    run_id: str
-    status: TrainingStatus
-    epochs: tuple[EpochResult, ...]
-    best_epoch: int | None
-    best_metric: float | None
-    monitored_metric: str
-    started_at: datetime
-    finished_at: datetime
-    duration_seconds: float
-    last_checkpoint: Path | None
-    best_checkpoint: Path | None
-    stop_reason: str | None
-
-    def to_dict(self) -> dict[str, Any]:
-        """返回可直接交给 Web/CLI JSON 层的标准字典。"""
-        return {
-            "run_id": self.run_id,
-            "status": self.status,
-            "epochs": [epoch.to_dict() for epoch in self.epochs],
-            "best_epoch": self.best_epoch,
-            "best_metric": self.best_metric,
-            "monitored_metric": self.monitored_metric,
-            "started_at": self.started_at.isoformat(),
-            "finished_at": self.finished_at.isoformat(),
-            "duration_seconds": self.duration_seconds,
-            "last_checkpoint": (
-                str(self.last_checkpoint) if self.last_checkpoint is not None else None
-            ),
-            "best_checkpoint": (
-                str(self.best_checkpoint) if self.best_checkpoint is not None else None
-            ),
-            "stop_reason": self.stop_reason,
-        }
-
 
 def seed_everything(seed: int, *, deterministic: bool = True) -> None:
     """为 Python 与 PyTorch 设置可复现 seed。"""
@@ -141,19 +83,73 @@ def _infer_total_samples(batches: object) -> int | None:
     return None
 
 
+_RUNTIME_ONLY_EXPERIMENT_FIELDS = {"output_dir"}
+_RUNTIME_ONLY_EXPERIMENT_TRAINER_FIELDS = {
+    "epochs",
+    "checkpoint_dir",
+    "save_best",
+    "save_last",
+}
+
+
+def _resume_experiment_signature(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove fields that may legitimately change when continuing the same run."""
+    normalized = {
+        key: value for key, value in config.items() if key not in _RUNTIME_ONLY_EXPERIMENT_FIELDS
+    }
+    trainer = normalized.get("trainer")
+    if isinstance(trainer, Mapping):
+        normalized["trainer"] = {
+            key: value
+            for key, value in trainer.items()
+            if key not in _RUNTIME_ONLY_EXPERIMENT_TRAINER_FIELDS
+        }
+    return normalized
+
+
+def _validate_run_resume_compatibility(
+    current: TrainingRunMetadata,
+    saved: TrainingRunMetadata,
+) -> None:
+    if current.model_id != saved.model_id:
+        raise ValueError("checkpoint lineage 的 model_id 与当前实验不一致")
+    if (
+        saved.dataset_id is not None
+        and current.dataset_id is not None
+        and current.dataset_id != saved.dataset_id
+    ):
+        raise ValueError("checkpoint lineage 的 dataset_id 与当前实验不一致")
+    if (
+        saved.dataset_fingerprint is not None
+        and current.dataset_fingerprint is not None
+        and current.dataset_fingerprint != saved.dataset_fingerprint
+    ):
+        raise ValueError("checkpoint lineage 的 dataset fingerprint 与当前实验不一致")
+    if _resume_experiment_signature(saved.config) != _resume_experiment_signature(
+        current.config
+    ):
+        raise ValueError(
+            "checkpoint experiment config 与当前实验不兼容；仅允许修改 "
+            "output_dir、epochs、checkpoint_dir、save_best、save_last"
+        )
+
+
 class Trainer:
+    run_metadata: TrainingRunMetadata | None
+
     def __init__(
         self,
         model: SERModel,
         config: TrainerConfig | None = None,
         *,
-        optimizer: torch.optim.Optimizer,
+        optimizer: torch.optim.Optimizer | None = None,
         scheduler: torch.optim.lr_scheduler.LRScheduler | None = None,
         loss_fn: torch.nn.Module | None = None,
         event_callback: EventCallback | None = None,
         cancellation: CancellationCheck | None = None,
         observability: ObservabilityConfig | None = None,
         run_id: str | None = None,
+        run_metadata: TrainingRunMetadata | None = None,
     ) -> None:
         self.model = model
         self.config = config or TrainerConfig()
@@ -167,11 +163,23 @@ class Trainer:
             raise ValueError("AMP 当前仅支持 CUDA 设备")
         if run_id is not None and not run_id.strip():
             raise ValueError("run_id 不能为空字符串")
+
         seed_everything(self.config.seed, deterministic=self.config.deterministic)
         self.model.to(self.device)
-        self.optimizer = optimizer
+        self.optimizer = optimizer or build_optimizer(model.parameters(), AdamWConfig())
         self.scheduler = scheduler
-        self.loss_fn = loss_fn.to(self.device) if loss_fn is not None else None
+        self.run_metadata = run_metadata
+        self._sampling_generator: torch.Generator | None = None
+        self._accumulation_state = _AccumulationState(
+            self.config.gradient_accumulation_steps,
+            self.optimizer,
+        )
+        wrapped_loss = (
+            _AccumulationAwareLoss(loss_fn, self._accumulation_state)
+            if loss_fn is not None
+            else None
+        )
+        self.loss_fn = wrapped_loss.to(self.device) if wrapped_loss is not None else None
         self.event_callback = event_callback
         self.cancellation = cancellation
         self.observability = observability or ObservabilityConfig()
@@ -189,10 +197,53 @@ class Trainer:
         self.epochs_without_improvement = 0
         self.global_step = 0
         self.optimizer_step = 0
+        self.optimizer_step_attempted = 0
+        self.optimizer_step_skipped = 0
         self.last_result: TrainingResult | None = None
         self._last_checkpoint: Path | None = None
         self._best_checkpoint: Path | None = None
         self._run_started_perf: float | None = None
+        self._accumulation_model_hook = None
+        if loss_fn is None:
+            self._accumulation_model_hook = self.model.register_forward_hook(
+                self._scale_implicit_training_loss
+            )
+
+    def attach_sampling_generator(self, generator: torch.Generator | None) -> None:
+        if generator is not None and not isinstance(generator, torch.Generator):
+            raise TypeError("sampling generator 必须是 torch.Generator 或 None")
+        self._sampling_generator = generator
+
+    def _scale_implicit_training_loss(
+        self,
+        module: torch.nn.Module,
+        args: tuple[object, ...],
+        output: ModelOutput,
+    ) -> ModelOutput:
+        _ = module
+        if not self._accumulation_state.active:
+            return output
+        if not self.model.training or not torch.is_grad_enabled():
+            return output
+        if not args or not isinstance(args[0], SERBatch):
+            return output
+        batch = args[0]
+        if batch.labels is None:
+            return output
+        base_loss = (
+            output.loss
+            if output.loss is not None
+            else F.cross_entropy(output.logits, batch.labels)
+        )
+        scaled_loss = self._accumulation_state.scale_loss(
+            base_loss,
+            float(batch.labels.numel()),
+        )
+        return ModelOutput(
+            logits=output.logits,
+            embeddings=output.embeddings,
+            loss=scaled_loss,
+        )
 
     @classmethod
     def from_experiment(
@@ -204,8 +255,10 @@ class Trainer:
         cancellation: CancellationCheck | None = None,
         observability: ObservabilityConfig | None = None,
         run_id: str | None = None,
+        dataset_id: str | None = None,
+        dataset_fingerprint: str | None = None,
     ) -> "Trainer":
-        """按白名单实验配置构造 optimizer、scheduler 和 Trainer。"""
+        """按实验配置构造训练器，并记录当前训练 lineage。"""
         from ser_lib.models.registry import model_registry
 
         if model.model_spec.model_id != experiment.model.type:
@@ -218,16 +271,19 @@ class Trainer:
         )
         if expected_model_config != model.model_config:
             raise ValueError("实验 model.params 与模型实例的实际配置不一致")
+
         optimizer_config = parse_optimizer_config(experiment.optimizer)
         optimizer = build_optimizer(model.parameters(), optimizer_config)
         scheduler_config: SchedulerConfig | None = parse_scheduler_config(experiment.scheduler)
         scheduler = build_scheduler(optimizer, scheduler_config)
+
         from ser_lib.engine.objectives import ClassificationLoss
 
         num_classes = model.model_spec.num_classes
         if num_classes is None:
             raise ValueError("分类训练要求模型声明 num_classes")
-        return cls(
+
+        trainer = cls(
             model,
             experiment.trainer,
             optimizer=optimizer,
@@ -238,6 +294,17 @@ class Trainer:
             observability=observability,
             run_id=run_id,
         )
+        trainer.run_metadata = build_training_run_metadata(
+            run_id=trainer.run_id,
+            dataset_id=dataset_id if dataset_id is not None else experiment.data.dataset_id,
+            dataset_fingerprint=dataset_fingerprint,
+            model_id=model.model_spec.model_id,
+            config=experiment.model_dump(mode="json"),
+            seed=experiment.trainer.seed,
+            device=str(trainer.device),
+            library_version=__version__,
+        )
+        return trainer
 
     def _emit(self, event: EventLike) -> None:
         if self.event_callback is not None:
@@ -296,19 +363,29 @@ class Trainer:
         )
 
     def _optimizer_step(self) -> None:
+        self._accumulation_state.finish_step()
+        self.optimizer_step_attempted += 1
         if self._scaler is not None:
             self._scaler.unscale_(self.optimizer)
         if self.config.gradient_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config.gradient_clip_norm
             )
+
+        applied = True
         if self._scaler is None:
             self.optimizer.step()
         else:
+            scale_before = float(self._scaler.get_scale())
             self._scaler.step(self.optimizer)
             self._scaler.update()
+            applied = float(self._scaler.get_scale()) >= scale_before
+
         self.optimizer.zero_grad(set_to_none=True)
-        self.optimizer_step += 1
+        if applied:
+            self.optimizer_step += 1
+        else:
+            self.optimizer_step_skipped += 1
 
     def _emit_live_metrics(
         self,
@@ -346,6 +423,19 @@ class Trainer:
             )
 
     def train_epoch(self, batches: Iterable[SERBatch], *, epoch: int) -> EpochResult:
+        applied_before = self.optimizer_step
+        self._accumulation_state.begin_epoch()
+        try:
+            result = self._train_epoch_impl(batches, epoch=epoch)
+            return replace(
+                result,
+                loss=self._accumulation_state.epoch_mean_loss(),
+                optimizer_steps=self.optimizer_step - applied_before,
+            )
+        finally:
+            self._accumulation_state.end_epoch()
+
+    def _train_epoch_impl(self, batches: Iterable[SERBatch], *, epoch: int) -> EpochResult:
         self.model.train()
         total_loss = 0.0
         total_correct = 0
@@ -555,6 +645,19 @@ class Trainer:
     ) -> Path:
         from ser_lib.engine.checkpoint import save_checkpoint
 
+        resolved_metadata = dict(metadata)
+        if self.run_metadata is not None:
+            resolved_metadata["run_metadata"] = self.run_metadata.to_dict()
+        if self._sampling_generator is not None:
+            resolved_metadata["sampling_generator_state"] = (
+                self._sampling_generator.get_state().cpu()
+            )
+        if kind == "best":
+            resolved_metadata["best_checkpoint"] = path.name
+        elif self._best_checkpoint is not None:
+            resolved_metadata["best_checkpoint"] = self._best_checkpoint.name
+
+        previous_last_checkpoint = self._last_checkpoint
         metric_name = self.config.monitor if kind == "best" else None
         metric_value = self.best_metric if kind == "best" else None
         context = self._context(epoch=epoch)
@@ -578,7 +681,7 @@ class Trainer:
                 scheduler=self.scheduler,
                 scaler=self._scaler,
                 metrics=metrics,
-                metadata=metadata,
+                metadata=resolved_metadata,
                 trainer_config=self.config.model_dump(mode="json"),
             )
         except Exception as exc:
@@ -596,6 +699,7 @@ class Trainer:
                 )
             )
             raise
+
         if kind in {"epoch", "last"}:
             self._last_checkpoint = saved
         if kind == "best":
@@ -623,6 +727,8 @@ class Trainer:
                     context=context,
                 )
             )
+        if kind == "epoch":
+            self._last_checkpoint = previous_last_checkpoint
         return saved
 
     def fit(
@@ -632,7 +738,7 @@ class Trainer:
         val_batches: Iterable[SERBatch] | Callable[[], Iterable[SERBatch]] | None = None,
         on_epoch_end: Callable[[EpochResult], None] | None = None,
         start_epoch: int | None = None,
-    ) -> list[EpochResult]:
+    ) -> TrainingResult:
         if self.config.early_stopping_patience is not None and val_batches is None:
             raise ValueError("启用 early stopping 时必须提供 val_batches")
         first_epoch = self.last_completed_epoch + 1 if start_epoch is None else start_epoch
@@ -895,7 +1001,9 @@ class Trainer:
                     context=self._context(epoch=self.last_completed_epoch or None),
                 )
             )
-            return history
+            if self.last_result is None:
+                raise RuntimeError("Trainer.fit 完成后未生成 TrainingResult")
+            return self.last_result
         except OperationCancelled:
             elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
             finished_at = datetime.now(timezone.utc)
@@ -956,12 +1064,27 @@ class Trainer:
             return value < self.best_metric - delta
         return value > self.best_metric + delta
 
-    def resume_from(self, path, *, restore_rng: bool = True) -> dict:
-        """恢复训练状态，并使下次 ``fit`` 从 checkpoint 的下一 epoch 开始。"""
+    def resume_from(self, path, *, restore_rng: bool = True) -> dict[str, Any]:
+        """在应用训练状态前校验完整实验 lineage，并恢复可发现的 best artifact。"""
         from ser_lib.engine.checkpoint import load_checkpoint
 
+        checkpoint_path = Path(path)
+        current_run_metadata = self.run_metadata
+        saved_run_metadata: TrainingRunMetadata | None = None
+
+        def validate_metadata(metadata: dict[str, Any]) -> None:
+            nonlocal saved_run_metadata
+            raw_lineage = metadata.get("run_metadata")
+            if isinstance(raw_lineage, Mapping):
+                saved_run_metadata = TrainingRunMetadata.from_dict(raw_lineage)
+                if current_run_metadata is not None:
+                    _validate_run_resume_compatibility(
+                        current_run_metadata,
+                        saved_run_metadata,
+                    )
+
         payload = load_checkpoint(
-            path,
+            checkpoint_path,
             self.model,
             self.optimizer,
             scheduler=self.scheduler,
@@ -969,12 +1092,14 @@ class Trainer:
             map_location=self.device,
             restore_rng=restore_rng,
             expected_trainer_config=self.config.model_dump(mode="json"),
+            metadata_validator=validate_metadata,
         )
+
         epoch = payload.get("epoch")
         if not isinstance(epoch, int) or epoch < 0:
             raise ValueError("checkpoint epoch 非法")
         self.last_completed_epoch = epoch
-        self._last_checkpoint = Path(path)
+        self._last_checkpoint = checkpoint_path
         metadata = payload.get("metadata") or {}
         if metadata.get("monitor") in (None, self.config.monitor):
             best_metric = metadata.get("best_metric")
@@ -983,6 +1108,25 @@ class Trainer:
             self.best_metric = float(best_metric) if best_metric is not None else None
             self.best_epoch = int(best_epoch) if best_epoch is not None else None
             self.epochs_without_improvement = int(without_improvement)
+
+        if self.best_epoch is not None:
+            raw_best_checkpoint = metadata.get("best_checkpoint")
+            if raw_best_checkpoint is not None:
+                if not isinstance(raw_best_checkpoint, str) or not raw_best_checkpoint:
+                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
+                relative_best = Path(raw_best_checkpoint)
+                if relative_best.is_absolute() or len(relative_best.parts) != 1:
+                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
+                best_path = checkpoint_path.parent / relative_best
+                if not best_path.is_file():
+                    raise FileNotFoundError(
+                        f"checkpoint 引用的 best artifact 不存在: {best_path}"
+                    )
+                self._best_checkpoint = best_path
+            else:
+                best_path = checkpoint_path.parent / "best.pt"
+                self._best_checkpoint = best_path if best_path.is_file() else None
+
         saved_run_id = metadata.get("run_id")
         if not self._run_id_explicit and isinstance(saved_run_id, str) and saved_run_id:
             self.run_id = saved_run_id
@@ -992,10 +1136,38 @@ class Trainer:
             self.global_step = saved_global_step
         if isinstance(saved_optimizer_step, int) and saved_optimizer_step >= 0:
             self.optimizer_step = saved_optimizer_step
+
+        sampling_state = metadata.get("sampling_generator_state")
+        if (
+            restore_rng
+            and self._sampling_generator is not None
+            and isinstance(sampling_state, torch.Tensor)
+        ):
+            self._sampling_generator.set_state(sampling_state.cpu())
+
+        if current_run_metadata is not None:
+            created_at = (
+                saved_run_metadata.created_at
+                if saved_run_metadata is not None
+                else current_run_metadata.created_at
+            )
+            self.run_metadata = replace(
+                current_run_metadata,
+                run_id=self.run_id,
+                created_at=created_at,
+            )
+        elif saved_run_metadata is not None:
+            self.run_metadata = saved_run_metadata.with_run_id(self.run_id)
         return payload
 
 
 __all__ = [
-    "TrainerConfig", "ObservabilityConfig", "EpochResult", "TrainingResult",
-    "TrainingStatus", "Trainer", "seed_everything",
+    "TrainerConfig",
+    "ObservabilityConfig",
+    "EpochResult",
+    "TrainingResult",
+    "TrainingStatus",
+    "Trainer",
+    "move_batch_to_device",
+    "seed_everything",
 ]

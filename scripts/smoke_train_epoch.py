@@ -24,7 +24,7 @@ from ser_lib.data.dataset import SERDataset
 from ser_lib.data.pipeline import SamplePipeline
 from ser_lib.data.representations.spectral import LogMelRepresentation
 from ser_lib.data.types import AudioRecord
-from ser_lib.engine.trainer import Trainer, TrainerConfig
+from ser_lib.engine.training import Trainer, TrainerConfig
 from ser_lib.models.cnn_models import CNNBaseline
 
 

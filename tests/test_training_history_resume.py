@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ser_lib.engine._trainer_core import EpochResult, TrainingResult
+from ser_lib.engine.training import EpochResult, TrainingResult
 from ser_lib.engine.experiment import _write_training_history
 
 

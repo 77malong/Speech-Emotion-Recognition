@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ser_lib.engine.lineage import TrainingRunMetadata
-from ser_lib.engine.trainer import TrainingResult, TrainingStatus
+from ser_lib.engine.training import TrainingResult, TrainingStatus
 from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 _RUN_RECORD_NAME = "run.json"

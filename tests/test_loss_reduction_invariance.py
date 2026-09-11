@@ -10,7 +10,7 @@ from ser_lib.config.training import LossConfig, TrainerConfig
 from ser_lib.data.types import SERBatch, TensorSpec
 from ser_lib.engine.evaluator import evaluate
 from ser_lib.engine.objectives import ClassificationLoss
-from ser_lib.engine.trainer import Trainer
+from ser_lib.engine.training import Trainer
 from ser_lib.models.adapters.torch import TorchModelAdapter
 
 

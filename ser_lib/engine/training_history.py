@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ser_lib.engine.trainer import EpochResult
+from ser_lib.engine.training import EpochResult
 
 _HISTORY_FILE_NAME = "history.json"
 

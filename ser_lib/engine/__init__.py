@@ -83,7 +83,7 @@ from ser_lib.engine.runs import (
     write_training_run_info,
 )
 from ser_lib.engine.training_history import TrainingHistoryInfo, load_training_history
-from ser_lib.engine.trainer import (
+from ser_lib.engine.training import (
     EpochResult,
     Trainer,
     TrainingResult,
