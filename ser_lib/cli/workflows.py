@@ -150,15 +150,39 @@ def export_checkpoint_artifact(
 ) -> dict[str, Any]:
     config = load_experiment_config(config_path)
     components = build_experiment_components(config, train=False)
+    manifest = DatasetManifest.load(config.data.manifest)
+    source_labels = config.data.labels or manifest.meta.labels
+    labels = _labels(source_labels)
+    if labels != _labels(manifest.meta.labels):
+        raise ValueError("导出标签语义与 manifest 不一致")
+
+    def validate_export_metadata(metadata: dict[str, Any]) -> None:
+        from ser_lib.config import ExperimentConfig
+        from ser_lib.data.fingerprint import fingerprint_manifest
+
+        raw = metadata.get("run_metadata")
+        if raw is None:
+            raise ValueError("checkpoint 缺少训练 lineage，无法验证导出标签与预处理")
+        saved = TrainingMetadata.from_dict(raw)
+        saved_config = ExperimentConfig.model_validate(saved.config)
+        if saved_config.data.labels:
+            if _labels(saved_config.data.labels) != labels:
+                raise ValueError("导出标签语义与 checkpoint 训练标签不一致")
+        elif saved.dataset_fingerprint != fingerprint_manifest(manifest).digest:
+            raise ValueError("checkpoint 未保存显式标签，导出 manifest fingerprint 必须一致")
+        excluded = {"manifest", "dataset_id", "labels", "cache"}
+        if saved_config.data.model_dump(mode="json", exclude=excluded) != config.data.model_dump(
+            mode="json", exclude=excluded
+        ):
+            raise ValueError("导出预处理与 checkpoint 训练配置不一致")
+
     payload = load_checkpoint(
         checkpoint,
         components.model,
         map_location="cpu",
         restore_rng=False,
+        metadata_validator=validate_export_metadata,
     )
-    manifest = DatasetManifest.load(config.data.manifest)
-    source_labels = config.data.labels or manifest.meta.labels
-    labels = _labels(source_labels)
     expected_classes = components.model.model_config.get("num_classes")
     if expected_classes is not None and len(labels) != expected_classes:
         raise ValueError(

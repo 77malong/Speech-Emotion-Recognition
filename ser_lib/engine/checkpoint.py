@@ -64,6 +64,24 @@ def _restore_rng_state(state: dict[str, Any]) -> None:
         torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
+def _validate_rng_state(state: dict[str, Any]) -> None:
+    """Validate on independent generators without changing process RNG state."""
+    random.Random().setstate(state["python"])
+    np.random.RandomState().set_state(state["numpy"])
+    torch.Generator(device="cpu").set_state(state["torch_cpu"].cpu())
+    if "torch_cuda" in state:
+        states = state["torch_cuda"]
+        if not isinstance(states, list):
+            raise ValueError("checkpoint torch_cuda RNG 必须是状态列表")
+        for index, value in enumerate(states):
+            if not isinstance(value, torch.Tensor) or value.dtype != torch.uint8 or value.ndim != 1:
+                raise ValueError("checkpoint torch_cuda RNG 状态必须是一维 uint8 tensor")
+            if torch.cuda.is_available():
+                if index >= torch.cuda.device_count():
+                    raise ValueError("checkpoint CUDA RNG 设备数超过当前可用设备数")
+                torch.Generator(device=f"cuda:{index}").set_state(value.cpu())
+
+
 def _resume_trainer_signature(config: dict[str, Any]) -> dict[str, Any]:
     """Return only trainer fields that must stay stable for numerical resume semantics."""
     return {
@@ -149,6 +167,8 @@ def load_checkpoint(
         "python", "numpy", "torch_cpu"
     }.issubset(rng_state):
         raise ValueError("checkpoint rng_state 字段不完整或包含未知字段")
+    if restore_rng:
+        _validate_rng_state(rng_state)
     if payload.get("model_id") != model.model_spec.model_id:
         raise ValueError("checkpoint 与当前模型类型不一致")
     saved_model_config = payload.get("model_config")

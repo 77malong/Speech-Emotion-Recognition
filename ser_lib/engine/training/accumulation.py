@@ -80,14 +80,15 @@ class _AccumulationAwareLoss(torch.nn.Module):
         self.base_loss = base_loss
         self.state = state
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        loss = self.base_loss(logits, targets)
+    def reduction_denominator(self, targets: torch.Tensor) -> float:
         denominator_fn = getattr(self.base_loss, "reduction_denominator", None)
         if callable(denominator_fn):
-            denominator = float(denominator_fn(targets))
-        else:
-            denominator = float(targets.numel())
-        return self.state.scale_loss(loss, denominator)
+            return float(denominator_fn(targets))
+        return float(targets.numel())
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        loss = self.base_loss(logits, targets)
+        return self.state.scale_loss(loss, self.reduction_denominator(targets))
 
 
 __all__ = ["_AccumulationState", "_AccumulationAwareLoss"]

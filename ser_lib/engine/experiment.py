@@ -301,10 +301,12 @@ def _build_validation_components(
     )
 
 
-def _write_training_history(path: Path, result: TrainingResult) -> None:
+def _write_training_history(
+    path: Path, result: TrainingResult, *, merge: bool = True
+) -> None:
     """原子维护完整 run history；TrainingResult 仍只描述本次 fit segment。"""
     by_epoch: dict[int, dict[str, Any]] = {}
-    if path.exists():
+    if merge and path.exists():
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
@@ -420,6 +422,15 @@ def train_experiment(
     if resumed_from is not None:
         trainer.resume_from(resumed_from)
 
+    if resumed_from is not None:
+        existing_record = resolved.output_dir / "run.json"
+        if existing_record.exists():
+            existing_run = load_training_record(existing_record)
+            if existing_run.run_id != trainer.run_id:
+                raise ValueError("续训输出目录属于不同 run，不能合并训练历史")
+        elif (resolved.output_dir / "history.json").exists():
+            raise ValueError("续训输出目录缺少 run.json，无法验证已有训练历史的归属")
+
     resolved.output_dir.mkdir(parents=True, exist_ok=True)
     metrics_log = resolved.output_dir / "metrics.jsonl"
     if resumed_from is None:
@@ -437,7 +448,7 @@ def train_experiment(
     )
 
     history_path = resolved.output_dir / "history.json"
-    _write_training_history(history_path, training_result)
+    _write_training_history(history_path, training_result, merge=resumed_from is not None)
     if trainer.run_metadata is None:
         raise RuntimeError("Trainer.from_experiment 未生成 TrainingMetadata")
     run_record = write_training_record(
