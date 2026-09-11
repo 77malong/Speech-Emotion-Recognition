@@ -88,6 +88,13 @@ def test_models_do_not_import_dataset_implementation():
     _assert_tree_avoids(_SER_LIB / "models", ("ser_lib.data.dataset",))
 
 
+def test_engine_config_is_retired_and_experiment_owners_are_canonical():
+    assert not (_SER_LIB / "engine" / "config.py").exists()
+    assert engine.ExperimentConfig.__module__ == "ser_lib.config.experiment"
+    assert engine.ExperimentComponents.__module__ == "ser_lib.engine.experiment"
+    assert engine.build_experiment_components.__module__ == "ser_lib.engine.experiment"
+
+
 def test_retired_trainer_modules_are_absent():
     assert not (_SER_LIB / "engine" / "trainer.py").exists()
     assert not (_SER_LIB / "engine" / "_trainer_core.py").exists()

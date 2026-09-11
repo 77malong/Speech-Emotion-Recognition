@@ -13,7 +13,7 @@ from ser_lib.config.data import (
     SlidingBatching,
     load_data_config,
 )
-from ser_lib.config.experiment import ExperimentConfig
+from ser_lib.config.experiment import ExperimentConfig, load_experiment_config
 from ser_lib.config.importers import (
     DEFAULT_AUDIO_EXTENSIONS,
     CasiaImportConfig,
@@ -128,6 +128,7 @@ __all__ = [
     "SchedulerConfig",
     "parse_scheduler_config",
     "ExperimentConfig",
+    "load_experiment_config",
     "StreamingConfig",
     "DEFAULT_AUDIO_EXTENSIONS",
     "CasiaImportConfig",

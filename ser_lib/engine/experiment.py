@@ -19,7 +19,7 @@ from ser_lib.data.fingerprint import fingerprint_manifest
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.pipeline import SamplePipeline, build_components
 from ser_lib.engine.compatibility import validate_compatibility
-from ser_lib.engine.config import ExperimentConfig, load_experiment_config
+from ser_lib.config.experiment import ExperimentConfig, load_experiment_config
 from ser_lib.engine.evaluator import (
     EvaluationResult,
     PredictionSink,
@@ -45,11 +45,13 @@ from ser_lib.models.registry import model_registry
 
 
 @dataclass(frozen=True, slots=True)
-class _DataComponents:
+class ExperimentComponents:
+    """通过完整预检后可直接交给训练代码的运行时组件。"""
+
+    model: SERModel
     audio_loader: Any
     pipeline: SamplePipeline
     collator: SERCollator
-    model: SERModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,13 +159,24 @@ def _resolve_experiment_config(config: ExperimentConfig | Path | str) -> Experim
 def build_experiment_components(
     config: ExperimentConfig,
     *,
-    train: bool,
-) -> _DataComponents:
+    train: bool = True,
+) -> ExperimentComponents:
+    """构建实验组件，并在读取训练数据前完成全部静态兼容性检查。"""
     from ser_lib.engine._seed import seed_experiment_rng
 
-    seed_experiment_rng(config.trainer.seed, deterministic=config.trainer.deterministic)
+    seed_experiment_rng(
+        config.trainer.seed,
+        deterministic=config.trainer.deterministic,
+    )
+    model_params = model_registry.validate_config(
+        config.model.type,
+        config.model.params,
+    )
+    model = cast(
+        SERModel,
+        model_registry.create(config.model.type, **model_params),
+    )
     audio_loader, pipeline = build_components(config.data, train=train)
-    model = cast(SERModel, model_registry.create(config.model.type, **config.model.params))
     validate_compatibility(
         pipeline.output_specs,
         model.model_spec,
@@ -171,11 +184,11 @@ def build_experiment_components(
         num_classes=config.data.num_classes,
         sample_rate=config.data.audio.target_sample_rate,
     )
-    return _DataComponents(
+    return ExperimentComponents(
+        model=model,
         audio_loader=audio_loader,
         pipeline=pipeline,
         collator=build_collator(pipeline.output_specs, config.data.batching),
-        model=model,
     )
 
 
@@ -534,6 +547,7 @@ def evaluate_artifact(
 
 
 __all__ = [
+    "ExperimentComponents",
     "TrainingExperimentResult",
     "EvaluationExperimentResult",
     "build_experiment_components",

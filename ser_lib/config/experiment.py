@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 
 from ser_lib.config.base import StrictConfig
+from ser_lib.config.loader import load_yaml_mapping, resolve_config_path
+from ser_lib.foundation.errors import ConfigurationError
 from ser_lib.config.data import DataConfig
 from ser_lib.config.model import ModelConfig
 from ser_lib.config.optimizer import parse_optimizer_config
@@ -42,4 +44,52 @@ class ExperimentConfig(StrictConfig):
         return value
 
 
-__all__ = ["ExperimentConfig"]
+def load_experiment_config(path: Path | str) -> ExperimentConfig:
+    """严格读取当前实验配置，并基于配置文件目录解析所有相对路径。"""
+    raw, source = load_yaml_mapping(path)
+    try:
+        config = ExperimentConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigurationError(f"配置内容校验失败: {source}: {exc}") from exc
+
+    updates: dict[str, Any] = {}
+    if not config.output_dir.is_absolute():
+        updates["output_dir"] = resolve_config_path(
+            config.output_dir,
+            base_dir=source.parent,
+        )
+    if (
+        config.trainer.checkpoint_dir is not None
+        and not config.trainer.checkpoint_dir.is_absolute()
+    ):
+        updates["trainer"] = config.trainer.model_copy(
+            update={
+                "checkpoint_dir": resolve_config_path(
+                    config.trainer.checkpoint_dir,
+                    base_dir=source.parent,
+                )
+            }
+        )
+
+    data_updates: dict[str, Any] = {}
+    if not config.data.manifest.is_absolute():
+        data_updates["manifest"] = resolve_config_path(
+            config.data.manifest,
+            base_dir=source.parent,
+        )
+    if not config.data.cache.directory.is_absolute():
+        data_updates["cache"] = config.data.cache.model_copy(
+            update={
+                "directory": resolve_config_path(
+                    config.data.cache.directory,
+                    base_dir=source.parent,
+                )
+            }
+        )
+    if data_updates:
+        updates["data"] = config.data.model_copy(update=data_updates)
+
+    return config.model_copy(update=updates)
+
+
+__all__ = ["ExperimentConfig", "load_experiment_config"]

@@ -6,7 +6,7 @@ from pathlib import Path
 from ser_lib.config import BatchingConfig
 from ser_lib.config import AudioConfig, ComponentConfig, DataConfig
 from ser_lib.engine import validate_experiment
-from ser_lib.engine.config import ExperimentConfig, ModelConfig, TrainerConfig
+from ser_lib.config import ExperimentConfig, ModelConfig, TrainerConfig
 from ser_lib.models.registry import model_registry
 
 

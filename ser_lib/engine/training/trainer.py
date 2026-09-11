@@ -18,7 +18,8 @@ import torch.nn.functional as F
 
 from ser_lib._version import __version__
 from ser_lib.data.types import SERBatch, move_batch_to_device
-from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
+from ser_lib.config.experiment import ExperimentConfig
+from ser_lib.config.training import ObservabilityConfig, TrainerConfig
 from ser_lib.engine.eta import EtaEstimator
 from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
 from ser_lib.foundation.events import CheckpointEvent

@@ -75,3 +75,12 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 删除 `ser_lib/engine/_trainer_core.py` 与 `ser_lib/engine/trainer.py`，新增 `ser_lib/engine/training/`。训练结果类型迁入 `results.py`，gradient accumulation 状态与 loss wrapper 迁入 `accumulation.py`，训练生命周期、验证、checkpoint、resume、lineage、sampling RNG、AMP step accounting 全部合并到唯一的 `training/trainer.py::Trainer`。
 
 当前结构不再存在 `Trainer(_TrainerCore)` 双层行为链；生产代码、脚本和测试统一使用 `ser_lib.engine.training` 或 `ser_lib.engine` 公共入口。Stage 7 的 CI 验收由该提交触发的 GitHub Actions 结果确认。
+
+
+## Stage 8：删除 engine/config.py 并归位实验职责
+
+删除 `ser_lib/engine/config.py`。配置文件加载职责迁入 `ser_lib/config/experiment.py`，`load_experiment_config` 继续严格校验当前结构，并按配置文件目录解析 output、checkpoint、manifest 与 cache 相对路径。
+
+运行时组件构建统一归入 `ser_lib/engine/experiment.py`：原有内部 `_DataComponents` 收敛为正式 `ExperimentComponents`，`build_experiment_components` 保留公开默认 `train=True` 行为，并继续执行 seed、模型参数规范化、pipeline 构建与静态 compatibility 预检。engine 公共入口继续转发配置类型，但不再依赖 engine.config。
+
+边界测试显式确认 `engine/config.py` 不存在，并校验 ExperimentConfig、ExperimentComponents 与 build_experiment_components 的唯一规范归属。Stage 8 的 CI 验收由该提交触发的 GitHub Actions 结果确认。

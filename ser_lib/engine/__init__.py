@@ -12,13 +12,11 @@ from ser_lib.engine.compatibility import (
     inspect_compatibility,
     validate_compatibility,
 )
-from ser_lib.engine.config import (
+from ser_lib.config import (
     ExperimentConfig,
-    ExperimentComponents,
     ModelConfig,
     ObservabilityConfig,
     TrainerConfig,
-    build_experiment_components,
     load_experiment_config,
 )
 from ser_lib.engine.eta import EtaEstimator, EtaSnapshot
@@ -52,7 +50,9 @@ from ser_lib.engine.evaluator import (
 )
 from ser_lib.engine.experiment import (
     EvaluationExperimentResult,
+    ExperimentComponents,
     TrainingExperimentResult,
+    build_experiment_components,
     evaluate_artifact,
     train_experiment,
 )

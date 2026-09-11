@@ -11,7 +11,7 @@ import torch
 from ser_lib.data.manifest import ManifestMeta, load_meta
 from ser_lib.data.pipeline import SamplePipeline, build_pipeline
 from ser_lib.engine.compatibility import inspect_compatibility
-from ser_lib.engine.config import ExperimentConfig, load_experiment_config
+from ser_lib.config import ExperimentConfig, load_experiment_config
 from ser_lib.engine.optim import parse_optimizer_config, parse_scheduler_config
 from ser_lib.foundation.diagnostics import Diagnostic
 from ser_lib.models.registry import model_registry

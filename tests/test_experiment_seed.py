@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 
-from ser_lib.engine.config import build_experiment_components
+from ser_lib.engine.experiment import build_experiment_components
 
 
 def test_experiment_component_build_seeds_model_initialization_before_construction(
