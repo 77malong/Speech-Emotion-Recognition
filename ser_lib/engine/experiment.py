@@ -125,7 +125,9 @@ class EvaluationExperimentResult:
     def to_dict(self) -> dict[str, object]:
         evaluation = self.evaluation.to_dict()
         run = self.run.to_dict()
+        summary = self.evaluation.summary_dict()
         return {
+            **summary,
             "evaluation_id": self.run.evaluation_id,
             "source_artifact": self.run.source_artifact,
             "source_run_id": self.run.source_run_id,
