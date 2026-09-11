@@ -1,7 +1,14 @@
 import pytest
 import torch
 
-from ser_lib.data.types import AudioRecord, SERBatch, TensorSpec
+from ser_lib.data.errors import RepresentationError
+from ser_lib.data.types import (
+    AudioRecord,
+    RepresentationOutput,
+    SERBatch,
+    TensorSpec,
+    validate_representation_output,
+)
 
 
 def test_audio_record_treats_missing_start_as_zero():
@@ -41,3 +48,54 @@ def test_ser_batch_rejects_non_boolean_mask():
             uids=["a"],
             metadata=[{}],
         )
+
+
+
+def test_representation_output_requires_length_for_temporal_key():
+    output = RepresentationOutput(
+        inputs={"waveform": torch.ones(8)},
+        lengths={},
+    )
+    specs = {"waveform": TensorSpec(layout="T")}
+
+    with pytest.raises(RepresentationError, match="缺少 lengths"):
+        validate_representation_output(output, specs)
+
+
+def test_representation_output_rejects_length_for_non_temporal_key():
+    output = RepresentationOutput(
+        inputs={"global": torch.ones(3)},
+        lengths={"global": 3},
+    )
+    specs = {"global": TensorSpec(layout="D", feature_dim=3)}
+
+    with pytest.raises(RepresentationError, match="非时序输入"):
+        validate_representation_output(output, specs)
+
+
+@pytest.mark.parametrize("length", [0, 7])
+def test_representation_output_rejects_invalid_temporal_length(length: int):
+    output = RepresentationOutput(
+        inputs={"waveform": torch.ones(8)},
+        lengths={"waveform": length},
+    )
+    specs = {"waveform": TensorSpec(layout="T")}
+
+    with pytest.raises(RepresentationError):
+        validate_representation_output(output, specs)
+
+
+def test_representation_output_accepts_exact_temporal_length_contract():
+    output = RepresentationOutput(
+        inputs={
+            "features": torch.ones(4, 6),
+            "global": torch.ones(3),
+        },
+        lengths={"features": 6},
+    )
+    specs = {
+        "features": TensorSpec(layout="FT", feature_dim=4),
+        "global": TensorSpec(layout="D", feature_dim=3),
+    }
+
+    validate_representation_output(output, specs)
