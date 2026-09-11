@@ -235,7 +235,8 @@ def _build_feature_transforms(
         modules.append(RandomApply(module, probability))
     if not modules:
         return None
-    return FeatureTransformPipeline(modules)
+    temporal_keys = tuple(key for key, spec in specs.items() if spec.temporal)
+    return FeatureTransformPipeline(modules, keys=temporal_keys)
 
 
 def build_pipeline(
