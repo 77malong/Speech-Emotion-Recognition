@@ -13,8 +13,6 @@ import torch
 from torch.utils.data import DataLoader
 
 from ser_lib._version import __version__
-from ser_lib.artifacts.manifest import ModelArtifactManifest
-from ser_lib.config.data import DataConfig
 from ser_lib.data.collate import SERCollator, build_collator
 from ser_lib.data.dataset import SERDataset
 from ser_lib.data.fingerprint import fingerprint_manifest
@@ -28,17 +26,20 @@ from ser_lib.engine.evaluator import (
     evaluate,
     write_evaluation_report,
 )
-from ser_lib.engine.lineage import (
+from ser_lib.engine.evaluation_runs import (
     EvaluationRunInfo,
-    TrainingRunInfo,
     build_evaluation_run_metadata,
     load_evaluation_run_info,
-    load_training_run_info,
     write_evaluation_run_info,
+)
+from ser_lib.engine.runs import (
+    TrainingRunInfo,
+    load_training_run_info,
     write_training_run_info,
 )
 from ser_lib.engine.objectives import build_weighted_sampler
 from ser_lib.engine.trainer import Trainer, TrainingResult
+from ser_lib.foundation.events import EventContext
 from ser_lib.models.base import SERModel
 from ser_lib.models.registry import model_registry
 
