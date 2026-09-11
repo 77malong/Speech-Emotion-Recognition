@@ -218,15 +218,18 @@ def test_review_lo05_failed_checkpoint_load_does_not_mutate_model(tmp_path: Path
     python_rng = random.getstate()
     numpy_rng = np.random.get_state()
     torch_rng = torch.get_rng_state()
-    try:
-        with pytest.raises((TypeError, ValueError)):
-            load_checkpoint(checkpoint, target)
 
-        assert all(
-            torch.equal(before[name], value)
-            for name, value in target.state_dict().items()
-        )
-    finally:
-        random.setstate(python_rng)
-        np.random.set_state(numpy_rng)
-        torch.set_rng_state(torch_rng)
+    with pytest.raises((TypeError, ValueError)):
+        load_checkpoint(checkpoint, target)
+
+    assert all(
+        torch.equal(before[name], value)
+        for name, value in target.state_dict().items()
+    )
+    assert random.getstate() == python_rng
+
+    actual_numpy_rng = np.random.get_state()
+    assert actual_numpy_rng[0] == numpy_rng[0]
+    assert np.array_equal(actual_numpy_rng[1], numpy_rng[1])
+    assert actual_numpy_rng[2:] == numpy_rng[2:]
+    assert torch.equal(torch.get_rng_state(), torch_rng)

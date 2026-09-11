@@ -64,6 +64,46 @@ def _restore_rng_state(state: dict[str, Any]) -> None:
         torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
+def _validate_rng_state(state: dict[str, Any]) -> None:
+    """Validate checkpoint RNG payloads without mutating process-global RNG state."""
+    try:
+        python_rng = random.Random()
+        python_rng.setstate(state["python"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("checkpoint Python RNG state 非法") from exc
+
+    try:
+        numpy_rng = np.random.RandomState()
+        numpy_rng.set_state(state["numpy"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("checkpoint NumPy RNG state 非法") from exc
+
+    torch_cpu_state = state["torch_cpu"]
+    if not isinstance(torch_cpu_state, torch.Tensor):
+        raise ValueError("checkpoint Torch CPU RNG state 必须是 Tensor")
+    try:
+        torch.Generator(device="cpu").set_state(torch_cpu_state.detach().cpu())
+    except (TypeError, RuntimeError) as exc:
+        raise ValueError("checkpoint Torch CPU RNG state 非法") from exc
+
+    cuda_state = state.get("torch_cuda")
+    if cuda_state is None:
+        return
+    if not isinstance(cuda_state, (list, tuple)) or not all(
+        isinstance(item, torch.Tensor) for item in cuda_state
+    ):
+        raise ValueError("checkpoint Torch CUDA RNG state 必须是 Tensor 序列")
+    if not torch.cuda.is_available():
+        return
+    if len(cuda_state) > torch.cuda.device_count():
+        raise ValueError("checkpoint Torch CUDA RNG state 超出当前设备数量")
+    try:
+        for index, item in enumerate(cuda_state):
+            torch.Generator(device=f"cuda:{index}").set_state(item.detach().cpu())
+    except (TypeError, RuntimeError) as exc:
+        raise ValueError("checkpoint Torch CUDA RNG state 非法") from exc
+
+
 def _resume_trainer_signature(config: dict[str, Any]) -> dict[str, Any]:
     """Return only trainer fields that must stay stable for numerical resume semantics."""
     return {
@@ -149,6 +189,7 @@ def load_checkpoint(
         "python", "numpy", "torch_cpu"
     }.issubset(rng_state):
         raise ValueError("checkpoint rng_state 字段不完整或包含未知字段")
+    _validate_rng_state(rng_state)
     if payload.get("model_id") != model.model_spec.model_id:
         raise ValueError("checkpoint 与当前模型类型不一致")
     saved_model_config = payload.get("model_config")
