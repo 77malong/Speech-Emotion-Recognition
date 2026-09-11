@@ -190,7 +190,11 @@ class TorchModelAdapter(SERModel):
         return self._adapter_config.model_dump(mode="json")
 
     def state_dict(self, *args: Any, **kwargs: Any):  # type: ignore[override]
-        """返回底层 module 原始 key，避免 adapter 路径污染权重契约。"""
+        """Standalone 保持原始 key；嵌套保存时遵守 PyTorch 子模块前缀。"""
+        prefix = kwargs.get("prefix", "")
+        if prefix:
+            kwargs = dict(kwargs)
+            kwargs["prefix"] = f"{prefix}_module."
         return self._module.state_dict(*args, **kwargs)
 
     def load_state_dict(  # type: ignore[override]
