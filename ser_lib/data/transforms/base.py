@@ -72,15 +72,25 @@ class FeatureTransformPipeline(nn.Module):
     temporal key 依次应用。
     """
 
-    def __init__(self, transforms: Sequence[nn.Module] | None = None) -> None:
+    def __init__(
+        self,
+        transforms: Sequence[nn.Module] | None = None,
+        *,
+        keys: Sequence[str] | None = None,
+    ) -> None:
         super().__init__()
         self.transforms = nn.ModuleList(list(transforms or []))
+        self.keys = tuple(keys) if keys is not None else None
 
     def forward(self, inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         if not self.transforms:
             return inputs
         outputs = dict(inputs)
-        for key, tensor in inputs.items():
+        selected_keys = tuple(inputs) if self.keys is None else self.keys
+        for key in selected_keys:
+            if key not in inputs:
+                continue
+            tensor = inputs[key]
             for transform in self.transforms:
                 try:
                     tensor = transform(tensor)
