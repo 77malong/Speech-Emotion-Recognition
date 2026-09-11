@@ -211,3 +211,59 @@ def test_batch_wrapper_respects_batch_size_for_real_predictor():
     result = BatchEmotionPredictor(predictor).predict_records(records, batch_size=2)
     assert result.succeeded == 5
     assert model.forward_calls == 3
+
+
+
+class CancellingSinglePredictor:
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    def predict_record(self, record):
+        self.seen.append(record.uid)
+        raise OperationCancelled("cancelled by predictor")
+
+
+class CancellingBatchPredictor:
+    def __init__(self) -> None:
+        self.batch_calls = 0
+        self.single_calls = 0
+
+    def predict_records(self, records):
+        self.batch_calls += 1
+        raise OperationCancelled("cancelled in batch predictor")
+
+    def predict_record(self, record):
+        self.single_calls += 1
+        return PredictionResult(record.uid, 0, "neutral", 1.0, [1.0, 0.0])
+
+
+def test_batch_wrapper_propagates_single_item_operation_cancelled():
+    predictor = CancellingSinglePredictor()
+    records = (
+        AudioRecord(f"item-{index}", Path("unused.wav"))
+        for index in range(3)
+    )
+
+    with pytest.raises(OperationCancelled, match="cancelled by predictor"):
+        BatchEmotionPredictor(predictor).predict_records(
+            records,
+            fail_fast=False,
+            batch_size=1,
+        )
+
+    assert predictor.seen == ["item-0"]
+
+
+def test_batch_wrapper_does_not_fallback_after_batch_operation_cancelled():
+    predictor = CancellingBatchPredictor()
+    records = [AudioRecord(f"item-{index}", Path("unused.wav")) for index in range(4)]
+
+    with pytest.raises(OperationCancelled, match="cancelled in batch predictor"):
+        BatchEmotionPredictor(predictor).predict_records(
+            records,
+            fail_fast=False,
+            batch_size=2,
+        )
+
+    assert predictor.batch_calls == 1
+    assert predictor.single_calls == 0
