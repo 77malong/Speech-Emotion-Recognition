@@ -260,3 +260,38 @@ def test_freeze_module_disables_gradients_without_changing_state_keys():
 
     assert tuple(adapter.state_dict()) == original_keys
     assert all(not parameter.requires_grad for parameter in adapter.parameters())
+
+
+
+@pytest.mark.parametrize(
+    "container_factory",
+    [
+        lambda adapter: nn.ModuleDict({"adapter": adapter}),
+        lambda adapter: nn.Sequential(adapter),
+    ],
+)
+def test_adapter_nested_state_dict_strict_round_trip(container_factory):
+    torch.manual_seed(91)
+    source_adapter = _adapter()
+    source = container_factory(source_adapter)
+    state = source.state_dict()
+
+    assert state
+    assert any("._module." in key for key in state)
+
+    torch.manual_seed(92)
+    target = container_factory(_adapter())
+    target.load_state_dict(state, strict=True)
+
+    target_state = target.state_dict()
+    assert tuple(target_state) == tuple(state)
+    for key, value in state.items():
+        assert torch.equal(target_state[key], value)
+
+
+def test_adapter_standalone_state_dict_keeps_original_module_keys():
+    module = TinyWaveClassifier()
+    adapter = _adapter(module=module)
+
+    assert tuple(adapter.state_dict()) == tuple(module.state_dict())
+    assert all("._module." not in key for key in adapter.state_dict())
