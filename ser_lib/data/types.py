@@ -96,13 +96,24 @@ class AudioRecord:
             raise ValueError(
                 f"AudioRecord.audio_path 必须是 pathlib.Path，实际: {type(self.audio_path)!r}"
             )
-        if self.label is not None and not isinstance(self.label, int):
+        if self.label is not None and (
+            not isinstance(self.label, int) or isinstance(self.label, bool)
+        ):
             raise ValueError(f"AudioRecord.label 必须是 int 或 None，实际: {self.label!r}")
-        if self.start_ms is not None and self.start_ms < 0:
-            raise ValueError(
-                f"AudioRecord.start_ms 必须 >= 0，实际: {self.start_ms} (uid={self.uid})"
-            )
+        if self.start_ms is not None:
+            if not isinstance(self.start_ms, int) or isinstance(self.start_ms, bool):
+                raise ValueError(
+                    f"AudioRecord.start_ms 必须是整数或 None，实际: {self.start_ms!r}"
+                )
+            if self.start_ms < 0:
+                raise ValueError(
+                    f"AudioRecord.start_ms 必须 >= 0，实际: {self.start_ms} (uid={self.uid})"
+                )
         if self.end_ms is not None:
+            if not isinstance(self.end_ms, int) or isinstance(self.end_ms, bool):
+                raise ValueError(
+                    f"AudioRecord.end_ms 必须是整数或 None，实际: {self.end_ms!r}"
+                )
             effective_start = self.start_ms or 0
             if self.end_ms <= effective_start:
                 raise ValueError(
@@ -110,10 +121,16 @@ class AudioRecord:
                     f"实际 start_ms={self.start_ms}, "
                     f"end_ms={self.end_ms} (uid={self.uid})"
                 )
-        if self.sample_rate_hint is not None and self.sample_rate_hint <= 0:
-            raise ValueError(
-                f"AudioRecord.sample_rate_hint 必须为正整数，实际: {self.sample_rate_hint}"
-            )
+        if self.sample_rate_hint is not None:
+            if (
+                not isinstance(self.sample_rate_hint, int)
+                or isinstance(self.sample_rate_hint, bool)
+                or self.sample_rate_hint <= 0
+            ):
+                raise ValueError(
+                    "AudioRecord.sample_rate_hint 必须为正整数，实际: "
+                    f"{self.sample_rate_hint!r}"
+                )
 
 
 @dataclass(frozen=True, slots=True)
