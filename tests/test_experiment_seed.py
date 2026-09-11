@@ -5,19 +5,13 @@ import random
 import numpy as np
 import torch
 
-from ser_lib.engine.config import build_experiment_components, load_experiment_config
+from ser_lib.engine.config import build_experiment_components
 
 
-def _valid_release_config():
-    config = load_experiment_config("tests/fixtures/release_compat/experiment_v1.yaml")
-    raw = config.model_dump()
-    raw["data"]["representation"]["params"]["n_mels"] = 16
-    raw["model"]["params"]["feature_dim"] = 16
-    return type(config).model_validate(raw)
-
-
-def test_experiment_component_build_seeds_model_initialization_before_construction() -> None:
-    config = _valid_release_config()
+def test_experiment_component_build_seeds_model_initialization_before_construction(
+    current_experiment_config,
+) -> None:
+    config = current_experiment_config
     states: list[torch.Tensor] = []
 
     for ambient_seed in (111, 222):
@@ -30,8 +24,10 @@ def test_experiment_component_build_seeds_model_initialization_before_constructi
     torch.testing.assert_close(states[0], states[1], rtol=0.0, atol=0.0)
 
 
-def test_experiment_component_build_resets_python_numpy_and_torch_rngs() -> None:
-    config = _valid_release_config()
+def test_experiment_component_build_resets_python_numpy_and_torch_rngs(
+    current_experiment_config,
+) -> None:
+    config = current_experiment_config
     samples: list[tuple[float, float, torch.Tensor]] = []
 
     for ambient_seed in (333, 444):

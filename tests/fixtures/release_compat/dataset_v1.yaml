@@ -1,7 +1,0 @@
-dataset_id: legacy-release-fixture
-root: .
-splits:
-  train: dataset_train_v1.jsonl
-labels:
-  0: {en: neutral}
-  1: {en: happy}

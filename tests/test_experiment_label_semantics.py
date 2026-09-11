@@ -5,12 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 import ser_lib.artifacts.loader as artifact_loader
-from ser_lib.engine.config import load_experiment_config
 from ser_lib.engine.experiment import evaluate_artifact, train_experiment
 
 
-def test_training_rejects_experiment_labels_that_disagree_with_manifest():
-    config = load_experiment_config("tests/fixtures/release_compat/experiment_v1.yaml")
+def test_training_rejects_experiment_labels_that_disagree_with_manifest(current_experiment_config):
+    config = current_experiment_config
     swapped = config.data.model_copy(
         update={
             "labels": {
