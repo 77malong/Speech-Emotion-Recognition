@@ -110,6 +110,12 @@ def test_evaluate_artifact_forwards_streaming_sink_without_retaining_predictions
             source_run_id=None,
             dataset_id="streaming-eval",
             dataset_fingerprint="dataset-fingerprint",
+            to_dict=lambda: {
+                "evaluation_id": "eval-1",
+                "source_run_id": None,
+                "dataset_id": "streaming-eval",
+                "dataset_fingerprint": "dataset-fingerprint",
+            },
         ),
     )
 
