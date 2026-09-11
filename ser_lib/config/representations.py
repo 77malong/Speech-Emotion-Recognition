@@ -51,8 +51,14 @@ class MelConfig(SpectralConfigBase):
 class LogMelConfig(MelConfig):
     """Log-Mel 参数。"""
 
-    power: Literal[1.0, 2.0] = 2.0
+    power: float = Field(default=2.0, ge=1.0, le=2.0)
     top_db: float = Field(default=80.0, ge=10.0, le=120.0)
+
+    @model_validator(mode="after")
+    def _validate_log_power(self) -> "LogMelConfig":
+        if self.power not in {1.0, 2.0}:
+            raise ValueError("LogMel power 仅支持 1.0（幅度）或 2.0（功率）")
+        return self
 
 
 class MFCCConfig(SpectralConfigBase):
