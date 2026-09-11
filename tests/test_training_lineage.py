@@ -21,6 +21,9 @@ from ser_lib.engine.lineage import artifact_provenance_from_training_run
 from ser_lib.models import CNNBaseline
 
 
+_FEATURE_DIM = 16
+
+
 def _data_config(tmp_path: Path) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "dataset.yaml",
@@ -28,7 +31,7 @@ def _data_config(tmp_path: Path) -> DataConfig:
         audio=AudioSettings(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel",
-            params={"sample_rate": 16000, "n_mels": 4},
+            params={"sample_rate": 16000, "n_mels": _FEATURE_DIM},
         ),
         batching=BatchingConfig(type="dynamic"),
         labels={0: {"en": "neutral"}, 1: {"en": "happy"}},
@@ -41,7 +44,7 @@ def _experiment(tmp_path: Path) -> ExperimentConfig:
         model=ModelConfig(
             type="cnn_baseline",
             params={
-                "feature_dim": 4,
+                "feature_dim": _FEATURE_DIM,
                 "num_classes": 2,
                 "hidden_dim": 6,
                 "dropout": 0,
@@ -58,17 +61,34 @@ def _experiment(tmp_path: Path) -> ExperimentConfig:
 
 def _batch():
     samples = [
-        SERSample("a", {"features": torch.randn(4, 5)}, {"features": 5}, 0, {}),
-        SERSample("b", {"features": torch.randn(4, 3)}, {"features": 3}, 1, {}),
+        SERSample(
+            "a",
+            {"features": torch.randn(_FEATURE_DIM, 5)},
+            {"features": 5},
+            0,
+            {},
+        ),
+        SERSample(
+            "b",
+            {"features": torch.randn(_FEATURE_DIM, 3)},
+            {"features": 3},
+            1,
+            {},
+        ),
     ]
     return SERCollator(
-        {"features": TensorSpec(layout="FT", feature_dim=4)},
+        {"features": TensorSpec(layout="FT", feature_dim=_FEATURE_DIM)},
         BatchingConfig(type="dynamic"),
     )(samples)
 
 
 def _model() -> CNNBaseline:
-    return CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
+    return CNNBaseline(
+        feature_dim=_FEATURE_DIM,
+        num_classes=2,
+        hidden_dim=6,
+        dropout=0,
+    )
 
 
 def test_trainer_from_experiment_builds_json_safe_lineage_without_dataset_io(tmp_path: Path):
