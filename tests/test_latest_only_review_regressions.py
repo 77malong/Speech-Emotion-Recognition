@@ -146,10 +146,21 @@ def test_review_lo03_export_rejects_swapped_checkpoint_label_semantics(
     )
 
     raw = config.model_dump(mode="json")
-    raw["data"]["labels"] = {
+    swapped_labels = {
         0: {"en": "happy"},
         1: {"en": "neutral"},
     }
+    raw["data"]["labels"] = swapped_labels
+
+    manifest_raw = yaml.safe_load(config.data.manifest.read_text(encoding="utf-8"))
+    manifest_raw["labels"] = swapped_labels
+    swapped_manifest = tmp_path / "swapped-dataset.yaml"
+    swapped_manifest.write_text(
+        yaml.safe_dump(manifest_raw, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    raw["data"]["manifest"] = str(swapped_manifest)
+
     swapped_config = tmp_path / "swapped-labels.yaml"
     swapped_config.write_text(
         yaml.safe_dump(raw, allow_unicode=True, sort_keys=False),
@@ -157,7 +168,7 @@ def test_review_lo03_export_rejects_swapped_checkpoint_label_semantics(
     )
     destination = tmp_path / "artifact"
 
-    with pytest.raises(ValueError, match="标签|label"):
+    with pytest.raises(ValueError, match="checkpoint.*标签|标签.*checkpoint"):
         export_checkpoint_artifact(swapped_config, checkpoint, destination)
 
     assert not destination.exists()
