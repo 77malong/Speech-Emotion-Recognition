@@ -93,3 +93,15 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 将 `engine/evaluation_runs.py` 重命名为 `engine/evaluation_records.py`，类型和读写 API 收敛为 `EvaluationMetadata`、`EvaluationRecord`、`build_evaluation_metadata`、`write_evaluation_record`、`load_evaluation_record`。训练 history 的 `TrainingHistoryInfo` 同步改为 `TrainingHistory`，删除 Web/DTO 导向注释。显式的 0.2.x `evaluation_record` compatibility property 被移除，统一使用 `run_record`。
 
 本阶段只调整 Python 模块与 API 命名；`run.json`、`evaluation.json` 及 checkpoint 当前磁盘结构保持不变。training/evaluation catalog 暂时保留并迁移到新的 record 类型，其去留留给后续 catalog 审计阶段。
+
+
+## Runtime / benchmark 边界收敛
+
+按 latest-only 计划将 benchmark helper 从安装包移出：删除 `ser_lib/benchmark.py`，迁移到
+`benchmarks/common.py`。benchmark 继续作为仓库级开发/性能回归工具，不再属于
+`ser_lib` public API。
+
+`ser_lib/runtime.py` 只保留 `RuntimeDevice`、`RuntimeCapabilities` 与
+`get_runtime_capabilities`，删除 RuntimeMetrics、host/process resource polling 及其
+辅助实现。同步删除 runtime metrics/host metrics 测试；由于全仓已无其他使用，基础依赖中
+移除 `psutil`。wheel smoke 显式验证 `ser_lib.benchmark` 不再随安装包发布。

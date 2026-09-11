@@ -231,7 +231,7 @@ Speech-Emotion-Recognition/
 │   ├── artifacts/        # 安全模型产物导出与加载
 │   ├── inference/        # 单文件、批量和流式推理
 │   ├── cli/              # ser 命令行入口
-│   └── runtime.py        # 按需运行环境与资源快照
+│   └── runtime.py        # Python/PyTorch 与设备能力探测
 ├── scripts/              # 覆盖率和训练冒烟脚本
 ├── configs/              # 可校验的训练配置模板
 ├── examples/             # 可执行 Python API 示例

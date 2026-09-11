@@ -12,6 +12,7 @@ import ser_lib.engine as engine
 import ser_lib.foundation as foundation
 import ser_lib.inference as inference
 import ser_lib.models as models
+import ser_lib.runtime as runtime
 from ser_lib._version import __version__
 
 
@@ -49,6 +50,7 @@ def test_package_public_surfaces_are_resolvable_and_unique():
         artifacts,
         inference,
         models,
+        runtime,
     ):
         _assert_explicit_public_surface(module)
     assert ser_lib.__version__ == __version__
@@ -92,6 +94,9 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert not hasattr(foundation, "SchemaMigrationError")
     assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors.base"
     assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors.engine"
+    assert runtime.RuntimeCapabilities.__module__ == "ser_lib.runtime"
+    assert not hasattr(runtime, "RuntimeMetrics")
+    assert not hasattr(runtime, "get_runtime_metrics")
 
 
 def test_application_wrappers_and_old_root_shortcuts_are_absent():
@@ -124,6 +129,8 @@ def test_application_wrappers_and_old_root_shortcuts_are_absent():
         "build_evaluation_run_metadata",
         "write_evaluation_run_info",
         "load_evaluation_run_info",
+        "RuntimeMetrics",
+        "get_runtime_metrics",
     }
     for module in (ser_lib, data, engine, artifacts):
         assert retired.isdisjoint(module.__all__), module.__name__
@@ -149,8 +156,6 @@ def test_application_wrappers_and_old_root_shortcuts_are_absent():
         "EvaluationRecord",
         "RuntimeCapabilities",
         "get_runtime_capabilities",
-        "RuntimeMetrics",
-        "get_runtime_metrics",
         "build_experiment_config",
     }
     assert domain_only.isdisjoint(ser_lib.__all__)
@@ -180,6 +185,7 @@ def test_retired_internal_namespaces_are_not_importable():
         "ser_lib.models.pretrained",
         "ser_lib.engine.runs",
         "ser_lib.engine.evaluation_runs",
+        "ser_lib.benchmark",
     ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(module_name)

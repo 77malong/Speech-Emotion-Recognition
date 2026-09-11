@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.benchmark import BenchmarkResult, compare_benchmarks, load_benchmark_result, run_benchmark, write_benchmark_result
+from benchmarks.common import (
+    BenchmarkResult,
+    compare_benchmarks,
+    load_benchmark_result,
+    run_benchmark,
+    write_benchmark_result,
+)
 from ser_lib.data import profile_manifest_audio
 from ser_lib.data.importers.ravdess import RavdessImporter
 

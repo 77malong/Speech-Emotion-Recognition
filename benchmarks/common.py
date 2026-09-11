@@ -1,4 +1,4 @@
-"""可序列化的微基准结果与回归比较工具。"""
+"""仓库级微基准结果与回归比较工具；不属于 ser_lib 公共 API。"""
 
 from __future__ import annotations
 

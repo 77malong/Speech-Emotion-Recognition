@@ -14,8 +14,7 @@ Page/View/Detail 或跨领域 ComponentCatalog facade。未列入各模块 `__al
 | `ser_lib.engine` | ExperimentConfig、Trainer、训练/评估实验、run metadata、report、prediction iterator、checkpoint |
 | `ser_lib.artifacts` | artifact 导出、轻量 inspect/catalog、验证、加载和模型卡 |
 | `ser_lib.inference` | 单文件、批量和纯 PCM 流式推理 |
-| `ser_lib.runtime` | 按需运行环境能力与资源快照 |
-| `ser_lib.benchmark` | 可序列化微基准和同环境回归比较 |
+| `ser_lib.runtime` | Python/PyTorch 与 CPU/CUDA/MPS 运行能力探测 |
 | `ser_lib.cli` | `ser` 命令入口 |
 
 当前待发布版本为 `0.3.0`，尚未承诺 1.0 级别的长期兼容性。本轮边界重构包含 breaking Python API 调整；规范路径以各领域子包为准，迁移说明见 `CHANGELOG.md`。
@@ -37,14 +36,14 @@ Page/View/Detail 或跨领域 ComponentCatalog facade。未列入各模块 `__al
 ```python
 from ser_lib.config import build_experiment_config, list_experiment_preset_ids
 from ser_lib.data import DatasetManifest, fingerprint_manifest, summarize_manifest
-from ser_lib.runtime import get_runtime_metrics
+from ser_lib.runtime import get_runtime_capabilities
 
 summary = summarize_manifest("data/dataset.yaml")
 fingerprint = fingerprint_manifest("data/dataset.yaml")
 first_records = DatasetManifest.load("data/dataset.yaml").get_records()[:50]
 preset_ids = list_experiment_preset_ids()
 config = build_experiment_config("cnn_logmel_baseline")
-runtime = get_runtime_metrics("cpu")
+runtime = get_runtime_capabilities()
 ```
 
 这些函数返回真实领域对象或 iterator，不引入 HTTP、RPC、FastAPI、WebSocket、分页 DTO 或后台 job 概念。
@@ -170,21 +169,11 @@ flatten metadata 等派生信息由上层应用自行计算；完整 hash 验证
 `library_version` 保留创建来源，不参与兼容分支；模型与数据的形状、标签及预处理契约仍须校验。
 artifact 固定使用 weights.safetensors；checkpoint 仅用于可信本地恢复。
 
-## Runtime snapshot
+## Runtime capabilities
 
-`ser_lib.runtime.get_runtime_metrics(device)` 是按需、非阻塞资源快照。除已有 CUDA
-allocator/driver memory 字段外，还提供：
-
-- `process_rss_bytes`；
-- `system_memory_used_bytes`；
-- `system_memory_available_bytes`；
-- `system_memory_total_bytes`；
-- `process_cpu_percent`；
-- `system_cpu_percent`。
-
-CPU/RAM 通过跨平台 psutil API 获取，不依赖 Linux `/proc`，不会在 API 内 sleep。
-`cpu_percent(interval=None)` 第一次采样可能为 0；调用方应低频轮询而不是塞进 Trainer
-每个 batch 的热路径。
+`ser_lib.runtime.get_runtime_capabilities()` 只做一次性环境能力探测，返回 Python/PyTorch
+版本、CPU/CUDA/MPS 可选设备、GPU 名称与总显存以及 AMP capability。核心库不再提供
+CPU/GPU 资源轮询或进程监控 API；持续资源监控属于宿主应用或外部观测工具职责。
 
 ## ETA v2
 

@@ -13,7 +13,7 @@ from ser_lib.engine.training import move_batch_to_device as trainer_move_batch_t
 from ser_lib.foundation.errors import CompatibilityError, RegistryError
 from ser_lib.inference import StreamingLatency
 from ser_lib.models.specs import ModelSpec
-from ser_lib.runtime import RuntimeMetrics
+from ser_lib.runtime import RuntimeCapabilities
 
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -50,7 +50,7 @@ def test_domain_contracts_have_canonical_owners():
     assert engine.CompatibilityReport is CompatibilityReport
     assert RegistryError.__module__ == "ser_lib.foundation.errors.base"
     assert CompatibilityError.__module__ == "ser_lib.foundation.errors.engine"
-    assert RuntimeMetrics.__module__ == "ser_lib.runtime"
+    assert RuntimeCapabilities.__module__ == "ser_lib.runtime"
     assert StreamingLatency.__module__ == "ser_lib.inference.streaming"
 
 

@@ -60,6 +60,7 @@ jobs:
               "ser_lib.engine.evaluation_detail",
               "ser_lib.engine.runs",
               "ser_lib.engine.evaluation_runs",
+              "ser_lib.benchmark",
               "ser_lib.models.pretrained",
           )
           for module_name in retired:
@@ -72,6 +73,7 @@ jobs:
               "ser_lib.models.adapters.huggingface",
               "ser_lib.engine.training_records",
               "ser_lib.engine.evaluation_records",
+              "ser_lib.runtime",
           )
           for module_name in required:
               assert importlib.util.find_spec(module_name) is not None, module_name
