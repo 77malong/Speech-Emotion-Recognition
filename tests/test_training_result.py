@@ -7,7 +7,8 @@ import pytest
 import torch
 
 from ser_lib import TrainingResult as RootTrainingResult
-from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
+from ser_lib.config import BatchingConfig
+from ser_lib.data import SERCollator, SERSample, TensorSpec
 from ser_lib.engine import Trainer, TrainerConfig, TrainingResult, TrainingStatus
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken

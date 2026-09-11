@@ -8,7 +8,8 @@ import argparse
 import time
 from pathlib import Path
 from torch.utils.data import DataLoader
-from ser_lib.data import DatasetManifest, SERDataset, build_collator, build_components, load_data_config
+from ser_lib.config import load_data_config
+from ser_lib.data import DatasetManifest, SERDataset, build_collator, build_components
 
 def main() -> None:
     parser = argparse.ArgumentParser()

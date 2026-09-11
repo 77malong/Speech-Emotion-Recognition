@@ -26,7 +26,9 @@
 
 ## 未完成阶段与下一步
 
-Stage 5～12 尚未完成。当前格式收敛已完成，下一步删除管理功能与配置转发入口。最终提交的跨平台 CI 尚未验收。
+Stage 6～12 尚未完成。当前格式收敛与数据管理功能删除已完成，下一步将 errors/events 归入 foundation。最终提交的跨平台 CI 尚未验收。
+
+本记录中的本机验证均为 Windows/Python 3.10；按 ADR 的验收范围，它不替代 Linux/macOS、Python 3.11/3.12 与两个 Transformers 版本的 CI 结果。
 
 ## 验收前置修复：严格类型检查基线
 
@@ -47,3 +49,13 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 新增 20 个当前格式用例，覆盖旧字段拒绝、缺字段、错误类型、摘要文件缺失、固定权重文件名、来源版本不影响加载，以及训练/评估记录的端到端输出。原有数值、恢复、HF、导出预检和原子导入测试保留。
 
 验证：509 passed，1 个既有 GradScaler 警告；后续 checkpoint 类型放宽为支持 Torch 模块 extra_state 后，34 项相关测试通过；全仓 Ruff 通过；严格 mypy 检查 107 个文件通过；sdist/wheel 构建与安装后的 CPU smoke 通过，确认安装包中四个 migrations 模块不存在。生产代码格式版本/migration/pickle 开关搜索无命中。历史 review 和历史探针原文保留。
+
+## Stage 5：删除管理功能与配置转发入口
+
+按计划删除 `data/config.py`、`data/editor.py`、`data/history.py`、`data/query.py` 四个模块，以及仅服务于它们的 `DatasetEditError`、`DatasetEditConflictError`、`DatasetTransactionError` 异常和四个测试文件（共 20 个用例）。
+
+配置引用收敛到 `ser_lib.config`：调用方改用 `AudioConfig`/`CacheConfig` 正式名称，删除 `AudioSettings`/`CacheSettings` 别名及 `data.config` 转发模块。`DatasetManifest.iter_records` 同时移除，记录访问统一走 `get_records(resolved_records)`；`docs/API_REFERENCE.md` 的推荐入口与 Dataset records 章节同步更新，不再引用已删除的 `iter_records`。历史 review 文档与 `scripts/audit_*repros.py` 探针按 ADR 保留原文。
+
+验证：488 passed（较 509 减少的 21 项来自被删除的管理 API 用例），1 个既有 GradScaler 警告；全仓 Ruff 通过；mypy 检查 103 个文件无错误；sdist/wheel 构建通过；wheel 装入独立 venv 后确认从 site-packages 导入，`ONE_EPOCH_SMOKE_TEST=PASS`（8 samples、2 batches、2 optimizer steps）；构建产物中四个已删除模块均不存在，migrations 无残留；`git diff --check` 无命中。
+
+本机环境补充：`psutil` 是 `pyproject.toml` 已声明的依赖，但本机 conda 环境缺失，导致 `ser_lib.runtime` 导入失败并使收集阶段报错。已按声明的约束安装 `psutil>=5.9` 后运行上述验证；该问题属于本机环境缺口，不是本轮改动引入。

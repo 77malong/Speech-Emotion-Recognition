@@ -16,7 +16,7 @@ from safetensors.torch import save_file
 from ser_lib._version import __version__
 from ser_lib.artifacts._compatibility import validate_artifact_compatibility
 from ser_lib.artifacts.manifest import ModelArtifactManifest, ModelCard
-from ser_lib.data.config import DataConfig
+from ser_lib.config import DataConfig
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import (
     CancellationCheck,

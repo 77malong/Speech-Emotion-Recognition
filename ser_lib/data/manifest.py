@@ -13,7 +13,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Mapping
 
 import yaml
 from pydantic import Field, StrictStr, ValidationError
@@ -293,17 +293,17 @@ class DatasetManifest:
     def resolve_audio_path(self, record: AudioRecord) -> Path:
         return _resolved_audio_path(self.meta, record)
 
-    def iter_records(self, split: str | None = None) -> Iterator[AudioRecord]:
-        for record in self.records:
-            if split is None or self.record_splits.get(record.uid) == split:
-                yield record
-
     def get_records(self, split: str | None = None) -> list[AudioRecord]:
-        return list(self.iter_records(split))
+        return [
+            record for record in self.records
+            if split is None or self.record_splits.get(record.uid) == split
+        ]
 
     def resolved_records(self, split: str | None = None) -> list[AudioRecord]:
         resolved = []
-        for record in self.iter_records(split):
+        for record in self.records:
+            if split is not None and self.record_splits.get(record.uid) != split:
+                continue
             resolved.append(
                 AudioRecord(
                     uid=record.uid,

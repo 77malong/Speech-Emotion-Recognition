@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from ser_lib.artifacts import export_model_artifact, verify_model_artifact
-from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.config import AudioConfig, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.foundation.events import CancellationToken, LifecycleEvent, ProgressEvent
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.models import CNNBaseline
@@ -12,7 +12,7 @@ from ser_lib.models import CNNBaseline
 def _config(tmp_path: Path) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "unused-dataset.yaml",
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel",
             params={

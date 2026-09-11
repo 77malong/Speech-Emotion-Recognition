@@ -15,7 +15,7 @@ import torch.nn as nn
 if TYPE_CHECKING:
     from ser_lib.data.audio import AudioLoader
 
-from ser_lib.data.config import ComponentConfig, DataConfig
+from ser_lib.config import ComponentConfig, DataConfig
 from ser_lib.data.errors import RepresentationError, TransformError
 from ser_lib.data.registry import default_registry
 from ser_lib.data.representations.base import Representation

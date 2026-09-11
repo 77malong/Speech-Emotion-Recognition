@@ -8,7 +8,7 @@ import torch
 
 from ser_lib.data.audio import AudioLoader, AudioLoaderConfig
 from ser_lib.data.collate import SERCollator
-from ser_lib.data.config import BatchingConfig, ComponentConfig
+from ser_lib.config import BatchingConfig, ComponentConfig
 from ser_lib.data.dataset import SERDataset
 from ser_lib.data.errors import AudioNotFoundError, InvalidAudioSegmentError, RegistryError
 from ser_lib.data.pipeline import SamplePipeline, _build_waveform_transforms

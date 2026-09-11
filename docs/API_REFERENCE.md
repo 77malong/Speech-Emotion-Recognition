@@ -35,15 +35,13 @@ Page/View/Detail 或跨领域 ComponentCatalog facade。未列入各模块 `__al
 ## Direct API 推荐入口
 
 ```python
-from itertools import islice
-
 from ser_lib.config import build_experiment_config, list_experiment_preset_ids
-from ser_lib.data import fingerprint_manifest, iter_records, summarize_manifest
+from ser_lib.data import DatasetManifest, fingerprint_manifest, summarize_manifest
 from ser_lib.runtime import get_runtime_metrics
 
 summary = summarize_manifest("data/dataset.yaml")
 fingerprint = fingerprint_manifest("data/dataset.yaml")
-first_records = list(islice(iter_records("data/dataset.yaml"), 50))
+first_records = DatasetManifest.load("data/dataset.yaml").get_records()[:50]
 preset_ids = list_experiment_preset_ids()
 config = build_experiment_config("cnn_logmel_baseline")
 runtime = get_runtime_metrics("cpu")
@@ -53,15 +51,12 @@ runtime = get_runtime_metrics("cpu")
 
 ## Dataset records
 
-`ser_lib.data.iter_records(...)` 按 manifest 原始顺序惰性返回 `AudioRecord`，支持：
+`DatasetManifest.get_records(split=...)` 按 manifest 原始顺序返回 `AudioRecord` 列表；`split=None`
+返回全部记录，每条记录的 split 归属由 `record_splits` 保留。需要逐条解析音频路径时使用
+`resolved_records(split=...)`。
 
-- split；
-- label_id；
-- speaker_id；
-- keyword（uid、audio path、speaker_id、metadata 的大小写不敏感包含匹配）。
-
-核心库不再计算分页 `total`、`has_more` 或构造 `RecordView`。需要分页时由上层使用
-`itertools.islice` 等 iterator 工具自行切片。
+核心库不计算分页 `total`、`has_more`，不构造 `RecordView`，也不提供 label/speaker/keyword
+筛选。分页与筛选由上层自行实现。
 
 ## Training run resources
 

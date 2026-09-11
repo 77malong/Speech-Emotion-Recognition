@@ -7,8 +7,9 @@ import torch
 from pydantic import ValidationError
 
 from ser_lib.artifacts import export_model_artifact, load_model_artifact
-from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
-from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
+from ser_lib.config import BatchingConfig
+from ser_lib.data import SERCollator, SERSample, TensorSpec
+from ser_lib.config import AudioConfig, ComponentConfig, DataConfig
 from ser_lib.engine import Trainer, TrainerConfig
 from ser_lib.models import GRUBaseline, GRUBaselineConfig, model_registry
 
@@ -31,7 +32,7 @@ def _batch(lengths: tuple[int, ...] = (5, 3)):
 def _data_config(tmp_path: Path) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "unused.yaml",
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel",
             params={"sample_rate": 16000, "n_mels": 16, "n_fft": 128,

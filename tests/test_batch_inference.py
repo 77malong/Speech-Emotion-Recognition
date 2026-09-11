@@ -7,15 +7,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from ser_lib.data import (
-    AudioRecord,
-    BatchingConfig,
-    DatasetManifest,
-    ManifestMeta,
-    SERCollator,
-    SERSample,
-    TensorSpec,
-)
+from ser_lib.config import BatchingConfig
+from ser_lib.data import AudioRecord, DatasetManifest, ManifestMeta, SERCollator, SERSample, TensorSpec
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.inference import (

@@ -3,8 +3,8 @@ from pathlib import Path
 import torch
 
 from ser_lib.data.cache import CachedRepresentation
-from ser_lib.data.config import (
-    AudioSettings, BatchingConfig, CacheSettings, ComponentConfig, DataConfig,
+from ser_lib.config import (
+    AudioConfig, BatchingConfig, CacheConfig, ComponentConfig, DataConfig,
 )
 from ser_lib.data.pipeline import build_pipeline
 from ser_lib.data.registry import ComponentDescriptor
@@ -72,8 +72,8 @@ def test_corrupted_cache_entry_is_recomputed(tmp_path: Path):
 def test_configured_cache_wraps_representation(tmp_path: Path):
     config = DataConfig(
         manifest=tmp_path / "unused.yaml",
-        audio=AudioSettings(target_sample_rate=16000),
-        cache=CacheSettings(enabled=True, directory=tmp_path / "cache"),
+        audio=AudioConfig(target_sample_rate=16000),
+        cache=CacheConfig(enabled=True, directory=tmp_path / "cache"),
         representation=ComponentConfig(type="waveform"),
         batching=BatchingConfig(type="dynamic"),
     )
@@ -84,7 +84,7 @@ def test_configured_cache_wraps_representation(tmp_path: Path):
 def test_cache_rejects_training_waveform_augmentation(tmp_path: Path):
     config = DataConfig(
         manifest=tmp_path / "unused.yaml",
-        cache=CacheSettings(enabled=True, directory=tmp_path / "cache"),
+        cache=CacheConfig(enabled=True, directory=tmp_path / "cache"),
         representation=ComponentConfig(type="waveform"),
         waveform_transforms=[
             ComponentConfig(type="gaussian_noise", probability=0.5)

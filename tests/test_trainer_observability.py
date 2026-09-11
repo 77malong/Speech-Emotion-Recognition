@@ -6,7 +6,8 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
+from ser_lib.config import BatchingConfig
+from ser_lib.data import SERCollator, SERSample, TensorSpec
 from ser_lib.engine import ObservabilityConfig, Trainer, TrainerConfig
 from ser_lib.engine.events import CheckpointEvent
 from ser_lib.foundation.errors import OperationCancelled

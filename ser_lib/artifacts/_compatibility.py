@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ser_lib.data.config import DataConfig
+from ser_lib.config import DataConfig
 from ser_lib.data.pipeline import build_components
 from ser_lib.engine.compatibility import validate_compatibility
 from ser_lib.models.base import SERModel

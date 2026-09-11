@@ -5,14 +5,14 @@ from pathlib import Path
 import pytest
 
 from ser_lib.artifacts import export_model_artifact
-from ser_lib.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.config import AudioConfig, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.models import CNNBaseline
 
 
 def _data_config(tmp_path: Path, *, n_mels: int) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "dataset.yaml",
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel",
             params={"sample_rate": 16000, "n_mels": n_mels},

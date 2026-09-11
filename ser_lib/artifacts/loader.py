@@ -14,7 +14,7 @@ from safetensors.torch import load_file
 from ser_lib.artifacts.manifest import ModelArtifactManifest
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator, build_collator
-from ser_lib.data.config import DataConfig
+from ser_lib.config import DataConfig
 from ser_lib.data.pipeline import SamplePipeline, build_components
 from ser_lib.engine.compatibility import validate_compatibility
 from ser_lib.foundation.errors import OperationCancelled

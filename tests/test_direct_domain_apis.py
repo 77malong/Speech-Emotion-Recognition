@@ -9,14 +9,13 @@ from ser_lib.artifacts import (
     verify_model_artifact,
 )
 from ser_lib.data import (
-    DatasetEditor,
+    DatasetManifest,
     SERBatch,
     TensorSpec,
     fingerprint_manifest,
-    iter_records,
     summarize_manifest,
 )
-from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.config import AudioConfig, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.engine import Trainer, TrainerConfig, evaluate
 from ser_lib.models import CNNBaseline, ModelOutput, ModelSpec, SERModel
 from ser_lib.runtime import get_runtime_capabilities
@@ -84,7 +83,7 @@ def _dataset(tmp_path: Path) -> Path:
 def _data_config(tmp_path: Path) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "unused-dataset.yaml",
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel",
             params={
@@ -105,18 +104,13 @@ def test_dataset_and_runtime_workflows_use_direct_domain_apis(tmp_path: Path):
     manifest = _dataset(tmp_path)
 
     summary = summarize_manifest(manifest)
-    records = list(iter_records(manifest, split="train"))
+    records = DatasetManifest.load(manifest).get_records(split="train")
     fingerprint = fingerprint_manifest(manifest)
-    editor = DatasetEditor(manifest)
 
     assert summary.dataset_id == "direct-api-demo"
     assert summary.total_records == 2
     assert [record.uid for record in records] == ["a"]
     assert len(fingerprint.digest) == 64
-    editor.move_records(["a"], "val")
-    assert editor.dirty is True
-    editor.rollback()
-    assert editor.dirty is False
 
     capabilities = get_runtime_capabilities()
     json.dumps(capabilities.to_dict())

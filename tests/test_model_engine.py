@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ser_lib.data.collate import SERCollator
 from ser_lib.data.audio import AudioLoader, AudioLoaderConfig
-from ser_lib.data.config import BatchingConfig
+from ser_lib.config import BatchingConfig
 from ser_lib.data.pipeline import SamplePipeline
 from ser_lib.data.representations.spectral import LogMelRepresentation
 from ser_lib.data.types import SERSample, TensorSpec

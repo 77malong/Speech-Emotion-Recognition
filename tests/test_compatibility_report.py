@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from ser_lib.data import BatchingConfig, TensorSpec
+from ser_lib.config import BatchingConfig
+from ser_lib.data import TensorSpec
 from ser_lib.data.errors import CompatibilityError as DataCompatibilityError
 from ser_lib.engine import CompatibilityReport, inspect_compatibility, validate_compatibility
 from ser_lib.foundation.errors import CompatibilityError

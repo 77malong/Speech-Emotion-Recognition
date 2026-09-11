@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from ser_lib.data.config import ComponentConfig
+from ser_lib.config import ComponentConfig
 from ser_lib.data.pipeline import _build_feature_transforms
 from ser_lib.data.types import TensorSpec
 

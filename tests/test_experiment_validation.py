@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ser_lib.data import BatchingConfig
-from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
+from ser_lib.config import BatchingConfig
+from ser_lib.config import AudioConfig, ComponentConfig, DataConfig
 from ser_lib.engine import validate_experiment
 from ser_lib.engine.config import ExperimentConfig, ModelConfig, TrainerConfig
 from ser_lib.models.registry import model_registry
@@ -39,7 +39,7 @@ def _cnn_experiment(tmp_path: Path) -> ExperimentConfig:
         data=DataConfig(
             manifest=_manifest(tmp_path),
             labels=_labels(2),
-            audio=AudioSettings(target_sample_rate=16000),
+            audio=AudioConfig(target_sample_rate=16000),
             representation=ComponentConfig(
                 type="log_mel",
                 params={
@@ -92,7 +92,7 @@ def test_hf_dry_run_does_not_import_transformers_or_load_weights(monkeypatch, tm
         data=DataConfig(
             manifest=manifest,
             labels=_labels(2),
-            audio=AudioSettings(target_sample_rate=16000),
+            audio=AudioConfig(target_sample_rate=16000),
             representation=ComponentConfig(type="waveform"),
             batching=BatchingConfig(type="dynamic"),
         ),
@@ -136,7 +136,7 @@ def test_dry_run_accumulates_dataset_pipeline_loss_path_and_device_errors(tmp_pa
         data=DataConfig(
             manifest=manifest,
             labels=_labels(2),
-            audio=AudioSettings(target_sample_rate=16000),
+            audio=AudioConfig(target_sample_rate=16000),
             representation=ComponentConfig(type="waveform"),
             batching=BatchingConfig(type="dynamic"),
         ),

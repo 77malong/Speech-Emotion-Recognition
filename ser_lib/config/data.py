@@ -165,9 +165,6 @@ def load_data_config(path: Path | str) -> DataConfig:
     return config.model_copy(update=updates) if updates else config
 
 
-# 0.2.x 读兼容：旧名称只指向同一正式 schema，不再维护独立定义。
-AudioSettings = AudioConfig
-CacheSettings = CacheConfig
 
 
 __all__ = [
@@ -181,6 +178,4 @@ __all__ = [
     "BatchingConfig",
     "DataConfig",
     "load_data_config",
-    "AudioSettings",
-    "CacheSettings",
 ]

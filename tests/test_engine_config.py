@@ -6,8 +6,9 @@ import pytest
 import torch
 from pydantic import ValidationError
 
-from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
-from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
+from ser_lib.config import BatchingConfig
+from ser_lib.data import SERCollator, SERSample, TensorSpec
+from ser_lib.config import AudioConfig, ComponentConfig, DataConfig
 from ser_lib.data.errors import CompatibilityError
 from ser_lib.engine import (
     ExperimentConfig,
@@ -27,7 +28,7 @@ from ser_lib.models import CNNBaseline
 def _data_config(manifest: Path) -> DataConfig:
     return DataConfig(
         manifest=manifest,
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel", params={"sample_rate": 16000, "n_mels": 16}
         ),

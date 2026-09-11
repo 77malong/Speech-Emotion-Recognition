@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from ser_lib.data.config import BatchingConfig
+from ser_lib.config import BatchingConfig
 from ser_lib.data.types import TensorSpec
 from ser_lib.foundation.diagnostics import Diagnostic
 from ser_lib.foundation.errors import CompatibilityError

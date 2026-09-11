@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from ser_lib.artifacts import ArtifactEntry, export_model_artifact, scan_model_artifacts
-from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.config import AudioConfig, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.foundation.events import ProgressEvent
 from ser_lib.models import CNNBaseline
 
@@ -11,7 +11,7 @@ def _config(tmp_path: Path) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "unused-dataset.yaml",
         dataset_id="catalog-dataset",
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(
             type="log_mel",
             params={

@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from ser_lib.data.collate import SERCollator
-from ser_lib.data.config import BatchingConfig, FixedBatching, SlidingBatching
+from ser_lib.config import BatchingConfig, FixedBatching, SlidingBatching
 from ser_lib.data.errors import CollationError
 from ser_lib.data.types import SERSample, TensorSpec
 

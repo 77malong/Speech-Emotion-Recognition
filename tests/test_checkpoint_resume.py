@@ -7,8 +7,9 @@ import pytest
 import torch
 
 from ser_lib.config.training import SamplingConfig
-from ser_lib.data import BatchingConfig, SERCollator, SERSample, TensorSpec
-from ser_lib.data.config import AudioSettings, ComponentConfig, DataConfig
+from ser_lib.config import BatchingConfig
+from ser_lib.data import SERCollator, SERSample, TensorSpec
+from ser_lib.config import AudioConfig, ComponentConfig, DataConfig
 from ser_lib.engine import (
     ExperimentConfig,
     ModelConfig,
@@ -48,7 +49,7 @@ def _experiment(tmp_path: Path) -> ExperimentConfig:
     return ExperimentConfig(
         data=DataConfig(
             manifest=tmp_path / "unused.yaml",
-            audio=AudioSettings(),
+            audio=AudioConfig(),
             representation=ComponentConfig(
                 type="log_mel", params={"sample_rate": 16000, "n_mels": 16}
             ),

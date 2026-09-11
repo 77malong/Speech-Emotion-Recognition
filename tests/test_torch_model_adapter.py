@@ -12,7 +12,7 @@ from torch import nn
 
 from ser_lib.artifacts import export_model_artifact, load_model_artifact
 from ser_lib.data import SERBatch, TensorSpec
-from ser_lib.data.config import AudioSettings, BatchingConfig, ComponentConfig, DataConfig
+from ser_lib.config import AudioConfig, BatchingConfig, ComponentConfig, DataConfig
 from ser_lib.engine import Trainer, TrainerConfig, evaluate, load_checkpoint, save_checkpoint
 from ser_lib.foundation.errors import RegistryError
 from ser_lib.inference import EmotionPredictor
@@ -99,7 +99,7 @@ def _batch() -> SERBatch:
 def _data_config(tmp_path: Path) -> DataConfig:
     return DataConfig(
         manifest=tmp_path / "unused.yaml",
-        audio=AudioSettings(target_sample_rate=16000),
+        audio=AudioConfig(target_sample_rate=16000),
         representation=ComponentConfig(type="waveform"),
         batching=BatchingConfig(type="dynamic"),
         labels={0: {"en": "neutral"}, 1: {"en": "happy"}},

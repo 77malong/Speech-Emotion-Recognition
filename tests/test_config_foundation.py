@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 import ser_lib.config.base as config_base
 import ser_lib.config.loader as config_loader
-import ser_lib.data.config as legacy_data_config
 from ser_lib.config import (
     AudioConfig,
     BatchingConfig,
@@ -71,18 +70,6 @@ def test_config_public_exports_are_identity_with_canonical_modules():
     assert config_base.StrictConfig is StrictConfig
     assert config_loader.resolve_config_path is resolve_config_path
     assert config_loader.load_yaml_mapping is load_yaml_mapping
-
-
-def test_data_config_old_names_are_aliases_of_canonical_schema():
-    assert legacy_data_config.AudioSettings is AudioConfig
-    assert legacy_data_config.CacheSettings is CacheConfig
-    assert legacy_data_config.ComponentConfig is ComponentConfig
-    assert legacy_data_config.BatchingConfig is BatchingConfig
-    assert legacy_data_config.DataConfig is DataConfig
-
-    from ser_lib.data.audio import AudioLoaderConfig
-
-    assert AudioLoaderConfig is AudioConfig
 
 
 def test_audio_config_preserves_payload_defaults_and_strict_validation():
