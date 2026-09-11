@@ -12,6 +12,7 @@ from typing import Literal, Protocol
 
 from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.types import AudioRecord
+from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import (
     CancellationCheck,
     EventCallback,
@@ -250,6 +251,8 @@ class BatchEmotionPredictor:
                 cancellation.raise_if_cancelled()
             try:
                 result = self.predictor.predict_record(record)
+            except OperationCancelled:
+                raise
             except Exception as exc:
                 if fail_fast:
                     raise
@@ -269,6 +272,8 @@ class BatchEmotionPredictor:
                 chunk_results = list(batch_method(chunk))
                 if len(chunk_results) != len(chunk):
                     raise ValueError("批量预测返回数量与输入记录数不一致")
+            except OperationCancelled:
+                raise
             except Exception:
                 if fail_fast:
                     raise
