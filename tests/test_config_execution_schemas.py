@@ -153,3 +153,27 @@ def test_streaming_config_keeps_dataclass_defaults_and_validation():
         assert "hop_ms" in str(exc)
     else:
         raise AssertionError("hop_ms > window_ms must fail")
+
+
+
+@pytest.mark.parametrize(
+    ("config_type", "field"),
+    [
+        (AdamWConfig, "learning_rate"),
+        (AdamWConfig, "weight_decay"),
+        (AdamWConfig, "beta1"),
+        (AdamWConfig, "beta2"),
+        (AdamWConfig, "eps"),
+        (SGDConfig, "learning_rate"),
+        (SGDConfig, "weight_decay"),
+        (SGDConfig, "momentum"),
+    ],
+)
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_optimizer_configs_reject_non_finite_numeric_values(
+    config_type,
+    field: str,
+    value: float,
+):
+    with pytest.raises(ValidationError):
+        config_type(**{field: value})
