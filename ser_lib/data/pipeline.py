@@ -173,14 +173,14 @@ def _build_waveform_transforms(
     modules: list[nn.Module] = []
     for component in configs:
         factory, _, _ = _waveform_transform_entry(component.type)
-        if _factory_accepts(factory, "sample_rate") and "sample_rate" not in component.params:
-            # 按 AudioLoader 的目标采样率注入（如 pitch_shift）
-            module = factory(**{**component.params, "sample_rate": sample_rate})
-        else:
-            module = default_registry.create(
-                "waveform_transform",
-                {"type": component.type, "params": component.params},
-            )
+        params = dict(component.params)
+        if _factory_accepts(factory, "sample_rate") and "sample_rate" not in params:
+            # 先补全运行时派生参数，再统一通过 registry/config schema 校验。
+            params["sample_rate"] = sample_rate
+        module = default_registry.create(
+            "waveform_transform",
+            {"type": component.type, "params": params},
+        )
         if getattr(factory, "is_random", True):
             if not allow_random:
                 continue
