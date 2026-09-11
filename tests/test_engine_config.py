@@ -83,9 +83,8 @@ def test_load_experiment_config_resolves_paths_from_config_file(tmp_path: Path):
     path = tmp_path / "configs" / "experiment.yaml"
     path.parent.mkdir()
     path.write_text(
-        """schema_version: 1
-data:
-  schema_version: 1
+        """data:
+
   manifest: ../dataset.yaml
   cache:
     enabled: true
@@ -113,9 +112,8 @@ def test_load_experiment_config_resolves_default_cache_from_config_file(tmp_path
     path = tmp_path / "configs" / "experiment.yaml"
     path.parent.mkdir()
     path.write_text(
-        """schema_version: 1
-data:
-  schema_version: 1
+        """data:
+
   manifest: dataset.yaml
   representation:
     type: log_mel

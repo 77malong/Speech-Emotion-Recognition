@@ -146,7 +146,7 @@ def run_single_manifest_conversion(
             write_jsonl(resolved_records, staging / "manifest.jsonl")
             task.progress(2, 3, message="manifest staged")
             document: dict[str, Any] = {
-                "schema_version": 1,
+
                 "dataset_id": dataset_id,
                 "root": str(root),
                 "splits": {"default": "manifest.jsonl"},

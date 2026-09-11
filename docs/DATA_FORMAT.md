@@ -3,7 +3,6 @@
 数据集由一个 `dataset.yaml` 和一个或多个 JSONL split 构成：
 
 ```yaml
-schema_version: 1
 dataset_id: demo
 root: ./audio
 splits:

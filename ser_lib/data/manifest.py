@@ -16,15 +16,20 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 import yaml
+from pydantic import Field, StrictStr, ValidationError
+from ser_lib.config.base import StrictConfig
 
 from ser_lib.data.errors import ManifestError
-from ser_lib.data.migrations import migrate_data_payload
 from ser_lib.data.types import AudioRecord
-from ser_lib.foundation.errors import SchemaMigrationError
+
+class _ManifestDocument(StrictConfig):
+    dataset_id: StrictStr = Field(min_length=1)
+    root: StrictStr = "."
+    splits: dict[StrictStr, StrictStr]
+    labels: dict[int, dict[str, Any]] = Field(default_factory=dict)
+
 
 logger = logging.getLogger(__name__)
-
-MANIFEST_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -36,7 +41,7 @@ class ManifestMeta:
     yaml_path: Path
     splits: dict[str, Path] = field(default_factory=dict)
     labels: dict[int, dict[str, Any]] = field(default_factory=dict)
-    schema_version: int = MANIFEST_SCHEMA_VERSION
+
 
     @property
     def num_classes(self) -> int:
@@ -151,7 +156,7 @@ def read_jsonl(path: Path) -> list[AudioRecord]:
 
 
 def load_meta(yaml_path: Path) -> ManifestMeta:
-    """加载、read-time migrate 并校验 dataset.yaml。"""
+    """严格加载当前 dataset.yaml。"""
     yaml_path = Path(yaml_path)
     if not yaml_path.exists():
         raise ManifestError(f"dataset.yaml 不存在: {yaml_path}", path=yaml_path)
@@ -163,18 +168,10 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
     if not isinstance(raw, dict):
         raise ManifestError(f"dataset.yaml 必须是映射: {yaml_path}", path=yaml_path)
 
-    payload = dict(raw)
-    payload.setdefault("schema_version", MANIFEST_SCHEMA_VERSION)
     try:
-        payload = migrate_data_payload(
-            "dataset_manifest",
-            payload,
-            target_version=MANIFEST_SCHEMA_VERSION,
-        )
-    except SchemaMigrationError as exc:
-        raise ManifestError(str(exc), path=yaml_path) from exc
-
-    schema_version = payload["schema_version"]
+        payload = _ManifestDocument.model_validate(raw).model_dump()
+    except ValidationError as exc:
+        raise ManifestError(f"dataset.yaml 校验失败: {exc}", path=yaml_path) from exc
     dataset_id = payload.get("dataset_id")
     if not dataset_id:
         raise ManifestError(f"dataset.yaml 缺少 dataset_id: {yaml_path}", path=yaml_path)
@@ -209,7 +206,7 @@ def load_meta(yaml_path: Path) -> ManifestMeta:
         yaml_path=yaml_path.resolve(),
         splits=splits,
         labels=labels,
-        schema_version=schema_version,
+
     )
 
 
@@ -394,7 +391,7 @@ class DatasetManifest:
             splits_section["unassigned"] = relative.as_posix()
 
         doc: dict[str, Any] = {
-            "schema_version": meta.schema_version,
+
             "dataset_id": meta.dataset_id,
             "root": str(meta.root),
             "splits": splits_section,

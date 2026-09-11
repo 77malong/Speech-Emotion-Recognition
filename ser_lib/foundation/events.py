@@ -14,7 +14,6 @@ from typing import Any, ClassVar, Protocol
 
 from ser_lib.foundation.errors import OperationCancelled
 
-EVENT_SCHEMA_VERSION = 2
 _LIFECYCLE_STATUSES = frozenset({
     "started",
     "phase_started",
@@ -98,7 +97,6 @@ class ProgressEvent:
     sequence: int = field(default_factory=_next_event_sequence)
     details: dict[str, Any] = field(default_factory=dict)
 
-    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
     event_type: ClassVar[str] = "progress"
 
     def __post_init__(self) -> None:
@@ -119,7 +117,7 @@ class ProgressEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
+
             "event_type": self.event_type,
             "sequence": self.sequence,
             "stage": self.stage,
@@ -142,7 +140,6 @@ class MetricEvent:
     context: EventContext = field(default_factory=EventContext)
     sequence: int = field(default_factory=_next_event_sequence)
 
-    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
     event_type: ClassVar[str] = "metric"
 
     def __post_init__(self) -> None:
@@ -158,7 +155,7 @@ class MetricEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
+
             "event_type": self.event_type,
             "sequence": self.sequence,
             "name": self.name,
@@ -180,7 +177,6 @@ class LogEvent:
     context: EventContext = field(default_factory=EventContext)
     sequence: int = field(default_factory=_next_event_sequence)
 
-    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
     event_type: ClassVar[str] = "log"
 
     def __post_init__(self) -> None:
@@ -193,7 +189,7 @@ class LogEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
+
             "event_type": self.event_type,
             "sequence": self.sequence,
             "level": self.level,
@@ -217,7 +213,6 @@ class LifecycleEvent:
     context: EventContext = field(default_factory=EventContext)
     sequence: int = field(default_factory=_next_event_sequence)
 
-    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
     event_type: ClassVar[str] = "lifecycle"
 
     def __post_init__(self) -> None:
@@ -231,7 +226,7 @@ class LifecycleEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
+
             "event_type": self.event_type,
             "sequence": self.sequence,
             "stage": self.stage,
@@ -284,7 +279,6 @@ class CancellationToken:
 
 
 __all__ = [
-    "EVENT_SCHEMA_VERSION",
     "EventContext",
     "ProgressEvent",
     "MetricEvent",

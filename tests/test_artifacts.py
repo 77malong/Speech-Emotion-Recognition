@@ -1,11 +1,9 @@
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 import torch
 
-from ser_lib import __version__
 from ser_lib.artifacts import (
     ModelCard,
     export_model_artifact,
@@ -41,8 +39,8 @@ def test_model_artifact_round_trip(tmp_path: Path):
         data_config=_config(tmp_path), labels={0: "neutral", 1: "happy"},
     )
     loaded = load_model_artifact(directory)
-    assert loaded.manifest.schema_version == 2
-    assert loaded.manifest.weights_format == "safetensors"
+    assert "schema_version" not in loaded.manifest.model_dump()
+    assert loaded.manifest.weights_file == "weights.safetensors"
     assert (directory / "weights.safetensors").is_file()
     assert (directory / "README.md").is_file()
     assert loaded.manifest.labels == {0: "neutral", 1: "happy"}
@@ -130,27 +128,3 @@ def test_artifact_manifest_rejects_weight_path_traversal(tmp_path: Path):
     manifest_path.write_text(json.dumps(raw), encoding="utf-8")
     with pytest.raises(ValueError, match="manifest"):
         verify_model_artifact(directory)
-
-
-def test_legacy_pytorch_artifact_requires_explicit_trust(tmp_path: Path):
-    model = CNNBaseline(feature_dim=16, num_classes=2, hidden_dim=5, dropout=0)
-    directory = tmp_path / "legacy"
-    directory.mkdir()
-    weights = directory / "model_state.pt"
-    torch.save(model.state_dict(), weights)
-    digest = hashlib.sha256(weights.read_bytes()).hexdigest()
-    manifest = {
-        "schema_version": 1,
-        "library_version": __version__,
-        "model_name": "cnn_baseline",
-        "model_params": model.model_config,
-        "weights_file": "model_state.pt",
-        "weights_sha256": digest,
-        "preprocessing": _config(tmp_path).model_dump(mode="json"),
-        "labels": {"0": "neutral", "1": "happy"},
-    }
-    (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(ValueError, match="allow_legacy_pickle"):
-        load_model_artifact(directory)
-    loaded = load_model_artifact(directory, allow_legacy_pickle=True)
-    assert loaded.manifest.schema_version == 1

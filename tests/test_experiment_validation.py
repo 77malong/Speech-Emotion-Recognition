@@ -16,7 +16,7 @@ def _manifest(tmp_path: Path, *, classes: int = 2, split_exists: bool = True) ->
     )
     path = tmp_path / "dataset.yaml"
     path.write_text(
-        "schema_version: 1\n"
+        ""
         "dataset_id: dry-run\n"
         "root: .\n"
         "splits:\n"
@@ -167,7 +167,7 @@ def test_dry_run_accumulates_dataset_pipeline_loss_path_and_device_errors(tmp_pa
 def test_dry_run_from_invalid_yaml_returns_diagnostic_instead_of_raising(tmp_path: Path):
     config_path = tmp_path / "invalid.yaml"
     config_path.write_text(
-        "schema_version: 1\n"
+        ""
         "data: {manifest: dataset.yaml}\n"
         "model: {type: cnn_baseline, params: {feature_dim: 16}}\n",
         encoding="utf-8",

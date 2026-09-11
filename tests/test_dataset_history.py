@@ -34,8 +34,7 @@ def _write_dataset(root: Path) -> Path:
     )
     manifest = root / "dataset.yaml"
     manifest.write_text(
-        """schema_version: 1
-dataset_id: history-demo
+        """dataset_id: history-demo
 root: .
 splits:
   train: train.jsonl

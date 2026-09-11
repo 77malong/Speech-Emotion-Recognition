@@ -30,9 +30,7 @@ from ser_lib.config.importers import (
 )
 from ser_lib.config.inference import StreamingConfig
 from ser_lib.config.loader import (
-    load_versioned_config,
     load_yaml_mapping,
-    require_schema_version,
     resolve_config_path,
 )
 from ser_lib.config.model import (
@@ -96,9 +94,7 @@ from ser_lib.config.transforms import (
 __all__ = [
     "StrictConfig",
     "resolve_config_path",
-    "require_schema_version",
     "load_yaml_mapping",
-    "load_versioned_config",
     "AudioBackend",
     "BatchingType",
     "ComponentConfig",

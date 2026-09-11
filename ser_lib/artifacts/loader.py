@@ -11,9 +11,7 @@ from pathlib import Path
 import torch
 from safetensors.torch import load_file
 
-from ser_lib._version import __version__
 from ser_lib.artifacts.manifest import ModelArtifactManifest
-from ser_lib.artifacts.migrations import validate_artifact_manifest_version
 from ser_lib.data.audio import AudioLoader
 from ser_lib.data.collate import SERCollator, build_collator
 from ser_lib.data.config import DataConfig
@@ -71,13 +69,6 @@ def _sha256_with_progress(
     return digest.hexdigest()
 
 
-def _major(version: str) -> int:
-    try:
-        return int(version.split(".", 1)[0])
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"artifact library_version 非法: {version!r}") from exc
-
-
 def _safe_component_path(source: Path, name: str) -> Path:
     candidate = source / name
     if candidate.parent.resolve() != source.resolve():
@@ -93,8 +84,6 @@ def _read_manifest(source: Path) -> ModelArtifactManifest:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise ValueError("artifact manifest 顶层必须是映射")
-        raw.setdefault("schema_version", 1)
-        validate_artifact_manifest_version(raw, supported_versions=(1, 2))
         return ModelArtifactManifest.model_validate(raw)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise ValueError(
@@ -102,20 +91,7 @@ def _read_manifest(source: Path) -> ModelArtifactManifest:
         ) from exc
 
 
-def _validate_manifest_compatibility(manifest: ModelArtifactManifest) -> None:
-    if (
-        manifest.schema_version >= 2
-        and _major(manifest.library_version) != _major(__version__)
-    ):
-        raise ValueError(
-            f"artifact 需要 ser_lib {manifest.library_version}，"
-            f"当前版本 {__version__} 不兼容"
-        )
-
-
 def _validate_external_metadata(source: Path, manifest: ModelArtifactManifest) -> None:
-    if manifest.schema_version < 2:
-        return
     expected = {
         "data_config.json": manifest.preprocessing,
         "model_config.json": manifest.model_params,
@@ -140,26 +116,27 @@ def inspect_model_artifact(directory: Path | str) -> ModelArtifactManifest:
     """快速检查 artifact 结构和轻量 metadata，不计算任何文件 SHA256。"""
     source = Path(directory)
     manifest = _read_manifest(source)
-    _validate_manifest_compatibility(manifest)
 
     weights = _safe_component_path(source, manifest.weights_file)
     if not weights.is_file():
         raise FileNotFoundError(f"模型权重不存在: {weights}")
 
-    if manifest.schema_version >= 2:
-        if not manifest.files_sha256:
-            raise ValueError("schema v2 artifact 缺少 files_sha256")
-        if manifest.files_sha256.get(manifest.weights_file) != manifest.weights_sha256:
-            raise ValueError("weights_sha256 与 files_sha256 不一致")
-        if (
-            manifest.processor is not None
-            and "processor_config.json" not in manifest.files_sha256
-        ):
-            raise ValueError("包含 processor 的 artifact 必须哈希 processor_config.json")
-        for name in manifest.files_sha256:
-            path = _safe_component_path(source, name)
-            if not path.is_file():
-                raise FileNotFoundError(f"artifact 组成文件不存在: {path}")
+    if not manifest.files_sha256:
+        raise ValueError("artifact 缺少 files_sha256")
+    required_files = {"data_config.json", "model_config.json", "labels.json", "metrics.json"}
+    if not required_files.issubset(manifest.files_sha256):
+        raise ValueError("artifact files_sha256 缺少必需元数据文件")
+    if manifest.files_sha256.get(manifest.weights_file) != manifest.weights_sha256:
+        raise ValueError("weights_sha256 与 files_sha256 不一致")
+    if (
+        manifest.processor is not None
+        and "processor_config.json" not in manifest.files_sha256
+    ):
+        raise ValueError("包含 processor 的 artifact 必须哈希 processor_config.json")
+    for name in manifest.files_sha256:
+        path = _safe_component_path(source, name)
+        if not path.is_file():
+            raise FileNotFoundError(f"artifact 组成文件不存在: {path}")
 
     _validate_external_metadata(source, manifest)
     return manifest
@@ -196,15 +173,7 @@ def verify_model_artifact(
             cancellation.raise_if_cancelled()
         manifest = inspect_model_artifact(source)
 
-        if manifest.schema_version >= 2:
-            file_entries = [(manifest.weights_file, manifest.weights_sha256)]
-            file_entries.extend(
-                (name, expected)
-                for name, expected in manifest.files_sha256.items()
-                if name != manifest.weights_file
-            )
-        else:
-            file_entries = [(manifest.weights_file, manifest.weights_sha256)]
+        file_entries = list(manifest.files_sha256.items())
 
         resolved = [
             (name, expected, _safe_component_path(source, name))
@@ -311,9 +280,8 @@ def load_model_artifact(
     directory: Path | str,
     *,
     map_location: str | torch.device = "cpu",
-    allow_legacy_pickle: bool = False,
 ) -> LoadedArtifact:
-    """完整验证并加载 artifact；旧 v1 pickle 必须显式授权。"""
+    """完整验证并加载当前 safetensors artifact。"""
     source = Path(directory)
     manifest = verify_model_artifact(source)
     target_device = torch.device(map_location)
@@ -334,14 +302,7 @@ def load_model_artifact(
     )
     collator = build_collator(pipeline.output_specs, data_config.batching)
     weights = source / manifest.weights_file
-    if manifest.weights_format == "safetensors":
-        state = load_file(weights, device="cpu")
-    elif manifest.weights_format == "pytorch" and allow_legacy_pickle:
-        state = torch.load(weights, map_location="cpu", weights_only=True)
-    else:
-        raise ValueError(
-            "旧 PyTorch artifact 可能包含 pickle；仅可信文件可设置 allow_legacy_pickle=True"
-        )
+    state = load_file(weights, device="cpu")
     if not isinstance(state, dict) or not all(
         isinstance(key, str) and isinstance(value, torch.Tensor)
         for key, value in state.items()

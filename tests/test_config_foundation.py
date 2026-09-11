@@ -19,9 +19,7 @@ from ser_lib.config import (
     DataConfig,
     StrictConfig,
     load_data_config,
-    load_versioned_config,
     load_yaml_mapping,
-    require_schema_version,
     resolve_config_path,
 )
 from ser_lib.foundation.errors import ConfigurationError
@@ -72,9 +70,7 @@ def test_config_package_has_no_runtime_domain_reverse_imports():
 def test_config_public_exports_are_identity_with_canonical_modules():
     assert config_base.StrictConfig is StrictConfig
     assert config_loader.resolve_config_path is resolve_config_path
-    assert config_loader.require_schema_version is require_schema_version
     assert config_loader.load_yaml_mapping is load_yaml_mapping
-    assert config_loader.load_versioned_config is load_versioned_config
 
 
 def test_data_config_old_names_are_aliases_of_canonical_schema():
@@ -109,7 +105,7 @@ def test_data_config_round_trip_and_relative_paths_are_based_on_yaml(tmp_path: P
     config_dir.mkdir()
     path = config_dir / "demo.yaml"
     path.write_text(
-        "schema_version: 1\n"
+        ""
         "manifest: ../data/dataset.yaml\n"
         "cache:\n"
         "  enabled: true\n"
@@ -134,7 +130,7 @@ def test_data_config_default_cache_path_is_also_based_on_yaml(tmp_path: Path):
     config_dir.mkdir()
     path = config_dir / "demo.yaml"
     path.write_text(
-        "schema_version: 1\n"
+        ""
         "manifest: dataset.yaml\n"
         "representation:\n"
         "  type: waveform\n",
@@ -172,8 +168,7 @@ def test_strict_config_remains_frozen_and_forbids_unknown_fields():
         value.name = "changed"
 
 
-
-def test_data_config_file_loader_rejects_future_schema_version(tmp_path: Path):
+def test_data_config_file_loader_rejects_retired_version_field(tmp_path: Path):
     path = tmp_path / "future.yaml"
     path.write_text(
         "schema_version: 999\n"

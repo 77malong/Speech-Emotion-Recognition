@@ -1,5 +1,7 @@
 # 实验配置模板
 
+配置只接受当前结构，不含 schema_version 或 format_version；旧字段不会自动迁移。
+
 这些配置展示 `ExperimentConfig` 的完整结构。默认假设已经通过 `ser dataset import`
 在 `data/standard/dataset.yaml` 创建了六分类数据集；使用前必须根据自己的 manifest
 修改 `data.manifest`、`data.labels` 和模型的 `num_classes`。

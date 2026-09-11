@@ -31,7 +31,7 @@ def _write_dataset(root: Path) -> Path:
     )
     dataset_yaml = root / "dataset.yaml"
     dataset_yaml.write_text(
-        "schema_version: 1\n"
+        ""
         "dataset_id: profile-demo\n"
         "root: .\n"
         "splits:\n"

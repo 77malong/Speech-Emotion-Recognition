@@ -85,7 +85,7 @@ def test_prediction_event_validates_and_serializes_public_fields():
     )
 
     payload = event.to_dict()
-    assert payload["schema_version"] == 2
+    assert "schema_version" not in payload
     assert payload["event_type"] == "prediction"
     assert payload["uid"] == "audio-001"
     assert payload["emotion"] == "sad"

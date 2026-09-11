@@ -9,11 +9,31 @@ from typing import Any
 
 import numpy as np
 import torch
+from pydantic import BaseModel, ConfigDict, Field
 
+from ser_lib._version import __version__
 from ser_lib.models.base import SERModel
 
 
-CHECKPOINT_FORMAT_VERSION = 2
+class _CheckpointPayload(BaseModel):
+    """Current trusted-local payload; validate before applying any runtime state."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, arbitrary_types_allowed=True)
+
+    library_version: str = Field(min_length=1)
+    model_id: str = Field(min_length=1)
+    model_configuration: dict[str, Any] = Field(alias="model_config")
+    model_state: dict[str, Any]
+    optimizer_state: dict[str, Any] | None
+    scheduler_state: dict[str, Any] | None
+    scaler_state: dict[str, Any] | None
+    rng_state: dict[str, Any]
+    epoch: int = Field(ge=0)
+    metrics: dict[str, float]
+    metadata: dict[str, Any]
+    trainer_config: dict[str, Any]
+
+
 _RUNTIME_ONLY_TRAINER_CONFIG_FIELDS = {
     "epochs",
     "checkpoint_dir",
@@ -70,13 +90,13 @@ def save_checkpoint(
     Checkpoint 使用 pickle，只能加载由本库在可信本地环境生成的文件；用于分发
     的模型必须使用 artifact。
     """
-    if epoch < 0:
+    if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
         raise ValueError("checkpoint epoch 不能为负数")
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(target.suffix + ".tmp")
     payload = {
-        "format_version": CHECKPOINT_FORMAT_VERSION,
+        "library_version": __version__,
         "model_id": model.model_spec.model_id,
         "model_config": model.model_config,
         "model_state": model.state_dict(),
@@ -89,6 +109,7 @@ def save_checkpoint(
         "metadata": dict(metadata or {}),
         "trainer_config": dict(trainer_config or {}),
     }
+    _CheckpointPayload.model_validate(payload)
     try:
         torch.save(payload, temporary)
         temporary.replace(target)
@@ -110,7 +131,7 @@ def load_checkpoint(
     expected_trainer_config: dict[str, Any] | None = None,
     metadata_validator: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """加载可信 checkpoint；兼容格式 v1，完整恢复格式 v2。
+    """严格加载当前结构的可信本地 checkpoint。
 
     ``metadata_validator`` 在任何 model/optimizer/scheduler/scaler 状态应用之前执行，
     用于高层实验入口检查 lineage、数据指纹和完整实验配置兼容性，避免“不兼容后
@@ -122,9 +143,12 @@ def load_checkpoint(
     payload = torch.load(source, map_location=map_location, weights_only=False)
     if not isinstance(payload, dict):
         raise ValueError("checkpoint 顶层结构必须是映射")
-    version = payload.get("format_version")
-    if version not in (1, CHECKPOINT_FORMAT_VERSION):
-        raise ValueError(f"不支持的 checkpoint 格式: {version!r}")
+    _CheckpointPayload.model_validate(payload)
+    rng_state = payload["rng_state"]
+    if set(rng_state) - {"python", "numpy", "torch_cpu", "torch_cuda"} or not {
+        "python", "numpy", "torch_cpu"
+    }.issubset(rng_state):
+        raise ValueError("checkpoint rng_state 字段不完整或包含未知字段")
     if payload.get("model_id") != model.model_spec.model_id:
         raise ValueError("checkpoint 与当前模型类型不一致")
     saved_model_config = payload.get("model_config")
@@ -158,9 +182,9 @@ def load_checkpoint(
         scheduler.load_state_dict(payload["scheduler_state"])
     if scaler is not None and payload.get("scaler_state") is not None:
         scaler.load_state_dict(payload["scaler_state"])
-    if restore_rng and version >= 2 and isinstance(payload.get("rng_state"), dict):
+    if restore_rng:
         _restore_rng_state(payload["rng_state"])
     return payload
 
 
-__all__ = ["CHECKPOINT_FORMAT_VERSION", "save_checkpoint", "load_checkpoint"]
+__all__ = ["save_checkpoint", "load_checkpoint"]

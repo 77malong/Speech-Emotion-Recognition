@@ -23,7 +23,7 @@ def test_audio_config_round_trip_unknown_field_and_config_relative_path(tmp_path
     config_dir.mkdir()
     config_path = config_dir / "demo.yaml"
     config_path.write_text(
-        "schema_version: 1\nmanifest: ../data/dataset.yaml\nrepresentation:\n  type: waveform\n",
+        "manifest: ../data/dataset.yaml\nrepresentation:\n  type: waveform\n",
         encoding="utf-8",
     )
     loaded = load_data_config(config_path)

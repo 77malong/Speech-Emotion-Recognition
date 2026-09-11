@@ -13,9 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ser_lib._version import __version__
 from ser_lib.engine.evaluator import EvaluationResult
-from ser_lib.engine.migrations import migrate_engine_payload
 
-EVALUATION_RUN_SCHEMA_VERSION = 1
 _EVALUATION_RECORD_NAME = "evaluation.json"
 _AGGREGATE_METRICS = (
     "loss",
@@ -37,7 +35,6 @@ class _EvaluationRunRecordModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
-    schema_version: int = Field(default=EVALUATION_RUN_SCHEMA_VERSION, ge=1, le=1)
     evaluation_id: str = Field(min_length=1)
     directory: str = Field(min_length=1)
     created_at: datetime
@@ -170,7 +167,7 @@ class EvaluationRunInfo:
 
     def to_dict(self) -> dict[str, Any]:
         return _EvaluationRunRecordModel(
-            schema_version=EVALUATION_RUN_SCHEMA_VERSION,
+
             **asdict(self),
         ).model_dump(mode="json")
 
@@ -218,17 +215,10 @@ class EvaluationRunInfo:
         directory: Path | str | None = None,
     ) -> "EvaluationRunInfo":
         payload = dict(value)
-        payload.setdefault("schema_version", EVALUATION_RUN_SCHEMA_VERSION)
-        payload = migrate_engine_payload(
-            "evaluation_run",
-            payload,
-            target_version=EVALUATION_RUN_SCHEMA_VERSION,
-        )
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
         record = _EvaluationRunRecordModel.model_validate(payload)
         fields = record.model_dump()
-        fields.pop("schema_version", None)
         return cls(**fields)
 
 
@@ -307,7 +297,6 @@ def load_evaluation_run_info(path: Path | str) -> EvaluationRunInfo:
 
 
 __all__ = [
-    "EVALUATION_RUN_SCHEMA_VERSION",
     "EvaluationRunMetadata",
     "EvaluationRunInfo",
     "build_evaluation_run_metadata",

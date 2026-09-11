@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from ser_lib.foundation.events import (
-    EVENT_SCHEMA_VERSION,
     EventContext,
     _json_safe,
     _next_event_sequence,
@@ -40,7 +39,6 @@ class CheckpointEvent:
     context: EventContext = field(default_factory=EventContext)
     sequence: int = field(default_factory=_next_event_sequence)
 
-    schema_version: ClassVar[int] = EVENT_SCHEMA_VERSION
     event_type: ClassVar[str] = "checkpoint"
 
     def __post_init__(self) -> None:
@@ -58,7 +56,7 @@ class CheckpointEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
+
             "event_type": self.event_type,
             "sequence": self.sequence,
             "action": self.action,

@@ -13,17 +13,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ser_lib.data.errors import DatasetEditConflictError, DatasetTransactionError
 from ser_lib.data.fingerprint import fingerprint_manifest
 from ser_lib.data.manifest import DatasetManifest
-from ser_lib.data.migrations import migrate_data_payload
 from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
-DATASET_REVISION_SCHEMA_VERSION = 1
 _DEFAULT_HISTORY_DIR = ".ser_history"
 _REVISION_RECORD = "revision.json"
 _CHUNK_SIZE = 1024 * 1024
@@ -68,7 +66,6 @@ class _RevisionFileModel(BaseModel):
 class _RevisionRecordModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
     revision_id: str
     dataset_id: str = Field(min_length=1)
     created_at: datetime
@@ -577,12 +574,6 @@ def _load_revision(path: Path | str) -> tuple[Path, _RevisionRecordModel]:
     if not isinstance(raw, dict):
         raise ValueError("revision.json 顶层必须是映射")
     payload = dict(raw)
-    payload.setdefault("schema_version", DATASET_REVISION_SCHEMA_VERSION)
-    payload = migrate_data_payload(
-        "dataset_revision",
-        payload,
-        target_version=DATASET_REVISION_SCHEMA_VERSION,
-    )
     return record_path.parent, _RevisionRecordModel.model_validate(payload)
 
 
@@ -677,7 +668,6 @@ def _emit_progress(
 
 
 __all__ = [
-    "DATASET_REVISION_SCHEMA_VERSION",
     "DatasetRevisionInfo",
     "DatasetRevisionScanFailure",
     "DatasetRevisionCatalog",

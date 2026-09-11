@@ -1,6 +1,6 @@
-schema_version: 1
+
 data:
-  schema_version: 1
+
   manifest: ../data/casia-standard/dataset.yaml
   labels:
     0: {en: neutral, zh: 平静}

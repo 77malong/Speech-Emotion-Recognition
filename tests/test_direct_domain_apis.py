@@ -67,7 +67,7 @@ def _dataset(tmp_path: Path) -> Path:
     )
     path = tmp_path / "dataset.yaml"
     path.write_text(
-        "schema_version: 1\n"
+        ""
         "dataset_id: direct-api-demo\n"
         "root: .\n"
         "splits:\n"

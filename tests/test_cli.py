@@ -72,8 +72,7 @@ def test_dataset_cli_scan_import_validate_and_stats(tmp_path: Path, capsys):
 def test_dataset_validate_reports_missing_files(tmp_path: Path, capsys):
     (tmp_path / "records.jsonl").write_text('{"uid":"missing","audio_path":"missing.wav","label":0}\n', encoding="utf-8")
     manifest = tmp_path / "dataset.yaml"
-    manifest.write_text("""schema_version: 1
-dataset_id: missing
+    manifest.write_text("""dataset_id: missing
 root: .
 splits: {test: records.jsonl}
 labels:
@@ -148,8 +147,7 @@ def test_train_cli_uses_validation_split_and_writes_best_last(tmp_path: Path, ca
         records.append({"uid": f"s-{index}", "audio_path": path.name, "label": index % 2})
     for split, indexes in (("train", range(4)), ("val", range(4, 6))):
         (tmp_path / f"{split}.jsonl").write_text("".join(json.dumps(records[index]) + "\n" for index in indexes), encoding="utf-8")
-    (tmp_path / "dataset.yaml").write_text("""schema_version: 1
-dataset_id: cli-training
+    (tmp_path / "dataset.yaml").write_text("""dataset_id: cli-training
 root: .
 splits: {train: train.jsonl, val: val.jsonl}
 labels:
@@ -157,8 +155,7 @@ labels:
   1: {en: high}
 """, encoding="utf-8")
     config = tmp_path / "experiment.yaml"
-    config.write_text("""schema_version: 1
-data:
+    config.write_text("""data:
   manifest: dataset.yaml
   labels: {0: {en: low}, 1: {en: high}}
   representation:

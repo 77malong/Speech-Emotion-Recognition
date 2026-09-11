@@ -13,7 +13,7 @@ from ser_lib.data.representations.base import Representation
 from ser_lib.data.types import AudioData, RepresentationOutput, TensorSpec, validate_representation_output
 
 logger = logging.getLogger(__name__)
-CACHE_SCHEMA_VERSION = 1
+_CACHE_FORMAT_ID = "ser-cache-current"
 
 def _json_value(value: Any) -> Any:
     if hasattr(value, "model_dump"):
@@ -58,7 +58,7 @@ class CachedRepresentation(Representation):
             pass
         config = getattr(self.representation, "config", None)
         identity = {
-            "schema": CACHE_SCHEMA_VERSION,
+            "format_id": _CACHE_FORMAT_ID,
             "source": str(audio.source_path.resolve()),
             "source_stat": source_stat,
             "sample_rate": audio.sample_rate,
@@ -83,7 +83,7 @@ class CachedRepresentation(Representation):
         if path.is_file():
             try:
                 payload = torch.load(path, map_location="cpu", weights_only=True)
-                if payload.get("schema_version") != CACHE_SCHEMA_VERSION:
+                if payload.get("format_id") != _CACHE_FORMAT_ID:
                     raise ValueError("缓存 schema 版本不匹配")
                 output = RepresentationOutput(
                     inputs=dict(payload["inputs"]),
@@ -103,7 +103,7 @@ class CachedRepresentation(Representation):
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
         torch.save({
-            "schema_version": CACHE_SCHEMA_VERSION,
+            "format_id": _CACHE_FORMAT_ID,
             "inputs": {k: v.detach().cpu() for k, v in output.inputs.items()},
             "lengths": dict(output.lengths),
         }, temporary)

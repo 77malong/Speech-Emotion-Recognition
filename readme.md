@@ -27,7 +27,7 @@
 - SER 指标：支持 loss、accuracy/WAR、UAR、macro/weighted-F1、weighted
   precision/recall、balanced accuracy、MCC、Cohen's kappa、逐类指标、混淆矩阵
   和样本级概率报告。
-- 安全模型产物：artifact v2 使用 `safetensors`，保存模型、数据配置、标签、指标、
+- 安全模型产物：当前 artifact 使用 `safetensors`，保存模型、数据配置、标签、指标、
   模型卡、Hugging Face processor 配置和校验和；训练 checkpoint 与分发 artifact 明确分离。
 - 完整推理链路：支持单文件、目录、文件列表、manifest 批量推理，以及纯 PCM
   流式窗口、静音过滤、概率平滑和背压控制。
@@ -258,7 +258,7 @@ Speech-Emotion-Recognition/
 ## 兼容性与安全
 
 - 当前支持 Python 3.10–3.12，CI 覆盖 Windows、Linux 和 macOS。
-- 默认不加载不可信 pickle；分发模型应使用 artifact v2 和 `safetensors`。
+- 默认不加载不可信 pickle；分发模型应使用 当前 artifact 和 `safetensors`。
 - `hf_audio_classifier` 默认只加载本地文件并禁止远程自定义代码。
 - 数据集和预训练模型受各自许可证约束，本仓库不会自动打包或重新分发它们。
 - 发现安全问题时请按照 [安全策略](SECURITY.md) 私下报告。

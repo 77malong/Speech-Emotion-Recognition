@@ -15,7 +15,7 @@ def _write_existing_dataset(destination: Path) -> tuple[str, str]:
     manifest_text = '{"uid":"old","audio_path":"old.wav","label":0}\n'
     yaml_text = yaml.safe_dump(
         {
-            "schema_version": 1,
+
             "dataset_id": "existing",
             "root": ".",
             "splits": {"default": "manifest.jsonl"},

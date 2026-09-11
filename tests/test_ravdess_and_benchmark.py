@@ -78,7 +78,7 @@ def test_manifest_audio_profile_reports_properties_and_failures(tmp_path: Path):
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        "schema_version: 1\ndataset_id: profile\nroot: .\n"
+        "dataset_id: profile\nroot: .\n"
         "splits: {test: records.jsonl}\n"
         "labels: {0: {en: neutral}, 1: {en: happy}}\n",
         encoding="utf-8",

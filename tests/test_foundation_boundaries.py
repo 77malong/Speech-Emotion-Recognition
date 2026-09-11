@@ -90,4 +90,7 @@ def test_artifacts_no_longer_import_version_from_root_package():
     for name in ("exporter.py", "loader.py"):
         source = (root / name).read_text(encoding="utf-8")
         assert "from ser_lib import __version__" not in source
-        assert "from ser_lib._version import __version__" in source
+        if name == "exporter.py":
+            assert "from ser_lib._version import __version__" in source
+        else:
+            assert "from ser_lib._version import __version__" not in source

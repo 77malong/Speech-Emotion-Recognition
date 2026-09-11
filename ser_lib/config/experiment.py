@@ -18,7 +18,6 @@ from ser_lib.config.training import LossConfig, SamplingConfig, TrainerConfig
 class ExperimentConfig(StrictConfig):
     """一次可复现实验的完整、可序列化配置快照。"""
 
-    schema_version: int = 1
     data: DataConfig
     model: ModelConfig
     trainer: TrainerConfig = Field(default_factory=TrainerConfig)

@@ -10,7 +10,6 @@ from pydantic import ValidationError
 
 from ser_lib._version import __version__
 from ser_lib.engine import (
-    EVALUATION_RUN_SCHEMA_VERSION,
     ClassMetrics,
     EvaluationResult,
     EvaluationRunInfo,
@@ -86,7 +85,7 @@ def test_evaluation_run_record_round_trip_and_directory_relocation(tmp_path: Pat
     assert loaded.metrics_file == "metrics.json"
     assert loaded.predictions_file == "predictions.jsonl"
     payload = loaded.to_dict()
-    assert payload["schema_version"] == EVALUATION_RUN_SCHEMA_VERSION
+    assert "schema_version" not in payload
     json.dumps(payload)
 
     moved = tmp_path / "moved"

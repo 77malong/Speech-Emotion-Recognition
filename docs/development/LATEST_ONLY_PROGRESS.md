@@ -26,7 +26,7 @@
 
 ## 未完成阶段与下一步
 
-Stage 3～12 尚未完成；不得从前两个阶段推断 latest-only API 已生效。下一步将迁移调用方与当前格式加载器一起收敛，以保持阶段提交可导入、可测试。最终提交的跨平台 CI 尚未验收。
+Stage 5～12 尚未完成。当前格式收敛已完成，下一步删除管理功能与配置转发入口。最终提交的跨平台 CI 尚未验收。
 
 ## 验收前置修复：严格类型检查基线
 
@@ -35,3 +35,15 @@ Stage 3～12 尚未完成；不得从前两个阶段推断 latest-only API 已�
 更新 CI：Ruff 检查全仓；mypy 移除 `--follow-imports=skip`，与计划命令一致。未改动 Python/OS/HF 版本矩阵。
 
 验证：`mypy ser_lib` 为 111 source files 无错误；全仓 Ruff 通过；502 passed，1 个既有 GradScaler 警告；sdist/wheel 构建通过；安装 wheel 后 CPU 单 epoch smoke 通过（8 samples、2 optimizer steps）。Stage 1/2 记录保留当时基线结果，当前本机类型门禁已恢复为通过。
+
+## Stage 3/4：删除迁移框架并收敛当前格式
+
+按照 ADR 中的依赖说明合并为一个可运行提交：四个 migrations 模块和迁移专属测试删除；配置、dataset、artifact、checkpoint、run/evaluation、事件及修订记录删除格式版本字段。没有留下占位 migration、恒等转换或旧版加载分支。
+
+配置文件先验证当前模型，再按配置所在目录解析路径；dataset 加入严格顶层模型，拒绝未知字段、错误类型及缺少 splits。示例 YAML 和仍保留的测试 fixture 已同步。
+
+artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 library_version 兼容比较；必需侧文件仍检查内容一致性及摘要覆盖。checkpoint 保留可信本地 Torch 序列化，增加必需字段、类型和 RNG 键集校验，校验发生在模型状态加载之前；library_version 只记录来源。缓存采用内部 `_CACHE_FORMAT_ID`，不是公共版本协议。
+
+新增 20 个当前格式用例，覆盖旧字段拒绝、缺字段、错误类型、摘要文件缺失、固定权重文件名、来源版本不影响加载，以及训练/评估记录的端到端输出。原有数值、恢复、HF、导出预检和原子导入测试保留。
+
+验证：509 passed，1 个既有 GradScaler 警告；后续 checkpoint 类型放宽为支持 Torch 模块 extra_state 后，34 项相关测试通过；全仓 Ruff 通过；严格 mypy 检查 107 个文件通过；sdist/wheel 构建与安装后的 CPU smoke 通过，确认安装包中四个 migrations 模块不存在。生产代码格式版本/migration/pickle 开关搜索无命中。历史 review 和历史探针原文保留。

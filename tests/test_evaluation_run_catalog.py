@@ -16,7 +16,7 @@ def _record(evaluation_id: str, created_at: datetime) -> dict:
     started = created_at + timedelta(seconds=1)
     finished = started + timedelta(seconds=2)
     return {
-        "schema_version": 1,
+
         "evaluation_id": evaluation_id,
         "directory": "stale/path",
         "created_at": created_at.isoformat(),

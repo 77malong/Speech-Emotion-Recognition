@@ -35,7 +35,6 @@ from ser_lib.engine.evaluation_reports import (
     iter_evaluation_predictions,
 )
 from ser_lib.engine.evaluation_runs import (
-    EVALUATION_RUN_SCHEMA_VERSION,
     EvaluationRunInfo,
     EvaluationRunMetadata,
     build_evaluation_run_metadata,
@@ -76,7 +75,6 @@ from ser_lib.engine.objectives import (
     build_weighted_sampler,
 )
 from ser_lib.engine.runs import (
-    RUN_RECORD_SCHEMA_VERSION,
     TrainingRunCatalog,
     TrainingRunInfo,
     TrainingRunScanFailure,
@@ -103,11 +101,11 @@ __all__ = [
     "TrainingExperimentResult", "EvaluationExperimentResult",
     "train_experiment", "evaluate_artifact",
     "TrainingRunMetadata", "build_training_run_metadata",
-    "RUN_RECORD_SCHEMA_VERSION", "TrainingRunInfo",
+    "TrainingRunInfo",
     "TrainingRunScanFailure", "TrainingRunCatalog", "write_training_run_info",
     "load_training_run_info", "scan_training_runs",
     "TrainingHistoryInfo", "load_training_history",
-    "EVALUATION_RUN_SCHEMA_VERSION", "EvaluationRunMetadata", "EvaluationRunInfo",
+    "EvaluationRunMetadata", "EvaluationRunInfo",
     "EvaluationPredictionFileInfo", "inspect_evaluation_prediction_file",
     "build_evaluation_run_metadata", "write_evaluation_run_info",
     "load_evaluation_run_info", "EvaluationRunScanFailure", "EvaluationRunCatalog",

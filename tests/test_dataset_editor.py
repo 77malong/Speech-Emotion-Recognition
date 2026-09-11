@@ -29,7 +29,7 @@ def _dataset(tmp_path: Path) -> Path:
     )
     dataset_yaml = tmp_path / "dataset.yaml"
     dataset_yaml.write_text(
-        "schema_version: 1\n"
+        ""
         "dataset_id: editor-demo\n"
         "root: .\n"
         "splits:\n"

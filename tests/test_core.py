@@ -9,26 +9,23 @@ from pydantic import Field, ValidationError
 
 from ser_lib.config.base import StrictConfig
 from ser_lib.config.loader import (
-    load_versioned_config,
     load_yaml_mapping,
-    require_schema_version,
     resolve_config_path,
 )
 from ser_lib.data.errors import ManifestError, SERDataError
-from ser_lib.foundation.errors import ConfigurationError, OperationCancelled, SERError
+from ser_lib.foundation.errors import OperationCancelled, SERError
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.foundation.logging import configure_library_logging, get_logger
 
 
 class ExampleConfig(StrictConfig):
-    schema_version: int = 1
     name: str = Field(min_length=1)
 
 
 def test_strict_config_rejects_unknown_fields_and_is_frozen():
     with pytest.raises(ValidationError):
-        ExampleConfig(schema_version=1, name="demo", typo=True)
-    config = ExampleConfig(schema_version=1, name="demo")
+        ExampleConfig(name="demo", typo=True)
+    config = ExampleConfig(name="demo")
     with pytest.raises(ValidationError):
         config.name = "changed"
 
@@ -39,25 +36,13 @@ def test_resolve_config_path_does_not_depend_on_cwd(tmp_path: Path):
     ).resolve()
 
 
-def test_load_yaml_mapping_and_versioned_config(tmp_path: Path):
+def test_load_yaml_mapping_and_validate_current_config(tmp_path: Path):
     path = tmp_path / "配置.yaml"
-    path.write_text("schema_version: 1\nname: example\n", encoding="utf-8")
+    path.write_text("name: example\n", encoding="utf-8")
     raw, source = load_yaml_mapping(path)
     assert raw["name"] == "example"
     assert source == path.resolve()
-    assert load_versioned_config(path, ExampleConfig).name == "example"
-
-
-@pytest.mark.parametrize("value", [None, True, "1"])
-def test_require_schema_version_rejects_non_integer(value):
-    with pytest.raises(ConfigurationError, match="schema_version"):
-        require_schema_version({"schema_version": value}, supported={1})
-
-
-def test_require_schema_version_reports_supported_versions():
-    with pytest.raises(ConfigurationError) as caught:
-        require_schema_version({"schema_version": 3}, supported={1, 2})
-    assert caught.value.details == {"actual": 3, "supported": [1, 2]}
+    assert ExampleConfig.model_validate(raw).name == "example"
 
 
 def test_ser_error_has_stable_structured_form():

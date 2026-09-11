@@ -291,7 +291,7 @@ def export_model_artifact(
             cancellation.raise_if_cancelled()
         phase("phase_started", "write_manifest")
         manifest = ModelArtifactManifest(
-            schema_version=2,
+
             library_version=__version__,
             model_name=model_name,
             model_params=validated_params,
@@ -306,7 +306,6 @@ def export_model_artifact(
                 for key, spec in model.model_spec.required_inputs.items()
             },
             weights_file="weights.safetensors",
-            weights_format="safetensors",
             weights_sha256=hashes["weights.safetensors"],
             files_sha256=hashes,
             preprocessing=preprocessing,

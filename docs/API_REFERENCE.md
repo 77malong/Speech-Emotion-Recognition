@@ -167,20 +167,13 @@ optimizer、scheduler、loss、sampling 的可配置字段直接来自 `ser_lib.
 扫描只执行 manifest inspect 与必要 stat，不计算 SHA256、不加载模型。展示别名、总目录容量、
 flatten metadata 等派生信息由上层应用自行计算；完整 hash 验证仍通过 `verify_model_artifact()`。
 
-## Schema migration
+## 当前持久化格式
 
-schema migration 已按格式所属领域拆分：配置机制位于 `ser_lib.config.migrations`，
-dataset/revision、run/evaluation、artifact 的版本门禁分别位于 data、engine、artifacts
-领域。原则是只注册真实的 `N -> N+1` 结构迁移：
-
-- 当前版本 payload 为 no-op 深拷贝；
-- 不支持的未来版本明确拒绝；
-- 缺失迁移路径明确报错；
-- migration 不负责业务 I/O，也不会自动改写源文件；
-- 不为从未存在过的旧版本伪造 migration。
-
-Artifact manifest 继续兼容真实存在的 v1/v2。v1→v2 涉及权重完整性元数据，不能仅靠
-结构转换凭空生成，因此不会伪装成纯 schema migration。
+配置、dataset、artifact、checkpoint、run/evaluation 和事件只使用当前结构。
+不再输出或接受 schema_version / format_version，迁移框架和加载入口已移除。
+当前格式必需字段缺失、错误类型或未知字段会被拒绝。
+`library_version` 保留创建来源，不参与兼容分支；模型与数据的形状、标签及预处理契约仍须校验。
+artifact 固定使用 weights.safetensors；checkpoint 仅用于可信本地恢复。
 
 ## Runtime snapshot
 

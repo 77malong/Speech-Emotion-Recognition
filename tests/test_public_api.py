@@ -84,7 +84,7 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert config.TorchTensorSpecConfig.__module__ == "ser_lib.config.model"
     assert engine.CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
     assert config.StrictConfig.__module__ == "ser_lib.config.base"
-    assert foundation.SchemaMigrationError.__module__ == "ser_lib.foundation.errors"
+    assert not hasattr(foundation, "SchemaMigrationError")
     assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors"
     assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors"
 

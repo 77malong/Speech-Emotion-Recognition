@@ -43,8 +43,7 @@ def _write_minimal_experiment(
         encoding="utf-8",
     )
     (tmp_path / "dataset.yaml").write_text(
-        """schema_version: 1
-dataset_id: cli-lineage
+        """dataset_id: cli-lineage
 root: .
 splits: {train: train.jsonl}
 labels:
@@ -55,8 +54,7 @@ labels:
     )
     config = tmp_path / "experiment.yaml"
     config.write_text(
-        f"""schema_version: 1
-data:
+        f"""data:
   manifest: dataset.yaml
   labels: {{0: {{en: low}}, 1: {{en: high}}}}
   representation:

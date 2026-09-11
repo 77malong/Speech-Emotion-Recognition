@@ -87,7 +87,7 @@ def test_checkpoint_restores_rng_scheduler_and_scalars(tmp_path: Path):
         path, model, optimizer, scheduler=scheduler,
         expected_trainer_config={"epochs": 4},
     )
-    assert payload["format_version"] == 2
+    assert "format_version" not in payload
     assert optimizer.param_groups[0]["lr"] == pytest.approx(0.05)
     assert random.random() == pytest.approx(expected_python)
     assert torch.equal(torch.rand(3), expected_torch)
@@ -226,18 +226,3 @@ def test_checkpoint_rejects_model_or_algorithmic_trainer_config_before_loading(
         torch.equal(value, before_matching[key])
         for key, value in matching.state_dict().items()
     )
-
-
-def test_format_v1_checkpoint_remains_loadable(tmp_path: Path):
-    model = CNNBaseline(feature_dim=4, num_classes=2, hidden_dim=6, dropout=0)
-    path = tmp_path / "v1.pt"
-    torch.save({
-        "format_version": 1,
-        "model_id": "cnn_baseline",
-        "model_state": model.state_dict(),
-        "optimizer_state": None,
-        "epoch": 1,
-        "metrics": {},
-        "metadata": {},
-    }, path)
-    assert load_checkpoint(path, model)["epoch"] == 1

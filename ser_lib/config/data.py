@@ -5,10 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 
 from ser_lib.config.base import StrictConfig
-from ser_lib.config.loader import load_versioned_config, resolve_config_path
+from ser_lib.config.loader import load_yaml_mapping, resolve_config_path
+from ser_lib.foundation.errors import ConfigurationError
 
 BatchingType = Literal["dynamic", "fixed", "sliding"]
 AudioBackend = Literal["soundfile", "torchaudio"]
@@ -106,7 +107,6 @@ class BatchingConfig(StrictConfig):
 class DataConfig(StrictConfig):
     """数据模块顶层配置；从 YAML 加载时所有路径均相对配置文件目录解析。"""
 
-    schema_version: int = 1
     manifest: Path
     dataset_id: str | None = None
     labels: dict[int, dict[str, Any]] | None = None
@@ -142,14 +142,11 @@ class DataConfig(StrictConfig):
 
 def load_data_config(path: Path | str) -> DataConfig:
     """加载当前 DataConfig schema，并相对配置文件目录解析路径。"""
-    source = Path(path).expanduser().resolve()
-    config = load_versioned_config(
-        source,
-        DataConfig,
-        supported_versions={1},
-        schema_domain="data_config",
-        target_version=1,
-    )
+    raw, source = load_yaml_mapping(path)
+    try:
+        config = DataConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigurationError(f"配置内容校验失败: {source}: {exc}") from exc
     updates: dict[str, Any] = {}
     if not config.manifest.is_absolute():
         updates["manifest"] = resolve_config_path(

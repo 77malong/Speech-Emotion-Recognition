@@ -17,7 +17,7 @@ def _write_dataset(
     (root / "val.jsonl").write_text("".join(val_lines or []), encoding="utf-8")
     dataset_yaml = root / "dataset.yaml"
     dataset_yaml.write_text(
-        "schema_version: 1\n"
+        ""
         "dataset_id: demo\n"
         "root: .\n"
         "splits:\n"
@@ -109,7 +109,7 @@ def test_dataset_summary_infers_classes_without_label_table(tmp_path: Path):
     )
     dataset_yaml = tmp_path / "dataset.yaml"
     dataset_yaml.write_text(
-        "schema_version: 1\n"
+        ""
         "dataset_id: inferred\n"
         "root: .\n"
         "splits: {train: train.jsonl}\n",

@@ -24,7 +24,7 @@ def test_manifest_write_preserves_same_basename_split_subdirectories(tmp_path: P
     dataset_yaml.write_text(
         yaml.safe_dump(
             {
-                "schema_version": 1,
+
                 "dataset_id": "nested-splits",
                 "root": ".",
                 "splits": {

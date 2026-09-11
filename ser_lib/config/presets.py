@@ -32,9 +32,9 @@ _COMMON_TRAINER: dict[str, Any] = {
 
 _PRESET_PAYLOADS: dict[str, dict[str, Any]] = {
     "cnn_logmel_baseline": {
-        "schema_version": 1,
+
         "data": {
-            "schema_version": 1,
+
             "manifest": "data/standard/dataset.yaml",
             "labels": _DEFAULT_LABELS,
             "audio": {
@@ -91,9 +91,9 @@ _PRESET_PAYLOADS: dict[str, dict[str, Any]] = {
         "output_dir": "runs/cnn-logmel",
     },
     "gru_mfcc_baseline": {
-        "schema_version": 1,
+
         "data": {
-            "schema_version": 1,
+
             "manifest": "data/standard/dataset.yaml",
             "labels": _DEFAULT_LABELS,
             "audio": {
@@ -143,9 +143,9 @@ _PRESET_PAYLOADS: dict[str, dict[str, Any]] = {
         "output_dir": "runs/gru-mfcc",
     },
     "transformer_logmel_baseline": {
-        "schema_version": 1,
+
         "data": {
-            "schema_version": 1,
+
             "manifest": "data/standard/dataset.yaml",
             "labels": _DEFAULT_LABELS,
             "audio": {

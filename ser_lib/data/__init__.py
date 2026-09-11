@@ -18,7 +18,7 @@ from ser_lib.data.errors import (
 )
 from ser_lib.data.fingerprint import DatasetFingerprint, fingerprint_manifest
 from ser_lib.data.history import (
-    DATASET_REVISION_SCHEMA_VERSION, DatasetRevisionCatalog, DatasetRevisionInfo,
+    DatasetRevisionCatalog, DatasetRevisionInfo,
     DatasetRevisionScanFailure, create_dataset_revision, inspect_dataset_revision,
     restore_dataset_revision, scan_dataset_revisions,
 )
@@ -52,7 +52,7 @@ __all__ = [
     "DatasetTransactionError", "AudioNotFoundError", "AudioDecodeError", "InvalidAudioSegmentError",
     "RepresentationError", "TransformError", "CollationError", "CompatibilityError", "RegistryError",
     "DatasetManifest", "ManifestMeta", "read_jsonl", "write_jsonl", "DatasetEditor",
-    "DATASET_REVISION_SCHEMA_VERSION", "DatasetRevisionInfo", "DatasetRevisionScanFailure",
+    "DatasetRevisionInfo", "DatasetRevisionScanFailure",
     "DatasetRevisionCatalog", "create_dataset_revision", "inspect_dataset_revision",
     "scan_dataset_revisions", "restore_dataset_revision",
     "AudioLoader", "AudioLoaderConfig",

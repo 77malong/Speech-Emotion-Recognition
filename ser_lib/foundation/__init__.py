@@ -6,11 +6,9 @@ from ser_lib.foundation.errors import (
     ConfigurationError,
     OperationCancelled,
     RegistryError,
-    SchemaMigrationError,
     SERError,
 )
 from ser_lib.foundation.events import (
-    EVENT_SCHEMA_VERSION,
     CancellationCheck,
     CancellationToken,
     EventCallback,
@@ -27,13 +25,11 @@ from ser_lib.foundation.logging import configure_library_logging, get_logger
 __all__ = [
     "SERError",
     "ConfigurationError",
-    "SchemaMigrationError",
     "OperationCancelled",
     "RegistryError",
     "CompatibilityError",
     "Diagnostic",
     "DiagnosticSeverity",
-    "EVENT_SCHEMA_VERSION",
     "EventContext",
     "ProgressEvent",
     "MetricEvent",

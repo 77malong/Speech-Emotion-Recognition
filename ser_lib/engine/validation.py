@@ -71,7 +71,7 @@ def _load_config(
                 "experiment_config_invalid",
                 f"实验配置无法加载或不满足 Schema: {exc}",
                 path=path,
-                suggestion="检查 YAML 字段、类型、schema_version 与组件参数",
+                suggestion="检查当前 YAML 字段、类型与组件参数",
                 details={"error_type": type(exc).__name__},
             )
         ]

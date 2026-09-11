@@ -284,7 +284,7 @@ class DatasetEditor:
     def _dataset_doc(self, split_refs: Mapping[str, str]) -> dict[str, Any]:
         meta = self._manifest.meta
         doc: dict[str, Any] = {
-            "schema_version": meta.schema_version,
+
             "dataset_id": meta.dataset_id,
             "root": str(meta.root),
             "splits": dict(split_refs),

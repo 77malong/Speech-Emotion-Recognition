@@ -11,11 +11,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ser_lib.engine.lineage import TrainingRunMetadata
-from ser_lib.engine.migrations import migrate_engine_payload
 from ser_lib.engine.trainer import TrainingResult, TrainingStatus
 from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
-RUN_RECORD_SCHEMA_VERSION = 1
 _RUN_RECORD_NAME = "run.json"
 
 
@@ -24,7 +22,6 @@ class _RunRecordModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = Field(default=RUN_RECORD_SCHEMA_VERSION, ge=1, le=1)
     run_id: str = Field(min_length=1)
     directory: str = Field(min_length=1)
     status: TrainingStatus
@@ -85,7 +82,7 @@ class TrainingRunInfo:
 
     def to_dict(self) -> dict[str, Any]:
         return _RunRecordModel(
-            schema_version=RUN_RECORD_SCHEMA_VERSION,
+
             **asdict(self),
         ).model_dump(mode="json")
 
@@ -135,23 +132,10 @@ class TrainingRunInfo:
         directory: Path | str | None = None,
     ) -> "TrainingRunInfo":
         payload = dict(value)
-        payload.setdefault("schema_version", RUN_RECORD_SCHEMA_VERSION)
-        version = payload.get("schema_version")
-        if (
-            isinstance(version, int)
-            and not isinstance(version, bool)
-            and version <= RUN_RECORD_SCHEMA_VERSION
-        ):
-            payload = migrate_engine_payload(
-                "training_run",
-                payload,
-                target_version=RUN_RECORD_SCHEMA_VERSION,
-            )
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
         record = _RunRecordModel.model_validate(payload)
         fields = record.model_dump()
-        fields.pop("schema_version", None)
         return cls(**fields)
 
 
@@ -293,7 +277,6 @@ def _candidate_directories(root: Path, *, recursive: bool) -> list[Path]:
 
 
 __all__ = [
-    "RUN_RECORD_SCHEMA_VERSION",
     "TrainingRunInfo",
     "TrainingRunScanFailure",
     "TrainingRunCatalog",

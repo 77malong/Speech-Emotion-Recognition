@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
+from ser_lib.foundation.errors import ConfigurationError
+
 from ser_lib.config.experiment import ExperimentConfig
-from ser_lib.config.loader import load_versioned_config, resolve_config_path
+from ser_lib.config.loader import load_yaml_mapping, resolve_config_path
 from ser_lib.config.model import ModelConfig
 from ser_lib.config.training import ObservabilityConfig, TrainerConfig
 from ser_lib.engine._seed import seed_experiment_rng
@@ -59,15 +63,12 @@ def build_experiment_components(
 
 
 def load_experiment_config(path: Path | str) -> ExperimentConfig:
-    """读取时迁移到当前 schema v1；所有相对路径均基于配置文件目录。"""
-    config = load_versioned_config(
-        path,
-        ExperimentConfig,
-        supported_versions={1},
-        schema_domain="experiment_config",
-        target_version=1,
-    )
-    source = Path(path).expanduser().resolve()
+    """严格读取当前配置；所有相对路径均基于配置文件目录。"""
+    raw, source = load_yaml_mapping(path)
+    try:
+        config = ExperimentConfig.model_validate(raw)
+    except ValidationError as exc:
+        raise ConfigurationError(f"配置内容校验失败: {source}: {exc}") from exc
     updates: dict[str, Any] = {}
     if not config.output_dir.is_absolute():
         updates["output_dir"] = resolve_config_path(

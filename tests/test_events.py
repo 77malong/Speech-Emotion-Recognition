@@ -8,7 +8,6 @@ import pytest
 
 from ser_lib.engine.events import CheckpointEvent
 from ser_lib.foundation.events import (
-    EVENT_SCHEMA_VERSION,
     EventContext,
     LifecycleEvent,
     LogEvent,
@@ -47,8 +46,7 @@ def test_progress_event_v2_is_json_safe_and_preserves_legacy_constructor():
         details={"path": Path("audio.wav"), "rate": 12.5},
     )
     payload = event.to_dict()
-    assert EVENT_SCHEMA_VERSION == 2
-    assert payload["schema_version"] == 2
+    assert "schema_version" not in payload
     assert payload["event_type"] == "progress"
     assert payload["stage"] == "decode"
     assert payload["completed"] == 2
