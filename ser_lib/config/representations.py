@@ -51,6 +51,7 @@ class MelConfig(SpectralConfigBase):
 class LogMelConfig(MelConfig):
     """Log-Mel 参数。"""
 
+    power: Literal[1.0, 2.0] = 2.0
     top_db: float = Field(default=80.0, ge=10.0, le=120.0)
 
 
