@@ -11,26 +11,26 @@ from ser_lib.config.base import StrictConfig
 
 class AdamWConfig(StrictConfig):
     type: Literal["adamw"] = "adamw"
-    learning_rate: float = Field(default=1e-3, gt=0)
-    weight_decay: float = Field(default=0.0, ge=0)
-    beta1: float = Field(default=0.9, ge=0, lt=1)
-    beta2: float = Field(default=0.999, ge=0, lt=1)
-    eps: float = Field(default=1e-8, gt=0)
+    learning_rate: float = Field(default=1e-3, gt=0, allow_inf_nan=False)
+    weight_decay: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    beta1: float = Field(default=0.9, ge=0, lt=1, allow_inf_nan=False)
+    beta2: float = Field(default=0.999, ge=0, lt=1, allow_inf_nan=False)
+    eps: float = Field(default=1e-8, gt=0, allow_inf_nan=False)
 
 
 class AdamConfig(StrictConfig):
     type: Literal["adam"] = "adam"
-    learning_rate: float = Field(default=1e-3, gt=0)
-    weight_decay: float = Field(default=0.0, ge=0)
-    beta1: float = Field(default=0.9, ge=0, lt=1)
-    beta2: float = Field(default=0.999, ge=0, lt=1)
-    eps: float = Field(default=1e-8, gt=0)
+    learning_rate: float = Field(default=1e-3, gt=0, allow_inf_nan=False)
+    weight_decay: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    beta1: float = Field(default=0.9, ge=0, lt=1, allow_inf_nan=False)
+    beta2: float = Field(default=0.999, ge=0, lt=1, allow_inf_nan=False)
+    eps: float = Field(default=1e-8, gt=0, allow_inf_nan=False)
 
 
 class SGDConfig(StrictConfig):
     type: Literal["sgd"] = "sgd"
-    learning_rate: float = Field(default=1e-2, gt=0)
-    weight_decay: float = Field(default=0.0, ge=0)
+    learning_rate: float = Field(default=1e-2, gt=0, allow_inf_nan=False)
+    weight_decay: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     momentum: float = Field(default=0.0, ge=0, lt=1)
     nesterov: bool = False
 
