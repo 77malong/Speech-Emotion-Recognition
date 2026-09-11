@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from ser_lib.data.errors import ManifestError
 from ser_lib.data.importers.csv_importer import CsvImporter
 from ser_lib.data.manifest import DatasetManifest
 
@@ -40,7 +41,7 @@ def test_failed_csv_conversion_does_not_replace_existing_dataset(tmp_path: Path)
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ManifestError, match="UID 重复"):
         CsvImporter().convert(
             source,
             destination,
