@@ -422,8 +422,10 @@ def train_experiment(
 
     resolved.output_dir.mkdir(parents=True, exist_ok=True)
     metrics_log = resolved.output_dir / "metrics.jsonl"
+    history_path = resolved.output_dir / "history.json"
     if resumed_from is None:
         metrics_log.write_text("", encoding="utf-8")
+        history_path.unlink(missing_ok=True)
 
     def log_epoch(result) -> None:
         with metrics_log.open("a", encoding="utf-8", newline="\n") as stream:
@@ -436,7 +438,6 @@ def train_experiment(
         on_epoch_end=log_epoch,
     )
 
-    history_path = resolved.output_dir / "history.json"
     _write_training_history(history_path, training_result)
     if trainer.run_metadata is None:
         raise RuntimeError("Trainer.from_experiment 未生成 TrainingMetadata")
