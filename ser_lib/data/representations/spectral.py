@@ -161,7 +161,10 @@ class LogMelRepresentation(_SpectralRepresentationBase):
             center=config.center,
             pad_mode=config.pad_mode,
         )
-        self.db_transform = T.AmplitudeToDB(top_db=config.top_db)
+        self.db_transform = T.AmplitudeToDB(
+            stype="magnitude" if config.power == 1.0 else "power",
+            top_db=config.top_db,
+        )
 
     @property
     def _feature_dim(self) -> int:
