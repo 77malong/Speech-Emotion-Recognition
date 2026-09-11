@@ -24,6 +24,7 @@ from ser_lib.config import (
     require_schema_version,
     resolve_config_path,
 )
+from ser_lib.foundation.errors import ConfigurationError
 
 
 def test_config_import_does_not_eagerly_load_runtime_domains():
@@ -169,3 +170,18 @@ def test_strict_config_remains_frozen_and_forbids_unknown_fields():
     value = Example(name="demo")
     with pytest.raises(ValidationError):
         value.name = "changed"
+
+
+
+def test_data_config_file_loader_rejects_future_schema_version(tmp_path: Path):
+    path = tmp_path / "future.yaml"
+    path.write_text(
+        "schema_version: 999\n"
+        "manifest: dataset.yaml\n"
+        "representation:\n"
+        "  type: waveform\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="schema"):
+        load_data_config(path)
