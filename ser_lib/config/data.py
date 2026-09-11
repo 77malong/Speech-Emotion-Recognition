@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 
 from ser_lib.config.base import StrictConfig
-from ser_lib.config.loader import load_yaml_mapping, resolve_config_path
+from ser_lib.config.loader import load_versioned_config, resolve_config_path
 
 BatchingType = Literal["dynamic", "fixed", "sliding"]
 AudioBackend = Literal["soundfile", "torchaudio"]
@@ -141,24 +141,31 @@ class DataConfig(StrictConfig):
 
 
 def load_data_config(path: Path | str) -> DataConfig:
-    """加载 DataConfig；manifest 与 cache 目录均相对配置文件目录解析。"""
-    raw, source = load_yaml_mapping(path)
-    if "manifest" in raw and raw["manifest"] is not None:
-        raw["manifest"] = resolve_config_path(raw["manifest"], base_dir=source.parent)
-    config = DataConfig.model_validate(raw)
-    if config.cache.directory.is_absolute():
-        return config
-    return config.model_copy(
-        update={
-            "cache": config.cache.model_copy(
-                update={
-                    "directory": resolve_config_path(
-                        config.cache.directory, base_dir=source.parent
-                    )
-                }
-            )
-        }
+    """加载当前 DataConfig schema，并相对配置文件目录解析路径。"""
+    source = Path(path).expanduser().resolve()
+    config = load_versioned_config(
+        source,
+        DataConfig,
+        supported_versions={1},
+        schema_domain="data_config",
+        target_version=1,
     )
+    updates: dict[str, Any] = {}
+    if not config.manifest.is_absolute():
+        updates["manifest"] = resolve_config_path(
+            config.manifest,
+            base_dir=source.parent,
+        )
+    if not config.cache.directory.is_absolute():
+        updates["cache"] = config.cache.model_copy(
+            update={
+                "directory": resolve_config_path(
+                    config.cache.directory,
+                    base_dir=source.parent,
+                )
+            }
+        )
+    return config.model_copy(update=updates) if updates else config
 
 
 # 0.2.x 读兼容：旧名称只指向同一正式 schema，不再维护独立定义。
