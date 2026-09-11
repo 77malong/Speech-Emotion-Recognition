@@ -438,7 +438,6 @@ class Trainer:
 
     def _train_epoch_impl(self, batches: Iterable[SERBatch], *, epoch: int) -> EpochResult:
         self.model.train()
-        total_loss = 0.0
         total_correct = 0
         total_samples = 0
         optimizer_steps = 0
@@ -486,7 +485,6 @@ class Trainer:
             count = int(labels.shape[0])
             batch_loss = float(loss.detach())
             total_samples += count
-            total_loss += batch_loss * count
             total_correct += int((output.logits.detach().argmax(-1) == labels).sum())
             self.global_step += 1
 
@@ -505,7 +503,7 @@ class Trainer:
             )
             epoch_elapsed = max(time.perf_counter() - epoch_started, 0.0)
             run_elapsed = max(time.perf_counter() - self._run_started_perf, 0.0)
-            running_loss = total_loss / total_samples
+            running_loss = self._accumulation_state.epoch_mean_loss()
             running_accuracy = total_correct / total_samples
             samples_per_second = total_samples / epoch_elapsed if epoch_elapsed > 0 else 0.0
             batches_per_second = batch_index / epoch_elapsed if epoch_elapsed > 0 else 0.0
@@ -568,7 +566,7 @@ class Trainer:
 
         result = EpochResult(
             epoch=epoch,
-            loss=total_loss / total_samples,
+            loss=self._accumulation_state.epoch_mean_loss(),
             accuracy=total_correct / total_samples,
             sample_count=total_samples,
             optimizer_steps=optimizer_steps,

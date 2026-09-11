@@ -80,14 +80,24 @@ class _AccumulationAwareLoss(torch.nn.Module):
         self.base_loss = base_loss
         self.state = state
 
+    def reduction_denominator(self, targets: torch.Tensor) -> float:
+        """Expose the wrapped loss reduction contract to validation/evaluation."""
+        denominator_fn = getattr(self.base_loss, "reduction_denominator", None)
+        denominator = (
+            float(denominator_fn(targets))
+            if callable(denominator_fn)
+            else float(targets.numel())
+        )
+        if denominator <= 0:
+            raise ValueError("loss reduction denominator 必须大于 0")
+        return denominator
+
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         loss = self.base_loss(logits, targets)
-        denominator_fn = getattr(self.base_loss, "reduction_denominator", None)
-        if callable(denominator_fn):
-            denominator = float(denominator_fn(targets))
-        else:
-            denominator = float(targets.numel())
-        return self.state.scale_loss(loss, denominator)
+        return self.state.scale_loss(
+            loss,
+            self.reduction_denominator(targets),
+        )
 
 
 __all__ = ["_AccumulationState", "_AccumulationAwareLoss"]
