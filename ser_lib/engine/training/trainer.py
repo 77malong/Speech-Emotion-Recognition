@@ -634,6 +634,30 @@ class Trainer:
             )
         self._emit(event)
 
+    def _materialize_best_checkpoint(self, directory: Path) -> Path | None:
+        """Keep a resumed best checkpoint beside newly written checkpoints."""
+        source = self._best_checkpoint
+        if source is None:
+            return None
+        if not source.is_file():
+            raise FileNotFoundError(f"当前 best checkpoint 不存在: {source}")
+
+        target = directory / source.name
+        if source.resolve() == target.resolve():
+            return source
+
+        directory.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.tmp")
+        try:
+            shutil.copyfile(source, temporary)
+            temporary.replace(target)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+
+        self._best_checkpoint = target
+        return target
+
     def _save_checkpoint_with_event(
         self,
         path: Path,
@@ -652,21 +676,6 @@ class Trainer:
             resolved_metadata["sampling_generator_state"] = (
                 self._sampling_generator.get_state().cpu()
             )
-        if kind == "best":
-            resolved_metadata["best_checkpoint"] = path.name
-        elif self._best_checkpoint is not None:
-            relocated_best = path.parent / self._best_checkpoint.name
-            if relocated_best.resolve() != self._best_checkpoint.resolve():
-                relocated_best.parent.mkdir(parents=True, exist_ok=True)
-                temporary_best = relocated_best.with_suffix(relocated_best.suffix + ".tmp")
-                try:
-                    shutil.copyfile(self._best_checkpoint, temporary_best)
-                    temporary_best.replace(relocated_best)
-                finally:
-                    temporary_best.unlink(missing_ok=True)
-                self._best_checkpoint = relocated_best
-            resolved_metadata["best_checkpoint"] = self._best_checkpoint.name
-
         previous_last_checkpoint = self._last_checkpoint
         metric_name = self.config.monitor if kind == "best" else None
         metric_value = self.best_metric if kind == "best" else None
@@ -683,6 +692,13 @@ class Trainer:
             )
         )
         try:
+            if kind == "best":
+                resolved_metadata["best_checkpoint"] = path.name
+            else:
+                local_best = self._materialize_best_checkpoint(path.parent)
+                if local_best is not None:
+                    resolved_metadata["best_checkpoint"] = local_best.name
+
             saved = save_checkpoint(
                 path,
                 self.model,

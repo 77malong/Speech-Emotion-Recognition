@@ -13,8 +13,9 @@ from ser_lib.artifacts import (
     load_model_artifact,
     verify_model_artifact,
 )
-from ser_lib.data import DatasetManifest
+from ser_lib.data import DatasetManifest, fingerprint_manifest
 from ser_lib.engine import (
+    ExperimentConfig,
     TrainingMetadata,
     build_experiment_components,
     evaluate_artifact as run_artifact_evaluation,
@@ -29,11 +30,66 @@ from ser_lib.inference import (
 )
 
 
-def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
-    return {
-        index: str(values.get("en") or values.get("zh") or index)
-        for index, values in sorted(meta_labels.items())
-    }
+def _labels(
+    meta_labels: Mapping[int, Mapping[str, Any]],
+    *,
+    source: str = "labels",
+) -> dict[int, str]:
+    labels: dict[int, str] = {}
+    for raw_index, values in sorted(meta_labels.items()):
+        index = int(raw_index)
+        name = values.get("en") or values.get("zh")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"{source} label={index} 缺少非空名称")
+        labels[index] = name.strip()
+    if sorted(labels) != list(range(len(labels))):
+        raise ValueError(f"{source} 必须使用连续标签 id 0..N-1")
+    return labels
+
+
+def _validate_export_semantics(
+    config: ExperimentConfig,
+    manifest: DatasetManifest,
+    source_run: TrainingMetadata | None,
+) -> dict[int, str]:
+    manifest_labels = _labels(manifest.meta.labels, source="manifest labels")
+    if config.data.labels is not None:
+        config_labels = _labels(config.data.labels, source="export config labels")
+        if config_labels != manifest_labels:
+            raise ValueError(
+                "导出标签语义与 manifest 不一致："
+                f"config={config_labels}, manifest={manifest_labels}"
+            )
+
+    if source_run is None:
+        return manifest_labels
+
+    if source_run.dataset_id is not None and source_run.dataset_id != manifest.meta.dataset_id:
+        raise ValueError(
+            "checkpoint dataset_id 与导出 manifest 不一致："
+            f"checkpoint={source_run.dataset_id!r}, manifest={manifest.meta.dataset_id!r}"
+        )
+
+    source_config = ExperimentConfig.model_validate(source_run.config)
+    if source_config.data.labels is not None:
+        trained_labels = _labels(
+            source_config.data.labels,
+            source="checkpoint training labels",
+        )
+        if trained_labels != manifest_labels:
+            raise ValueError(
+                "checkpoint 训练标签语义与导出标签不一致："
+                f"checkpoint={trained_labels}, export={manifest_labels}"
+            )
+
+    if source_run.dataset_fingerprint is not None:
+        current_fingerprint = fingerprint_manifest(manifest).digest
+        if current_fingerprint != source_run.dataset_fingerprint:
+            raise ValueError(
+                "checkpoint dataset fingerprint 与导出 manifest 不一致"
+            )
+
+    return manifest_labels
 
 
 def _artifact_provenance(
@@ -151,25 +207,15 @@ def export_checkpoint_artifact(
     config = load_experiment_config(config_path)
     components = build_experiment_components(config, train=False)
     manifest = DatasetManifest.load(config.data.manifest)
-    source_labels = config.data.labels or manifest.meta.labels
-    labels = _labels(source_labels)
-    if labels != _labels(manifest.meta.labels):
-        raise ValueError("导出标签语义与 manifest 不一致")
-
     def validate_export_metadata(metadata: dict[str, Any]) -> None:
-        from ser_lib.config import ExperimentConfig
-        from ser_lib.data.fingerprint import fingerprint_manifest
-
         raw = metadata.get("run_metadata")
         if raw is None:
             raise ValueError("checkpoint 缺少训练 lineage，无法验证导出标签与预处理")
         saved = TrainingMetadata.from_dict(raw)
+        _validate_export_semantics(config, manifest, saved)
         saved_config = ExperimentConfig.model_validate(saved.config)
-        if saved_config.data.labels:
-            if _labels(saved_config.data.labels) != labels:
-                raise ValueError("导出标签语义与 checkpoint 训练标签不一致")
-        elif saved.dataset_fingerprint != fingerprint_manifest(manifest).digest:
-            raise ValueError("checkpoint 未保存显式标签，导出 manifest fingerprint 必须一致")
+        if saved_config.data.labels is None and saved.dataset_fingerprint is None:
+            raise ValueError("checkpoint 缺少标签及 fingerprint，无法验证导出语义")
         excluded = {"manifest", "dataset_id", "labels", "cache"}
         if saved_config.data.model_dump(mode="json", exclude=excluded) != config.data.model_dump(
             mode="json", exclude=excluded
@@ -183,17 +229,20 @@ def export_checkpoint_artifact(
         restore_rng=False,
         metadata_validator=validate_export_metadata,
     )
-    expected_classes = components.model.model_config.get("num_classes")
-    if expected_classes is not None and len(labels) != expected_classes:
-        raise ValueError(
-            f"标签数 {len(labels)} 与模型 num_classes={expected_classes} 不一致"
-        )
     source_run = None
     checkpoint_metadata = payload.get("metadata")
     if isinstance(checkpoint_metadata, Mapping):
         raw_run_metadata = checkpoint_metadata.get("run_metadata")
         if isinstance(raw_run_metadata, Mapping):
             source_run = TrainingMetadata.from_dict(raw_run_metadata)
+
+    labels = _validate_export_semantics(config, manifest, source_run)
+    expected_classes = components.model.model_config.get("num_classes")
+    if expected_classes is not None and len(labels) != expected_classes:
+        raise ValueError(
+            f"标签数 {len(labels)} 与模型 num_classes={expected_classes} 不一致"
+        )
+
     metadata: dict[str, Any] = {"checkpoint_epoch": payload.get("epoch")}
     if source_run is not None:
         metadata = _artifact_provenance(source_run, metadata=metadata)

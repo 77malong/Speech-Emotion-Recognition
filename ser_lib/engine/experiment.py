@@ -433,8 +433,10 @@ def train_experiment(
 
     resolved.output_dir.mkdir(parents=True, exist_ok=True)
     metrics_log = resolved.output_dir / "metrics.jsonl"
+    history_path = resolved.output_dir / "history.json"
     if resumed_from is None:
         metrics_log.write_text("", encoding="utf-8")
+        history_path.unlink(missing_ok=True)
 
     def log_epoch(result) -> None:
         with metrics_log.open("a", encoding="utf-8", newline="\n") as stream:
