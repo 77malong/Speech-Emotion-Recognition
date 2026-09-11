@@ -1,5 +1,7 @@
 # 开发审查与证据
 
+最新修复状态：PF-01～PF-03 已修复，采样器恢复前置校验亦已补齐；完整回归 **513 passed**。详见追加审查报告顶部复验说明，历史“尚未修复”描述仅对应原始基线。
+
 - [修复合并后的追加审查](SER_LIB_POST_FIX_REVIEW.md)：基线 `3e4c66a`，合并验证 504 passed；另确认 1 项 P1、1 项 P2、1 项 P3，尚未修复。复现入口 `python -m scripts.audit_post_fix_review`。
 
 修复复验：最新报告中的 LO-01～LO-05 已在基于 `2667803` 的工作区修复，完整测试为 **498 passed**。修复后验证入口为 `python -m pytest -q tests/test_latest_only_review_fixes.py`；下述缺陷探针仅用于注明的原始审查基线。

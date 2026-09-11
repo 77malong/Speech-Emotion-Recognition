@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import random
 from collections.abc import Callable
 from pathlib import Path
@@ -216,15 +217,24 @@ def load_checkpoint(
     model_state = payload.get("model_state")
     if not isinstance(model_state, dict):
         raise ValueError("checkpoint 缺少合法 model_state")
-    model.load_state_dict(model_state)
-    if optimizer is not None and payload.get("optimizer_state") is not None:
-        optimizer.load_state_dict(payload["optimizer_state"])
-    if scheduler is not None and payload.get("scheduler_state") is not None:
-        scheduler.load_state_dict(payload["scheduler_state"])
-    if scaler is not None and payload.get("scaler_state") is not None:
-        scaler.load_state_dict(payload["scaler_state"])
-    if restore_rng:
-        _restore_rng_state(payload["rng_state"])
+    components: list[tuple[Any, dict[str, Any]]] = [(model, model_state)]
+    for component, key in ((optimizer, "optimizer_state"), (scheduler, "scheduler_state"),
+                           (scaler, "scaler_state")):
+        if component is not None and payload.get(key) is not None:
+            components.append((component, payload[key]))
+    snapshots = [(component, copy.deepcopy(component.state_dict())) for component, _ in components]
+    original_rng = _rng_state() if restore_rng else None
+    try:
+        for target_component, state in components:
+            target_component.load_state_dict(state)
+        if restore_rng:
+            _restore_rng_state(payload["rng_state"])
+    except Exception:
+        for target_component, state in snapshots:
+            target_component.load_state_dict(state)
+        if original_rng is not None:
+            _restore_rng_state(original_rng)
+        raise
     return payload
 
 

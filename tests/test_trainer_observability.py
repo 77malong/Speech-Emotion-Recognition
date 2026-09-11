@@ -156,16 +156,16 @@ def test_checkpoint_events_describe_epoch_last_and_best_files(tmp_path: Path):
 
     checkpoint_events = [event for event in events if isinstance(event, CheckpointEvent)]
     assert [(event.action, event.kind) for event in checkpoint_events] == [
+        ("started", "best"),
+        ("saved", "best"),
+        ("best_model_updated", "best"),
         ("started", "epoch"),
         ("saved", "epoch"),
         ("started", "last"),
         ("saved", "last"),
-        ("started", "best"),
-        ("saved", "best"),
-        ("best_model_updated", "best"),
     ]
     assert all(event.context.run_id == "run-checkpoint" for event in checkpoint_events)
-    best = checkpoint_events[-1]
+    best = next(event for event in checkpoint_events if event.action == "best_model_updated")
     assert Path(best.path).name == "best.pt"
     assert best.metric_name == "val_accuracy"
     assert best.metric_value == pytest.approx(trainer.best_metric)

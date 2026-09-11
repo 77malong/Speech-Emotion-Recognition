@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
 import shutil
 import time
@@ -204,6 +205,7 @@ class Trainer:
         self.last_result: TrainingResult | None = None
         self._last_checkpoint: Path | None = None
         self._best_checkpoint: Path | None = None
+        self._best_snapshot: Path | None = None
         self._run_started_perf: float | None = None
         self._accumulation_model_hook = None
         if loss_fn is None:
@@ -636,26 +638,31 @@ class Trainer:
 
     def _materialize_best_checkpoint(self, directory: Path) -> Path | None:
         """Keep a resumed best checkpoint beside newly written checkpoints."""
-        source = self._best_checkpoint
+        source = self._best_snapshot or self._best_checkpoint
         if source is None:
             return None
         if not source.is_file():
             raise FileNotFoundError(f"当前 best checkpoint 不存在: {source}")
 
         target = directory / source.name
-        if source.resolve() == target.resolve():
-            return source
-
         directory.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f".{target.name}.tmp")
-        try:
-            shutil.copyfile(source, temporary)
-            temporary.replace(target)
-        except Exception:
-            temporary.unlink(missing_ok=True)
-            raise
-
-        self._best_checkpoint = target
+        if source.resolve() != target.resolve():
+            temporary = target.with_name(f".{target.name}.tmp")
+            try:
+                shutil.copyfile(source, temporary)
+                temporary.replace(target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        self._best_snapshot = target
+        alias = directory / "best.pt"
+        if alias.resolve() != target.resolve():
+            alias_temporary = directory / ".best.pt.tmp"
+            try:
+                shutil.copyfile(target, alias_temporary)
+                alias_temporary.replace(alias)
+            finally:
+                alias_temporary.unlink(missing_ok=True)
+        self._best_checkpoint = alias
         return target
 
     def _save_checkpoint_with_event(
@@ -693,14 +700,15 @@ class Trainer:
         )
         try:
             if kind == "best":
-                resolved_metadata["best_checkpoint"] = path.name
+                snapshot = path.with_name(f"best-{epoch:04d}-{uuid.uuid4().hex}.pt")
+                resolved_metadata["best_checkpoint"] = snapshot.name
             else:
                 local_best = self._materialize_best_checkpoint(path.parent)
                 if local_best is not None:
                     resolved_metadata["best_checkpoint"] = local_best.name
 
             saved = save_checkpoint(
-                path,
+                snapshot if kind == "best" else path,
                 self.model,
                 self.optimizer,
                 epoch=epoch,
@@ -710,6 +718,15 @@ class Trainer:
                 metadata=resolved_metadata,
                 trainer_config=self.config.model_dump(mode="json"),
             )
+            if kind == "best":
+                temporary_alias = path.with_suffix(".pt.tmp")
+                try:
+                    shutil.copyfile(saved, temporary_alias)
+                    temporary_alias.replace(path)
+                finally:
+                    temporary_alias.unlink(missing_ok=True)
+                self._best_snapshot = saved
+                saved = path
         except Exception as exc:
             self._emit(
                 CheckpointEvent(
@@ -933,7 +950,17 @@ class Trainer:
                         "run_id": self.run_id,
                         "global_step": self.global_step,
                         "optimizer_step": self.optimizer_step,
+                        "optimizer_step_attempted": self.optimizer_step_attempted,
+                        "optimizer_step_skipped": self.optimizer_step_skipped,
                     }
+                    if improved and self.config.save_best:
+                        self._save_checkpoint_with_event(
+                            self.config.checkpoint_dir / "best.pt",
+                            kind="best",
+                            epoch=epoch,
+                            metrics=metrics,
+                            metadata=metadata,
+                        )
                     self._save_checkpoint_with_event(
                         self.config.checkpoint_dir / f"epoch-{epoch:04d}.pt",
                         kind="epoch",
@@ -945,14 +972,6 @@ class Trainer:
                         self._save_checkpoint_with_event(
                             self.config.checkpoint_dir / "last.pt",
                             kind="last",
-                            epoch=epoch,
-                            metrics=metrics,
-                            metadata=metadata,
-                        )
-                    if improved and self.config.save_best:
-                        self._save_checkpoint_with_event(
-                            self.config.checkpoint_dir / "best.pt",
-                            kind="best",
                             epoch=epoch,
                             metrics=metrics,
                             metadata=metadata,
@@ -1022,6 +1041,8 @@ class Trainer:
                         "best_metric": self.best_metric,
                         "global_step": self.global_step,
                         "optimizer_step": self.optimizer_step,
+                        "optimizer_step_attempted": self.optimizer_step_attempted,
+                        "optimizer_step_skipped": self.optimizer_step_skipped,
                         "elapsed_seconds": elapsed,
                     },
                     context=self._context(epoch=self.last_completed_epoch or None),
@@ -1097,9 +1118,46 @@ class Trainer:
         checkpoint_path = Path(path)
         current_run_metadata = self.run_metadata
         saved_run_metadata: TrainingMetadata | None = None
+        resolved_best: Path | None = None
+        resolved_snapshot: Path | None = None
 
         def validate_metadata(metadata: dict[str, Any]) -> None:
-            nonlocal saved_run_metadata
+            nonlocal saved_run_metadata, resolved_best, resolved_snapshot
+            for key in ("best_epoch", "epochs_without_improvement", "global_step",
+                        "optimizer_step", "optimizer_step_attempted", "optimizer_step_skipped"):
+                value = metadata.get(key)
+                if value is not None and (type(value) is not int or value < 0):
+                    raise ValueError(f"checkpoint metadata.{key} 必须是非负整数")
+            metric = metadata.get("best_metric")
+            if metric is not None and (type(metric) not in (int, float) or not math.isfinite(metric)):
+                raise ValueError("checkpoint best_metric 必须是有限数值")
+            applied = metadata.get("optimizer_step", 0)
+            skipped = metadata.get("optimizer_step_skipped", 0)
+            attempted = metadata.get("optimizer_step_attempted", applied + skipped)
+            if attempted != applied + skipped:
+                raise ValueError("checkpoint optimizer step 计数不一致")
+            sampling = metadata.get("sampling_generator_state")
+            if restore_rng and self._sampling_generator is not None and sampling is not None:
+                if not isinstance(sampling, torch.Tensor):
+                    raise ValueError("checkpoint sampling_generator_state 必须是 Tensor")
+                torch.Generator().set_state(sampling.cpu())
+            if metadata.get("best_epoch") is not None and metadata.get("best_checkpoint") is not None:
+                name = metadata.get("best_checkpoint", "best.pt")
+                if not isinstance(name, str) or not name or Path(name).is_absolute() or len(Path(name).parts) != 1:
+                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
+                candidate = checkpoint_path.parent / name
+                if not candidate.is_file():
+                    raise FileNotFoundError(f"checkpoint 引用的 best artifact 不存在: {candidate}")
+                best_payload = torch.load(candidate, map_location="cpu", weights_only=False)
+                if (not isinstance(best_payload, dict)
+                    or best_payload.get("epoch") != metadata["best_epoch"]
+                    or best_payload.get("metadata", {}).get("run_id") != metadata.get("run_id")):
+                    raise ValueError("checkpoint best 引用的 epoch/run 不一致")
+                resolved_snapshot = candidate
+                resolved_best = candidate
+                alias = checkpoint_path.parent / "best.pt"
+                if alias.is_file() and alias.read_bytes() == candidate.read_bytes():
+                    resolved_best = alias
             raw_lineage = metadata.get("run_metadata")
             if isinstance(raw_lineage, Mapping):
                 saved_run_metadata = TrainingMetadata.from_dict(raw_lineage)
@@ -1135,23 +1193,8 @@ class Trainer:
             self.best_epoch = int(best_epoch) if best_epoch is not None else None
             self.epochs_without_improvement = int(without_improvement)
 
-        if self.best_epoch is not None:
-            raw_best_checkpoint = metadata.get("best_checkpoint")
-            if raw_best_checkpoint is not None:
-                if not isinstance(raw_best_checkpoint, str) or not raw_best_checkpoint:
-                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
-                relative_best = Path(raw_best_checkpoint)
-                if relative_best.is_absolute() or len(relative_best.parts) != 1:
-                    raise ValueError("checkpoint metadata.best_checkpoint 必须是相对文件名")
-                best_path = checkpoint_path.parent / relative_best
-                if not best_path.is_file():
-                    raise FileNotFoundError(
-                        f"checkpoint 引用的 best artifact 不存在: {best_path}"
-                    )
-                self._best_checkpoint = best_path
-            else:
-                best_path = checkpoint_path.parent / "best.pt"
-                self._best_checkpoint = best_path if best_path.is_file() else None
+        self._best_snapshot = resolved_snapshot
+        self._best_checkpoint = resolved_best
 
         saved_run_id = metadata.get("run_id")
         if not self._run_id_explicit and isinstance(saved_run_id, str) and saved_run_id:
@@ -1162,6 +1205,10 @@ class Trainer:
             self.global_step = saved_global_step
         if isinstance(saved_optimizer_step, int) and saved_optimizer_step >= 0:
             self.optimizer_step = saved_optimizer_step
+        self.optimizer_step_skipped = metadata.get("optimizer_step_skipped", 0)
+        self.optimizer_step_attempted = metadata.get(
+            "optimizer_step_attempted", self.optimizer_step + self.optimizer_step_skipped
+        )
 
         sampling_state = metadata.get("sampling_generator_state")
         if (

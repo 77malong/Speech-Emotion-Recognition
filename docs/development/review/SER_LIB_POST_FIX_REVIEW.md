@@ -1,5 +1,20 @@
 # 修复合并后的追加审查
 
+## 本轮修复复验
+
+基于 `d252a93` 修复 PF-01～PF-03，下面原始发现保留作为历史证据。
+
+- PF-01：最佳模型更新先保存带唯一文件名的快照，再写入 epoch/last 的关联引用；best.pt 仍是便捷入口。回溯到旧 epoch 时使用其自己的快照，不再引用后来覆盖的权重。恢复前检查关联快照的 epoch/run 身份，跨目录续训会复制引用快照。保存事件顺序相应改为 best → epoch → last。
+- PF-02：关联文件、训练计数、最佳指标及采样器状态均在应用运行状态前检查；模型、优化器、调度器和 scaler 在加载前保存状态副本，加载异常时恢复这些副本及 RNG。测试确认缺失/错误 best、错误模型尺寸、错误优化器结构不会留下已修改的模型状态。
+- PF-03：优化器 applied/attempted/skipped 计数一起持久化和恢复，并检查 attempted = applied + skipped。没有保存过 attempted/skipped 的已有 checkpoint 按可获得的 applied 计数初始化，无法追溯此前未记录的 AMP 跳过次数。
+- 继续检查发现的同类遗漏：采样器状态原来在模型恢复后才调用 set_state，非法 tensor 会造成部分恢复；现已用独立 Generator 前置验证并补测。另覆盖 save_best=False 的正常续训路径。
+
+回归入口：`python -m pytest -q tests/test_checkpoint_recovery_boundaries.py`。本轮新增 9 项测试，完整验证 **513 passed**，Ruff 和 mypy（109 文件）通过；仍有既有 GradScaler 弃用警告。原 `audit_post_fix_review.py` 是 `3e4c66a` 的缺陷复现脚本，不应用它的旧缺陷断言判断修复是否成功。
+
+代价和边界：独立最佳快照会增加磁盘占用，不应单独删除仍被历史 checkpoint 引用的快照；状态回滚需要额外内存保存原状态。回滚依赖组件能够重新加载自身有效的 state_dict，自定义组件若连自身原状态也拒绝加载，不属于已验证保证。此次检查不构成所有平台、模型和依赖组合均无 bug 的证明。
+
+## 原始发现
+
 基线：`3e4c66a`，分支 `codex/ser-lib-latest-only`。
 
 本轮先提交本地修复 `6ecc6e7`，发现远程已有六个针对同批问题的提交，随后合并为 `3e4c66a` 并成功推送。合并保留远程更完整的 checkpoint 事件处理、标签及 fingerprint 检查，也保留本地的导出前置校验、预处理一致性及历史归属检查。没有强制推送。
