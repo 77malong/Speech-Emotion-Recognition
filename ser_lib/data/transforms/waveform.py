@@ -33,7 +33,7 @@ class Normalize(nn.Module):
     is_random = False
 
     def forward(self, waveform: torch.Tensor) -> torch.Tensor:
-        std = waveform.std()
+        std = waveform.std(correction=0)
         return (waveform - waveform.mean()) / (std + 1e-8)
 
 
