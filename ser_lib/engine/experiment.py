@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import torch
 from torch.utils.data import DataLoader
@@ -54,6 +54,12 @@ class _DataComponents:
 
 @dataclass(frozen=True, slots=True)
 class _ValidationComponents:
+    audio_loader: Any
+    pipeline: SamplePipeline
+    collator: SERCollator
+
+
+class _LoaderComponents(Protocol):
     audio_loader: Any
     pipeline: SamplePipeline
     collator: SERCollator
@@ -118,9 +124,9 @@ def build_experiment_components(
     *,
     train: bool,
 ) -> _DataComponents:
-    from ser_lib.engine._seed import seed_random_components
+    from ser_lib.engine._seed import seed_experiment_rng
 
-    seed_random_components(config.trainer.seed, deterministic=config.trainer.deterministic)
+    seed_experiment_rng(config.trainer.seed, deterministic=config.trainer.deterministic)
     audio_loader, pipeline = build_components(config.data, train=train)
     model = cast(SERModel, model_registry.create(config.model.type, **config.model.params))
     validate_compatibility(
@@ -158,7 +164,7 @@ def _canonical_dataset_labels(
                 if isinstance(value, str) and value.strip()
             ]
             if not candidates:
-                raise ValueError(f"{source}[{index}] 缺少非空标签名称")
+                raise ValueError(f"无法确定 {source} label={index} 的非空标签名称")
             selected = candidates[0]
         normalized[index] = selected.strip()
     if sorted(normalized) != list(range(len(normalized))):
@@ -167,7 +173,7 @@ def _canonical_dataset_labels(
 
 
 def _validate_training_label_semantics(
-    experiment_labels: Mapping[int, Mapping[str, Any]],
+    experiment_labels: Mapping[int, Mapping[str, Any]] | None,
     manifest_labels: Mapping[int, Mapping[str, Any]],
 ) -> None:
     if not experiment_labels:
@@ -176,7 +182,7 @@ def _validate_training_label_semantics(
     actual = _canonical_dataset_labels(manifest_labels, source="manifest labels")
     if expected != actual:
         raise ValueError(
-            "experiment 标签语义与 manifest 不一致："
+            "训练标签语义与 manifest 不一致："
             f"experiment={expected}, manifest={actual}"
         )
 
@@ -201,7 +207,7 @@ def _validate_artifact_label_semantics(
 def _loader(
     manifest: DatasetManifest,
     split: str,
-    components: _DataComponents,
+    components: _LoaderComponents,
     *,
     batch_size: int,
     workers: int,
