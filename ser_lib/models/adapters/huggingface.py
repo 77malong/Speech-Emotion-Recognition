@@ -117,15 +117,28 @@ def _label_mapping_matches(hf_config: Any, labels: Mapping[int, str]) -> bool:
 def _reset_pretrained_classifier_head(model: Any) -> None:
     """Reinitialize the native HF classifier after pretrained weights are loaded.
 
-    ``ignore_mismatched_sizes`` only helps when the class count changes.  An explicit
+    ``ignore_mismatched_sizes`` only helps when the class count changes. An explicit
     reset must also discard a same-shaped head when label semantics change, while
-    preserving the pretrained encoder/projector.
+    preserving the pretrained encoder/projector. Use public PyTorch module reset
+    hooks rather than Transformers private initialization helpers so the behavior
+    stays stable across supported Transformers releases.
     """
     classifier = getattr(model, "classifier", None)
-    init_weights = getattr(model, "_init_weights", None)
-    if not isinstance(classifier, nn.Module) or not callable(init_weights):
+    if not isinstance(classifier, nn.Module):
         raise ValueError("HF audio-classification model 缺少可重置的 classifier")
-    classifier.apply(init_weights)
+
+    reset_count = 0
+
+    def reset_module(module: nn.Module) -> None:
+        nonlocal reset_count
+        reset_parameters = getattr(module, "reset_parameters", None)
+        if callable(reset_parameters):
+            reset_parameters()
+            reset_count += 1
+
+    classifier.apply(reset_module)
+    if reset_count == 0:
+        raise ValueError("HF audio-classification classifier 不支持参数重置")
 
 
 def _build_hf_model(transformers: Any, config: HFAudioClassifierConfig) -> Any:
