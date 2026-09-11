@@ -11,6 +11,12 @@ import psutil
 import torch
 
 
+_PROCESS_SAMPLER = psutil.Process()
+# Prime psutil's non-blocking process CPU delta baseline once. Reusing this
+# Process instance makes later interval=None samples meaningful without sleeping.
+_PROCESS_SAMPLER.cpu_percent(interval=None)
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeDevice:
     """一个可供单设备训练/评估/推理选择的运行设备。"""
@@ -151,15 +157,14 @@ def _resolve_cuda_index(device: torch.device) -> int:
 
 def _host_metrics() -> _HostRuntimeMetrics:
     """单次、非阻塞采样宿主机与当前 Python 进程资源。"""
-    process = psutil.Process()
     memory = psutil.virtual_memory()
     return _HostRuntimeMetrics(
-        process_rss_bytes=int(process.memory_info().rss),
+        process_rss_bytes=int(_PROCESS_SAMPLER.memory_info().rss),
         system_memory_used_bytes=int(memory.used),
         system_memory_available_bytes=int(memory.available),
         system_memory_total_bytes=int(memory.total),
         # interval=None 不 sleep；首次调用是自进程启动/上次采样后的即时百分比。
-        process_cpu_percent=float(process.cpu_percent(interval=None)),
+        process_cpu_percent=float(_PROCESS_SAMPLER.cpu_percent(interval=None)),
         system_cpu_percent=float(psutil.cpu_percent(interval=None)),
     )
 
