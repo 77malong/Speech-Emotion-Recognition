@@ -1,5 +1,7 @@
 # 开发审查与证据
 
+- [latest-only 完成版严格审查（2026-09-11）](SER_LIB_LATEST_ONLY_REVIEW_2026-09-11.md)：基线 `2e4839a`，确认 3 项 P1、2 项 P2；当前复现入口为 `python -m scripts.audit_latest_only_review`。以下旧报告和复现说明均按其历史基线解读。
+
 latest-only 重构说明（2026-09-11）：本目录文档对应历史架构基线，不代表当前 API。历史复现脚本需要在各自注明的提交上执行；新分支会移除旧格式和 release fixture，不能据脚本在新结构上无法运行判定旧 bug 仍存在。实施进度见 `docs/development/LATEST_ONLY_PROGRESS.md`。
 
 同步说明：审查资料现统一位于 `docs/development/review`。本地审查提交已接入远程 `34ee3b3` 的后续整改历史；下列报告的缺陷数量和评分仍针对各自注明的旧基线，不代表这些缺陷在最新代码中全部仍然存在。最新代码需要重新复验，历史报告不作追溯改写。
