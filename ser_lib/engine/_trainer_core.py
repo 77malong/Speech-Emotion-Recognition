@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.engine.config import ExperimentConfig, ObservabilityConfig, TrainerConfig
 from ser_lib.engine.eta import EtaEstimator
-from ser_lib.engine.events import CheckpointEvent
+from ser_lib.foundation.events import CheckpointEvent
 from ser_lib.engine.optim import (
     SchedulerConfig,
     build_optimizer,

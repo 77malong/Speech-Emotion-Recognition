@@ -19,7 +19,7 @@ from ser_lib.foundation.events import (
     EventContext,
     ProgressEvent,
 )
-from ser_lib.inference.events import PredictionEvent
+from ser_lib.foundation.events import PredictionEvent
 from ser_lib.inference.offline import EmotionPredictor, PredictionResult
 
 

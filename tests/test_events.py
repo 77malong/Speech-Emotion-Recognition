@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.engine.events import CheckpointEvent
+from ser_lib.foundation.events import CheckpointEvent
 from ser_lib.foundation.events import (
     EventContext,
     LifecycleEvent,

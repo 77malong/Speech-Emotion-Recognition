@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.data.errors import ManifestError
+from ser_lib.foundation.errors import ManifestError
 from ser_lib.data.manifest import DatasetManifest, read_jsonl, write_jsonl
 from ser_lib.data.types import AudioRecord
 

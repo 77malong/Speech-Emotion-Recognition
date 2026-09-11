@@ -7,8 +7,6 @@ import torch
 
 import ser_lib.engine as engine
 import ser_lib.models as models
-from ser_lib.data.errors import CompatibilityError as DataCompatibilityError
-from ser_lib.data.errors import RegistryError as DataRegistryError
 from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.engine.compatibility import CompatibilityReport
 from ser_lib.engine.trainer import move_batch_to_device as trainer_move_batch_to_device
@@ -50,10 +48,8 @@ def test_domain_contracts_have_canonical_owners():
     assert models.ModelSpec is ModelSpec
     assert CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
     assert engine.CompatibilityReport is CompatibilityReport
-    assert RegistryError.__module__ == "ser_lib.foundation.errors"
-    assert CompatibilityError.__module__ == "ser_lib.foundation.errors"
-    assert DataRegistryError is RegistryError
-    assert DataCompatibilityError is CompatibilityError
+    assert RegistryError.__module__ == "ser_lib.foundation.errors.base"
+    assert CompatibilityError.__module__ == "ser_lib.foundation.errors.engine"
     assert RuntimeMetrics.__module__ == "ser_lib.runtime"
     assert StreamingLatency.__module__ == "ser_lib.inference.streaming"
 

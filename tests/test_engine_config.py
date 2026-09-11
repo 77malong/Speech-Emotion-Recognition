@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from ser_lib.config import BatchingConfig
 from ser_lib.data import SERCollator, SERSample, TensorSpec
 from ser_lib.config import AudioConfig, ComponentConfig, DataConfig
-from ser_lib.data.errors import CompatibilityError
+from ser_lib.foundation.errors import CompatibilityError
 from ser_lib.engine import (
     ExperimentConfig,
     ModelConfig,

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ser_lib.data.audio import AudioLoader
 
 from ser_lib.config import ComponentConfig, DataConfig
-from ser_lib.data.errors import RepresentationError, TransformError
+from ser_lib.foundation.errors import RepresentationError, TransformError
 from ser_lib.data.registry import default_registry
 from ser_lib.data.representations.base import Representation
 from ser_lib.data.transforms.base import (
@@ -203,7 +203,7 @@ def _waveform_transform_entry(name: str):
     try:
         return WAVEFORM_TRANSFORM_SPECS[name]
     except KeyError:
-        from ser_lib.data.errors import RegistryError
+        from ser_lib.foundation.errors import RegistryError
 
         raise RegistryError(
             f"未知波形 transform: {name!r}，可用: {sorted(WAVEFORM_TRANSFORM_SPECS)}"
@@ -220,7 +220,7 @@ def _build_feature_transforms(
     modules: list[nn.Module] = []
     for component in configs:
         if component.type != "spec_masking":
-            from ser_lib.data.errors import RegistryError
+            from ser_lib.foundation.errors import RegistryError
 
             raise RegistryError(
                 f"未知特征 transform: {component.type!r}，可用: ['spec_masking']"

@@ -59,3 +59,12 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 验证：488 passed（较 509 减少的 21 项来自被删除的管理 API 用例），1 个既有 GradScaler 警告；全仓 Ruff 通过；mypy 检查 103 个文件无错误；sdist/wheel 构建通过；wheel 装入独立 venv 后确认从 site-packages 导入，`ONE_EPOCH_SMOKE_TEST=PASS`（8 samples、2 batches、2 optimizer steps）；构建产物中四个已删除模块均不存在，migrations 无残留；`git diff --check` 无命中。
 
 本机环境补充：`psutil` 是 `pyproject.toml` 已声明的依赖，但本机 conda 环境缺失，导致 `ser_lib.runtime` 导入失败并使收集阶段报错。已按声明的约束安装 `psutil>=5.9` 后运行上述验证；该问题属于本机环境缺口，不是本轮改动引入。
+
+
+## Stage 6：errors/events 统一归入 foundation
+
+将异常体系从单文件与 data 领域兼容入口收敛为 `foundation/errors/` 包：基础异常、配置异常、数据异常与兼容性异常按职责拆分，删除 `foundation/errors.py` 与 `data/errors.py`。生产代码与测试统一从 `ser_lib.foundation.errors` 导入，不保留旧路径转发模块。
+
+将事件体系收敛为 `foundation/events/` 包：共享 context、序列号、JSON-safe helper 与 cancellation 协议位于 `base.py`；进度/指标/日志/生命周期事件位于 `lifecycle.py`；checkpoint 与 prediction 事件分别归入 `training.py` 与 `inference.py`。删除 `foundation/events.py`、`engine/events.py`、`inference/events.py`，所有事件继续共享同一个全局 sequence 计数器。
+
+边界测试同步递归检查 foundation 子包，确认 foundation 不反向依赖 data/models/engine/inference/artifacts/cli，并显式确认旧 errors/events 文件不存在。Stage 6 的实际测试与 CI 结果以该提交对应的 GitHub Actions run 为准，不在提交前预写验收结论。

@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 
 import torch.nn as nn
 
-from ser_lib.data.errors import RepresentationError
+from ser_lib.foundation.errors import RepresentationError
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.types import AudioData, RepresentationOutput, TensorSpec
 

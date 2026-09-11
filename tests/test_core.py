@@ -12,7 +12,7 @@ from ser_lib.config.loader import (
     load_yaml_mapping,
     resolve_config_path,
 )
-from ser_lib.data.errors import ManifestError, SERDataError
+from ser_lib.foundation.errors import ManifestError, SERDataError
 from ser_lib.foundation.errors import OperationCancelled, SERError
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.foundation.logging import configure_library_logging, get_logger

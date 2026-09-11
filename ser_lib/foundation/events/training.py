@@ -1,4 +1,4 @@
-"""训练/Checkpoint 领域事件。"""
+"""训练与 checkpoint 事件。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ser_lib.foundation.events import (
+from ser_lib.foundation.events.base import (
     EventContext,
     _json_safe,
     _next_event_sequence,
@@ -56,7 +56,6 @@ class CheckpointEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-
             "event_type": self.event_type,
             "sequence": self.sequence,
             "action": self.action,

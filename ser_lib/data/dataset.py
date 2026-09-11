@@ -14,7 +14,7 @@ from typing import Sequence
 from torch.utils.data import Dataset
 
 from ser_lib.data.audio import AudioLoader
-from ser_lib.data.errors import SERDataError
+from ser_lib.foundation.errors import SERDataError
 from ser_lib.data.pipeline import SamplePipeline
 from ser_lib.data.types import AudioRecord, SERSample
 

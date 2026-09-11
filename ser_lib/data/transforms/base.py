@@ -11,7 +11,7 @@ from typing import Sequence
 import torch
 import torch.nn as nn
 
-from ser_lib.data.errors import TransformError
+from ser_lib.foundation.errors import TransformError
 from ser_lib.data.types import TensorSpec
 
 

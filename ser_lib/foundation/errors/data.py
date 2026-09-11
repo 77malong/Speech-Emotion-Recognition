@@ -1,32 +1,11 @@
-"""SER 数据模块异常层级。
-
-层级结构（设计文档 §7.4）::
-
-    SERDataError
-    ├── ManifestError
-    ├── AudioNotFoundError
-    ├── AudioDecodeError
-    ├── InvalidAudioSegmentError
-    ├── RepresentationError
-    ├── TransformError
-    └── CollationError
-
-``RegistryError`` / ``CompatibilityError`` 已归属 foundation，本模块仅为 0.2.x
-旧 import 路径重导出同一类型。
-
-异常消息必须包含 ``uid`` 与解析后的音频路径（如适用）；底层异常保留为
-``__cause__``，保证错误可定位。每个公开领域异常拥有稳定机器可读 ``code``，
-Web/CLI 不需要通过异常类名或消息字符串推断错误类型。
-"""
+"""数据领域异常。"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from ser_lib.foundation.errors import CompatibilityError as CompatibilityError
-from ser_lib.foundation.errors import RegistryError as RegistryError
-from ser_lib.foundation.errors import SERError
+from ser_lib.foundation.errors.base import SERError
 
 
 class SERDataError(SERError):
@@ -34,19 +13,15 @@ class SERDataError(SERError):
 
     default_code = "data_error"
 
-    def __init__(self, message: str, *, uid: str | None = None,
-                 path: Path | str | None = None,
-                 component: str | None = None,
-                 stage: str | None = None) -> None:
-        """初始化异常。
-
-        Args:
-            message: 人类可读的错误描述。
-            uid: 出错样本的记录 ID（如有）。
-            path: 解析后的音频/文件路径（如有）。
-            component: 出错组件名称，如 ``log_mel``。
-            stage: 失败阶段，如 ``decode`` / ``representation`` / ``collate``。
-        """
+    def __init__(
+        self,
+        message: str,
+        *,
+        uid: str | None = None,
+        path: Path | str | None = None,
+        component: str | None = None,
+        stage: str | None = None,
+    ) -> None:
         parts: list[str] = []
         if uid is not None:
             parts.append(f"uid={uid}")
@@ -62,12 +37,14 @@ class SERDataError(SERError):
             message,
             code=self.default_code,
             details={
-                key: value for key, value in {
+                key: value
+                for key, value in {
                     "uid": uid,
                     "path": str(path) if path is not None else None,
                     "component": component,
                     "stage": stage,
-                }.items() if value is not None
+                }.items()
+                if value is not None
             },
         )
         self.uid = uid
@@ -80,8 +57,6 @@ class ManifestError(SERDataError):
     """Manifest 读取、校验或路径解析失败。"""
 
     default_code = "manifest_error"
-
-
 
 
 class AudioNotFoundError(SERDataError):
@@ -115,7 +90,7 @@ class TransformError(SERDataError):
 
 
 class CollationError(SERDataError):
-    """批处理（collate）失败：key 不一致、layout 不匹配、部分样本缺标签等。"""
+    """批处理失败：key、layout 或标签契约不一致。"""
 
     default_code = "collation_error"
 
@@ -130,12 +105,28 @@ def wrap_error(
     component: str | None = None,
     stage: str | None = None,
 ) -> SERDataError:
-    """把底层异常包装为业务异常并保留 ``__cause__``。
-
-    若 ``exc`` 已经是目标类型则原样返回，避免重复包装丢失上下文。
-    """
+    """把底层异常包装为业务异常并保留异常链。"""
     if isinstance(exc, target):
         return exc
-    wrapped = target(message, uid=uid, path=path, component=component, stage=stage)
+    wrapped = target(
+        message,
+        uid=uid,
+        path=path,
+        component=component,
+        stage=stage,
+    )
     wrapped.__cause__ = exc
     return wrapped
+
+
+__all__ = [
+    "SERDataError",
+    "ManifestError",
+    "AudioNotFoundError",
+    "AudioDecodeError",
+    "InvalidAudioSegmentError",
+    "RepresentationError",
+    "TransformError",
+    "CollationError",
+    "wrap_error",
+]

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ser_lib.data.errors import ManifestError
+from ser_lib.foundation.errors import ManifestError
 from ser_lib.data.importers.csv_importer import CsvImporter
 from ser_lib.data.manifest import DatasetManifest
 

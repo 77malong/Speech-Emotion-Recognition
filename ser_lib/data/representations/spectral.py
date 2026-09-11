@@ -15,7 +15,7 @@ from ser_lib.config.representations import (
     SpectralConfigBase,
     SpectrogramConfig,
 )
-from ser_lib.data.errors import RepresentationError
+from ser_lib.foundation.errors import RepresentationError
 from ser_lib.data.registry import ComponentDescriptor
 from ser_lib.data.representations.base import Representation
 from ser_lib.data.types import (

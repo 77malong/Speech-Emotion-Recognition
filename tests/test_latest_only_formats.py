@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from ser_lib.artifacts import export_model_artifact, load_model_artifact, verify_model_artifact
 from ser_lib.config import DataConfig, ExperimentConfig, load_data_config
 from ser_lib.data.manifest import DatasetManifest
-from ser_lib.data.errors import ManifestError
+from ser_lib.foundation.errors import ManifestError
 from ser_lib.engine import load_checkpoint, save_checkpoint
 from ser_lib.foundation.errors import ConfigurationError
 from ser_lib.models import CNNBaseline

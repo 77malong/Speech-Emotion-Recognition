@@ -8,7 +8,7 @@ from ser_lib.data.audio import AudioLoader, AudioLoaderConfig
 from ser_lib.data.cache import CachedRepresentation
 from ser_lib.data.collate import CollateStrategy, SERCollator, build_collator
 from ser_lib.data.dataset import SERDataset
-from ser_lib.data.errors import (
+from ser_lib.foundation.errors import (
     AudioDecodeError,
     AudioNotFoundError,
     CollationError,

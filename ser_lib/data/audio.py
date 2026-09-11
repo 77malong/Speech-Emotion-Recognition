@@ -24,7 +24,7 @@ import torchaudio
 import torchaudio.transforms as T
 
 from ser_lib.config.data import AudioBackend, AudioConfig
-from ser_lib.data.errors import (
+from ser_lib.foundation.errors import (
     AudioDecodeError,
     AudioNotFoundError,
     InvalidAudioSegmentError,

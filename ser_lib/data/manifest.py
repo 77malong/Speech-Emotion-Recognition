@@ -19,7 +19,7 @@ import yaml
 from pydantic import Field, StrictStr, ValidationError
 from ser_lib.config.base import StrictConfig
 
-from ser_lib.data.errors import ManifestError
+from ser_lib.foundation.errors import ManifestError
 from ser_lib.data.types import AudioRecord
 
 class _ManifestDocument(StrictConfig):

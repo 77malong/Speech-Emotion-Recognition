@@ -85,8 +85,8 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert engine.CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
     assert config.StrictConfig.__module__ == "ser_lib.config.base"
     assert not hasattr(foundation, "SchemaMigrationError")
-    assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors"
-    assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors"
+    assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors.base"
+    assert foundation.CompatibilityError.__module__ == "ser_lib.foundation.errors.engine"
 
 
 def test_application_wrappers_and_old_root_shortcuts_are_absent():

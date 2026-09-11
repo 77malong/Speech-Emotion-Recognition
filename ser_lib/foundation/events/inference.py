@@ -1,4 +1,4 @@
-"""推理领域事件。"""
+"""推理结果事件。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, ClassVar
 
-from ser_lib.foundation.events import (
+from ser_lib.foundation.events.base import (
     EventContext,
     _json_safe,
     _next_event_sequence,
@@ -47,7 +47,6 @@ class PredictionEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-
             "event_type": self.event_type,
             "sequence": self.sequence,
             "uid": self.uid,

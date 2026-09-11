@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F
 
 from ser_lib.config import BatchingConfig
-from ser_lib.data.errors import CollationError
+from ser_lib.foundation.errors import CollationError
 from ser_lib.data.types import (
     LAYOUT_TD,
     SERBatch,

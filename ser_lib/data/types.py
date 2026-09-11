@@ -17,7 +17,7 @@ from typing import Any, Mapping
 
 import torch
 
-from ser_lib.data.errors import RepresentationError, SERDataError
+from ser_lib.foundation.errors import RepresentationError, SERDataError
 
 # =====================================================================
 # Layout 白名单（设计文档 §5.3）

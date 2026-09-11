@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ser_lib.config.importers import JsonlImportConfig
-from ser_lib.data.errors import ManifestError
+from ser_lib.foundation.errors import ManifestError
 from ser_lib.data.importers._conversion import run_single_manifest_conversion
 from ser_lib.data.importers.base import ImportPreview, ImportTask
 from ser_lib.data.manifest import DatasetManifest, parse_record

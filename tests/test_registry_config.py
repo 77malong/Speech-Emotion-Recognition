@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from ser_lib.data.errors import RegistryError
+from ser_lib.foundation.errors import RegistryError
 from ser_lib.data.registry import ComponentDescriptor, Registry
 
 

@@ -6,7 +6,6 @@ import pytest
 
 from ser_lib.config import BatchingConfig
 from ser_lib.data import TensorSpec
-from ser_lib.data.errors import CompatibilityError as DataCompatibilityError
 from ser_lib.engine import CompatibilityReport, inspect_compatibility, validate_compatibility
 from ser_lib.foundation.errors import CompatibilityError
 from ser_lib.models import ModelSpec
@@ -31,7 +30,6 @@ def test_compatible_report_is_empty_and_json_safe():
         sample_rate=16000,
     )
 
-    assert DataCompatibilityError is CompatibilityError
     assert report == CompatibilityReport(compatible=True, diagnostics=())
     assert report.to_dict() == {"compatible": True, "diagnostics": []}
     json.dumps(report.to_dict(), ensure_ascii=False)

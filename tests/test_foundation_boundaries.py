@@ -7,9 +7,9 @@ from pathlib import Path
 
 import ser_lib
 from ser_lib._version import __version__
-from ser_lib.engine.events import CheckpointEvent
+from ser_lib.foundation.events import CheckpointEvent
 from ser_lib.foundation import CancellationToken, OperationCancelled, ProgressEvent, SERError
-from ser_lib.inference.events import PredictionEvent
+from ser_lib.foundation.events import PredictionEvent
 
 
 def test_version_source_is_independent_and_root_reexports_it():
@@ -36,7 +36,7 @@ def test_foundation_has_no_reverse_domain_imports():
         "ser_lib.artifacts",
         "ser_lib.cli",
     }
-    for path in root.glob("*.py"):
+    for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imports = set()
         for node in ast.walk(tree):
@@ -56,9 +56,20 @@ def test_retired_core_source_package_is_absent():
     assert not (root / "core").exists()
 
 
+def test_retired_error_and_event_modules_are_absent():
+    root = Path(__file__).resolve().parents[1] / "ser_lib"
+    assert not (root / "data" / "errors.py").exists()
+    assert not (root / "engine" / "events.py").exists()
+    assert not (root / "inference" / "events.py").exists()
+    assert not (root / "foundation" / "errors.py").exists()
+    assert not (root / "foundation" / "events.py").exists()
+    assert (root / "foundation" / "errors").is_dir()
+    assert (root / "foundation" / "events").is_dir()
+
+
 def test_domain_events_have_canonical_owners():
-    assert CheckpointEvent.__module__ == "ser_lib.engine.events"
-    assert PredictionEvent.__module__ == "ser_lib.inference.events"
+    assert CheckpointEvent.__module__ == "ser_lib.foundation.events.training"
+    assert PredictionEvent.__module__ == "ser_lib.foundation.events.inference"
 
 
 def test_domain_and_foundation_events_share_global_sequence():

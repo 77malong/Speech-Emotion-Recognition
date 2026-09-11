@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ser_lib.data.errors import (
+from ser_lib.foundation.errors import (
     AudioDecodeError, AudioNotFoundError, CollationError, CompatibilityError,
     InvalidAudioSegmentError, ManifestError, RegistryError, RepresentationError, TransformError,
 )
