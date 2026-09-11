@@ -60,9 +60,14 @@ class _ValidationComponents:
 
 
 class _LoaderComponents(Protocol):
-    audio_loader: Any
-    pipeline: SamplePipeline
-    collator: SERCollator
+    @property
+    def audio_loader(self) -> Any: ...
+
+    @property
+    def pipeline(self) -> SamplePipeline: ...
+
+    @property
+    def collator(self) -> SERCollator: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,10 +83,21 @@ class TrainingExperimentResult:
     best_checkpoint: Path | None
 
     def to_dict(self) -> dict[str, object]:
+        training = self.training.to_dict()
+        run = self.run.to_dict()
         return {
+            "run_id": self.training.run_id,
+            "status": self.training.status,
+            "history": training["epochs"],
+            "best_epoch": self.training.best_epoch,
+            "best_metric": self.training.best_metric,
+            "monitored_metric": self.training.monitored_metric,
+            "dataset_id": self.run.dataset_id,
+            "dataset_fingerprint": self.run.dataset_fingerprint,
+            "model_id": self.run.model_id,
             "output_dir": str(self.output_dir),
-            "training": self.training.to_dict(),
-            "run": self.run.to_dict(),
+            "training": training,
+            "run": run,
             "run_record": str(self.run_record),
             "metrics_log": str(self.metrics_log),
             "history_path": str(self.history_path),
