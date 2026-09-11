@@ -99,3 +99,25 @@ def test_representation_output_accepts_exact_temporal_length_contract():
     }
 
     validate_representation_output(output, specs)
+
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("label", True),
+        ("start_ms", 0.5),
+        ("end_ms", 1.5),
+        ("sample_rate_hint", 16000.5),
+        ("sample_rate_hint", True),
+    ],
+)
+def test_audio_record_rejects_values_manifest_parser_cannot_read(field: str, value):
+    kwargs = {field: value}
+
+    with pytest.raises(ValueError):
+        AudioRecord(
+            uid="roundtrip-safe",
+            audio_path=__import__("pathlib").Path("a.wav"),
+            **kwargs,
+        )
