@@ -280,6 +280,15 @@ def validate_representation_output(
             component="representation",
             stage="contract_validation",
         )
+    required_lengths = {key for key, spec in specs.items() if spec.temporal}
+    actual_lengths = set(output.lengths)
+    missing_lengths = required_lengths - actual_lengths
+    if missing_lengths:
+        raise RepresentationError(
+            f"时序输入缺少 lengths: {sorted(missing_lengths)}",
+            component="representation",
+            stage="contract_validation",
+        )
     for key, length in output.lengths.items():
         spec = specs[key]
         if not spec.temporal:
