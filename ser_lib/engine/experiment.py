@@ -123,10 +123,22 @@ class EvaluationExperimentResult:
         return self.run_record
 
     def to_dict(self) -> dict[str, object]:
+        evaluation = self.evaluation.to_dict()
+        run = self.run.to_dict()
         return {
+            "evaluation_id": self.run.evaluation_id,
+            "source_artifact": self.run.source_artifact,
+            "source_run_id": self.run.source_run_id,
+            "dataset_id": self.run.dataset_id,
+            "dataset_fingerprint": self.run.dataset_fingerprint,
+            "model_name": self.run.model_name,
+            "split": self.run.split,
+            "device": self.run.device,
+            "sample_count": self.run.sample_count,
+            "metrics": dict(self.run.metrics),
             "output_dir": str(self.output_dir),
-            "evaluation": self.evaluation.to_dict(),
-            "run": self.run.to_dict(),
+            "evaluation": evaluation,
+            "run": run,
             "run_record": str(self.run_record),
             "metrics_path": str(self.metrics_path),
             "predictions_path": (
