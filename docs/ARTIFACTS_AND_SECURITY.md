@@ -11,7 +11,7 @@ ser artifact verify artifacts/model --json
 ser artifact inspect artifacts/model --json
 ```
 
-导出目标必须不存在，防止覆盖已有模型。artifact 是目录级原子写入，加载器没有 pickle 权重入口。
+导出目标必须不存在，防止覆盖已有模型。artifact 是目录级原子写入，只接受当前 safetensors 结构，加载器没有 pickle 权重入口。
 `library_version` 只用于记录创建来源，不控制加载分支；不接受 `schema_version` 或 `weights_format`。
 发布模型时必须补充
 模型卡中的训练数据、语言、许可、用途和限制，不得把 checkpoint 冒充 artifact。

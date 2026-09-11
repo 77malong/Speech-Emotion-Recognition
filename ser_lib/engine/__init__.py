@@ -20,11 +20,6 @@ from ser_lib.config import (
     load_experiment_config,
 )
 from ser_lib.engine.eta import EtaEstimator, EtaSnapshot
-from ser_lib.engine.evaluation_catalog import (
-    EvaluationRunCatalog,
-    EvaluationRunScanFailure,
-    scan_evaluation_runs,
-)
 from ser_lib.engine.evaluation_reports import (
     EvaluationPredictionFileInfo,
     EvaluationReportInfo,
@@ -75,11 +70,8 @@ from ser_lib.engine.objectives import (
     build_weighted_sampler,
 )
 from ser_lib.engine.training_records import (
-    TrainingRunCatalog,
     TrainingRecord,
-    TrainingRunScanFailure,
     load_training_record,
-    scan_training_runs,
     write_training_record,
 )
 from ser_lib.engine.training_history import TrainingHistory, load_training_history
@@ -101,15 +93,12 @@ __all__ = [
     "TrainingExperimentResult", "EvaluationExperimentResult",
     "train_experiment", "evaluate_artifact",
     "TrainingMetadata", "build_training_metadata",
-    "TrainingRecord",
-    "TrainingRunScanFailure", "TrainingRunCatalog", "write_training_record",
-    "load_training_record", "scan_training_runs",
+    "TrainingRecord", "write_training_record", "load_training_record",
     "TrainingHistory", "load_training_history",
     "EvaluationMetadata", "EvaluationRecord",
     "EvaluationPredictionFileInfo", "inspect_evaluation_prediction_file",
     "build_evaluation_metadata", "write_evaluation_record",
-    "load_evaluation_record", "EvaluationRunScanFailure", "EvaluationRunCatalog",
-    "scan_evaluation_runs",
+    "load_evaluation_record",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
     "parse_optimizer_config", "build_optimizer",

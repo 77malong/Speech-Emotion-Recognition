@@ -17,6 +17,7 @@ labels:
 `sample_rate_hint` 和 `metadata`。
 
 路径解析不依赖当前工作目录：split 相对 `dataset.yaml`，音频相对 `root`。
+当前 dataset 结构严格校验；未知字段和已废弃的版本字段会被直接拒绝。
 Waveform、Mel、MFCC 等差异属于 Representation，不属于 Dataset 类型。
 
 ```bash

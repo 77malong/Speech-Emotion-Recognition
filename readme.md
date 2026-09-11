@@ -8,9 +8,9 @@
 基础库。项目提供从外部音频数据到标准数据集、模型训练、评估、模型分发和推理的
 完整核心链路，不包含 Web 页面、桌面端 UI 或本地 HTTP 服务。
 
-> 当前版本：**v0.2.0 发版候选**。仓库暂不附带数据集和预训练权重。
+> 当前开发版本：**v0.3.0**。仓库暂不附带数据集和预训练权重。
 
-## v0.2.0 新增功能
+## v0.3.0 当前能力
 
 - 统一数据流水线：使用一个 `SERDataset` 处理 Waveform、Spectrogram、Mel、
   Log-Mel、MFCC 及组合输入，不再按特征类型维护多个 Dataset。
@@ -76,7 +76,6 @@ python -m pip install -e .
 python -m pip install -e ".[hf]"
 ```
 
-`pretrained` extra 仅作为旧安装命令的兼容别名保留；新文档和新集成统一使用 `hf`。
 开发与测试环境请参见 [贡献指南](CONTRIBUTING.md)。
 
 验证安装：
@@ -109,7 +108,7 @@ python scripts/smoke_train_epoch.py --device cuda
 
 ### 标准训练工作流
 
-训练以版本化 `ExperimentConfig` 为配置入口：
+训练以严格校验的 `ExperimentConfig` 为配置入口：
 
 ```bash
 ser dataset scan --importer folder --source "path/to/audio"
@@ -212,7 +211,7 @@ Representation 转换为带有明确 `TensorSpec` 的输入，再由模型通过
 - 建立 CPU/GPU 冷启动、吞吐、峰值内存和长时间流式运行的正式性能基线。
 - 完成 IEMOCAP、MELD 等复杂会话型数据集 importer，并进行超大 manifest 压测。
 - 完善第三方模型适配协议、多任务 valence/arousal 输出和更多受控模型族。
-- 提供 artifact schema 迁移工具，以及按需求评估 ONNX 等独立导出格式。
+- 按需求评估 ONNX 等独立导出格式，并继续强化当前 artifact 的验证与可移植性。
 - 补充正式发布自动化。
 
 桌面端、Web UI、麦克风设备管理、账户系统和产品服务端不在本仓库计划内；这些
@@ -224,7 +223,7 @@ Representation 转换为带有明确 `TensorSpec` 的输入，再由模型通过
 Speech-Emotion-Recognition/
 ├── ser_lib/
 │   ├── foundation/       # 跨领域异常、诊断、事件和日志基础设施
-│   ├── config/           # 严格配置 schema、加载、preset 与迁移
+│   ├── config/           # 严格配置 schema、加载与 preset
 │   ├── data/             # 统一数据流水线与数据集导入
 │   ├── models/           # 模型协议、注册表、内置模型与 adapters
 │   ├── engine/           # 训练、评估、优化器、lineage 和 checkpoint

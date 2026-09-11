@@ -1,6 +1,6 @@
 # 训练与 CLI
 
-训练以版本化 `ExperimentConfig` 为唯一配置源，组合 data、model、trainer、
+训练以严格校验的 `ExperimentConfig` 为唯一配置源，组合 data、model、trainer、
 optimizer、scheduler 和 output_dir。相对路径按配置文件位置解析。
 
 ```bash
@@ -35,15 +35,14 @@ sampling:
 ```
 
 Loss 的 `class_weights` 改变各类别损失贡献，sampling 的 `class_weights` 改变样本
-被抽取的概率，两者可以单独或组合使用。训练过程通过 `ser_lib.engine.trainer` logger
+被抽取的概率，两者可以单独或组合使用。训练过程通过 `ser_lib.engine.training.trainer` logger
 报告 epoch 指标，并在 `output_dir/metrics.jsonl` 每完成一个 epoch 追加一条记录；
 `history.json` 是本次调用结束后的汇总。恢复训练会继续追加 JSONL。
 
 评估报告除 accuracy/WAR、UAR 和 macro-F1 外，还包含 weighted precision、
 weighted recall、weighted F1、balanced accuracy、Matthews correlation coefficient
 和 Cohen's kappa。高层 `evaluate_artifact()` 的机器可读结果和 `metrics.json` 还会
-写出 `metric_unit`：`dynamic/fixed` 为 `sample`，`sliding` 为 `window`；旧 artifact
-无法证明 batching 语义时标为 `batch_row`，不得把窗口级指标误读为原始样本级指标。
+写出 `metric_unit`：`dynamic/fixed` 为 `sample`，`sliding` 为 `window`；若调用方构造的 preprocessing 未声明 batching 语义，则标为 `batch_row`，不得把窗口级指标误读为原始样本级指标。
 
 ## Event callback 失败语义
 
@@ -52,7 +51,7 @@ weighted recall、weighted F1、balanced accuracy、Matthews correlation coeffic
 调用方传播；核心执行路径仍负责通过 `finally` 等机制恢复自身已经改变的运行状态，
 例如评估过程中临时切换的模型 train/eval mode。
 
-如果 Web/Desktop Worker 希望某个遥测、日志或 UI observer 失败后任务仍继续，应在
+如果宿主 Worker 希望某个遥测、日志或 observer 失败后任务仍继续，应在
 宿主边界自行包装 callback，明确决定记录、重试或丢弃策略，而不是依赖核心库静默吞掉
 异常。`prediction_sink` 等同步持久化 hook 同样遵循失败即传播原则，避免任务表面成功但
 关键输出已经丢失。

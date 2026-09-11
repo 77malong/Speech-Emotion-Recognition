@@ -23,8 +23,7 @@ Hugging Face 预训练音频模型是可选能力，正式 extra 名称为 `hf`�
 python -m pip install -e ".[hf]"
 ```
 
-`pretrained` extra 仅为旧安装命令保留兼容别名；新文档、新 CI 和新集成应使用
-`hf`。基础安装不会引入 `transformers`。
+基础安装不会引入 `transformers`；需要 Hugging Face 能力时只使用 `hf` extra。
 
 PyTorch/TorchAudio 必须来自兼容版本与相同 CPU/CUDA 渠道。安装后运行：
 

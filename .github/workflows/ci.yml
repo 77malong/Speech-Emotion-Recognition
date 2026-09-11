@@ -60,6 +60,7 @@ jobs:
               "ser_lib.engine.evaluation_detail",
               "ser_lib.engine.runs",
               "ser_lib.engine.evaluation_runs",
+              "ser_lib.engine.evaluation_catalog",
               "ser_lib.benchmark",
               "ser_lib.models.pretrained",
           )

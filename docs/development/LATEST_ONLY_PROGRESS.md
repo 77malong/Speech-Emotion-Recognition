@@ -105,3 +105,16 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 `get_runtime_capabilities`，删除 RuntimeMetrics、host/process resource polling 及其
 辅助实现。同步删除 runtime metrics/host metrics 测试；由于全仓已无其他使用，基础依赖中
 移除 `psutil`。wheel smoke 显式验证 `ser_lib.benchmark` 不再随安装包发布。
+
+
+## Final latest-only architecture audit
+
+完成最终当前架构收口：training/evaluation 历史 Catalog API 被删除，保留
+`TrainingRecord` / `EvaluationRecord` 的显式读写；checkpoint catalog 与 artifact catalog
+继续作为真实资源 discovery 能力保留。删除 `pretrained` extra 兼容别名，Hugging Face
+可选依赖统一使用 `hf`。
+
+README、API Reference、Artifact/Data/Training/Installation、config 文档与 CHANGELOG 已按
+0.3.0 latest-only 架构对齐。历史 review 文档保持历史事实，其 README 已明确声明不代表当前 API。
+新增最终架构门禁，持续检查退役模块、旧类型、migration/legacy 字段、runtime metrics、
+benchmark public module 与 config version 字段不会重新进入生产代码。

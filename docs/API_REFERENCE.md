@@ -11,7 +11,7 @@ Page/View/Detail 或跨领域 ComponentCatalog facade。未列入各模块 `__al
 | `ser_lib.config` | 严格配置 schema、配置加载、preset payload 与实验配置构造 |
 | `ser_lib.data` | Manifest、AudioLoader、SERDataset、Pipeline、Collator、record iterator/profile/revision、数据组件 registry |
 | `ser_lib.models` | SERModel、ModelOutput、ModelSpec、CNN、GRU、Transformer、HF adapter 与模型 registry |
-| `ser_lib.engine` | ExperimentConfig、Trainer、训练/评估实验、run metadata、report、prediction iterator、checkpoint |
+| `ser_lib.engine` | ExperimentConfig、Trainer、训练/评估实验、TrainingRecord/EvaluationRecord、report、prediction iterator、checkpoint |
 | `ser_lib.artifacts` | artifact 导出、轻量 inspect/catalog、验证、加载和模型卡 |
 | `ser_lib.inference` | 单文件、批量和纯 PCM 流式推理 |
 | `ser_lib.runtime` | Python/PyTorch 与 CPU/CUDA/MPS 运行能力探测 |
@@ -46,7 +46,7 @@ config = build_experiment_config("cnn_logmel_baseline")
 runtime = get_runtime_capabilities()
 ```
 
-这些函数返回真实领域对象或 iterator，不引入 HTTP、RPC、FastAPI、WebSocket、分页 DTO 或后台 job 概念。
+这些函数返回真实领域对象或 iterator，不引入 HTTP、RPC、FastAPI、WebSocket、分页包装或后台 job 概念。
 
 ## Dataset records
 
@@ -164,8 +164,7 @@ flatten metadata 等派生信息由上层应用自行计算；完整 hash 验证
 ## 当前持久化格式
 
 配置、dataset、artifact、checkpoint、run/evaluation 和事件只使用当前结构。
-不再输出或接受 schema_version / format_version，迁移框架和加载入口已移除。
-当前格式必需字段缺失、错误类型或未知字段会被拒绝。
+当前格式必需字段缺失、错误类型、未知字段以及已废弃的版本字段都会被直接拒绝。
 `library_version` 保留创建来源，不参与兼容分支；模型与数据的形状、标签及预处理契约仍须校验。
 artifact 固定使用 weights.safetensors；checkpoint 仅用于可信本地恢复。
 

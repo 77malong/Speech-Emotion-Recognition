@@ -1,4 +1,4 @@
-"""训练记录的原子持久化与轻量 Catalog 扫描。"""
+"""训练终态记录的严格读写。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ser_lib.engine.lineage import TrainingMetadata
 from ser_lib.engine.training import TrainingResult, TrainingStatus
-from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 _RUN_RECORD_NAME = "run.json"
 
@@ -139,39 +138,6 @@ class TrainingRecord:
         return cls(**fields)
 
 
-@dataclass(frozen=True, slots=True)
-class TrainingRunScanFailure:
-    directory: str
-    error_type: str
-    message: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "directory": self.directory,
-            "error_type": self.error_type,
-            "message": self.message,
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class TrainingRunCatalog:
-    root: str
-    runs: tuple[TrainingRecord, ...]
-    failures: tuple[TrainingRunScanFailure, ...]
-
-    @property
-    def total(self) -> int:
-        return len(self.runs) + len(self.failures)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "root": self.root,
-            "total": self.total,
-            "runs": [run.to_dict() for run in self.runs],
-            "failures": [failure.to_dict() for failure in self.failures],
-        }
-
-
 def write_training_record(
     directory: Path | str,
     metadata: TrainingMetadata,
@@ -207,80 +173,8 @@ def load_training_record(path: Path | str) -> TrainingRecord:
     return TrainingRecord.from_dict(raw, directory=record_path.parent)
 
 
-def scan_training_runs(
-    root: Path | str,
-    *,
-    recursive: bool = False,
-    fail_fast: bool = False,
-    event_callback: EventCallback | None = None,
-    cancellation: CancellationCheck | None = None,
-) -> TrainingRunCatalog:
-    """轻量扫描 ``run.json``；不读取 checkpoint、不加载模型、不计算 hash。"""
-    root_path = Path(root)
-    if not root_path.is_dir():
-        raise NotADirectoryError(f"训练运行根目录不存在或不是目录: {root_path}")
-    candidates = _candidate_directories(root_path, recursive=recursive)
-    runs: list[TrainingRecord] = []
-    failures: list[TrainingRunScanFailure] = []
-    total = len(candidates)
-
-    for index, directory in enumerate(candidates, start=1):
-        if cancellation is not None:
-            cancellation.raise_if_cancelled()
-        try:
-            runs.append(load_training_record(directory))
-        except Exception as exc:
-            if fail_fast:
-                raise
-            failures.append(
-                TrainingRunScanFailure(
-                    directory=directory.as_posix(),
-                    error_type=type(exc).__name__,
-                    message=str(exc),
-                )
-            )
-        if event_callback is not None:
-            event_callback(
-                ProgressEvent(
-                    stage="training_run_catalog_scan",
-                    completed=index,
-                    total=total,
-                    details={
-                        "valid": len(runs),
-                        "failed": len(failures),
-                        "directory": directory,
-                    },
-                )
-            )
-
-    runs.sort(key=lambda item: (item.created_at, item.run_id), reverse=True)
-    return TrainingRunCatalog(
-        root=root_path.as_posix(),
-        runs=tuple(runs),
-        failures=tuple(failures),
-    )
-
-
-def _candidate_directories(root: Path, *, recursive: bool) -> list[Path]:
-    candidates: set[Path] = set()
-    if (root / _RUN_RECORD_NAME).is_file():
-        candidates.add(root)
-    if recursive:
-        candidates.update(path.parent for path in root.rglob(_RUN_RECORD_NAME))
-    else:
-        candidates.update(
-            child
-            for child in root.iterdir()
-            if child.is_dir() and (child / _RUN_RECORD_NAME).is_file()
-        )
-    return sorted(candidates, key=lambda path: path.as_posix().casefold())
-
-
 __all__ = [
     "TrainingRecord",
-    "TrainingRunScanFailure",
-    "TrainingRunCatalog",
     "write_training_record",
     "load_training_record",
-    "scan_training_runs",
 ]

@@ -18,11 +18,8 @@ from ser_lib.engine import (
     TrainerConfig,
     TrainingRecord,
     load_training_record,
-    scan_training_runs,
     write_training_record,
 )
-from ser_lib.foundation.errors import OperationCancelled
-from ser_lib.foundation.events import CancellationToken, ProgressEvent
 from ser_lib.models import CNNBaseline
 
 
@@ -126,58 +123,6 @@ def test_run_record_tracks_actual_directory_after_move(tmp_path: Path):
 
     assert loaded.directory == moved.as_posix()
     assert loaded.run_id == "run-catalog-demo"
-
-
-def test_run_catalog_is_lightweight_isolates_failures_and_emits_progress(tmp_path: Path):
-    trainer, result = _completed_run(tmp_path)
-    runs_root = tmp_path / "runs"
-    good = runs_root / "good"
-    _save_run(good, trainer, result)
-    bad = runs_root / "nested" / "bad"
-    bad.mkdir(parents=True)
-    (bad / "run.json").write_text("{broken", encoding="utf-8")
-    events = []
-
-    shallow = scan_training_runs(runs_root, event_callback=events.append)
-    assert shallow.total == 1
-    assert len(shallow.runs) == 1
-    assert shallow.failures == ()
-
-    events.clear()
-    catalog = scan_training_runs(
-        runs_root,
-        recursive=True,
-        event_callback=events.append,
-    )
-    assert catalog.total == 2
-    assert [run.run_id for run in catalog.runs] == ["run-catalog-demo"]
-    assert len(catalog.failures) == 1
-    assert catalog.failures[0].error_type == "JSONDecodeError"
-    progress = [event for event in events if isinstance(event, ProgressEvent)]
-    assert [event.completed for event in progress] == [1, 2]
-    assert all(event.total == 2 for event in progress)
-    json.dumps(catalog.to_dict())
-
-    root_catalog = scan_training_runs(good)
-    assert root_catalog.total == 1
-    assert root_catalog.runs[0].directory == good.as_posix()
-
-
-def test_run_catalog_supports_fail_fast_cancellation_and_missing_root(tmp_path: Path):
-    bad = tmp_path / "runs" / "bad"
-    bad.mkdir(parents=True)
-    (bad / "run.json").write_text("{broken", encoding="utf-8")
-
-    with pytest.raises(json.JSONDecodeError):
-        scan_training_runs(tmp_path / "runs", fail_fast=True)
-
-    token = CancellationToken()
-    token.cancel()
-    with pytest.raises(OperationCancelled):
-        scan_training_runs(tmp_path / "runs", cancellation=token)
-
-    with pytest.raises(NotADirectoryError):
-        scan_training_runs(tmp_path / "missing")
 
 
 def test_run_record_validation_rejects_corruption(tmp_path: Path):

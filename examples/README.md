@@ -5,6 +5,7 @@
 ```bash
 python examples/train_from_python.py configs/cnn_logmel.yaml
 python examples/predict_artifact.py artifacts/model path/to/audio.wav
+python examples/inspect_runs_and_presets.py --training-run runs/demo
 ```
 
 训练示例要求配置所引用的标准 manifest 已存在。推理示例要求先从可信 checkpoint

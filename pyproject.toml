@@ -12,8 +12,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "SER contributors" }]
 dependencies = [
-    # Keep TorchAudio below 2.9 while legacy configurations may still request its I/O backend.
-    # New configurations use SoundFile for portable header probing and decoding.
+    # Torch and TorchAudio stay on the same supported release range.
     "torch>=2.0,<2.9",
     "torchaudio>=2.0,<2.9",
     "numpy>=1.26",
@@ -39,11 +38,6 @@ dev = [
 hf = [
     "transformers>=4.38,<6",
 ]
-# Backward-compatible extra name; the canonical optional feature is ``hf``.
-pretrained = [
-    "transformers>=4.38,<6",
-]
-
 [tool.setuptools.packages.find]
 include = ["ser_lib*"]
 
