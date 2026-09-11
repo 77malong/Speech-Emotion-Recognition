@@ -47,12 +47,12 @@ def _tensor_spec_config(spec: TensorSpec) -> TorchTensorSpecConfig:
     dtype = str(spec.dtype).removeprefix("torch.")
     if dtype not in _DTYPE_BY_NAME:
         raise ValueError(f"TorchModelAdapter 不支持持久化 dtype={spec.dtype}")
-    return TorchTensorSpecConfig(
-        layout=spec.layout,
-        dtype=dtype,
-        feature_dim=spec.feature_dim,
-        pad_value=spec.pad_value,
-    )
+    return TorchTensorSpecConfig.model_validate({
+        "layout": spec.layout,
+        "dtype": dtype,
+        "feature_dim": spec.feature_dim,
+        "pad_value": spec.pad_value,
+    })
 
 
 def _model_spec_from_config(params: dict[str, Any]) -> ModelSpec:

@@ -237,7 +237,11 @@ class HFAudioClassifier(SERModel):
             reset_classifier_head=reset_classifier_head,
             label_names=label_names,
             processor_name_or_path=processor_name_or_path,
-            processor_config=processor_config,
+            processor_config=(
+                HFProcessorConfig.model_validate(processor_config)
+                if isinstance(processor_config, dict)
+                else processor_config
+            ),
             processor_revision=processor_revision,
         )
         transformers = _transformers()

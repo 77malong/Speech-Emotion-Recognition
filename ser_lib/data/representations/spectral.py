@@ -101,6 +101,8 @@ class SpectrogramRepresentation(_SpectralRepresentationBase):
 class MelSpectrogramRepresentation(_SpectralRepresentationBase):
     """Mel 谱。"""
 
+    config: MelConfig
+
     descriptor = ComponentDescriptor(
         id="mel_spectrogram",
         display_name="Mel 谱",
@@ -137,6 +139,8 @@ class MelSpectrogramRepresentation(_SpectralRepresentationBase):
 
 class LogMelRepresentation(_SpectralRepresentationBase):
     """Log-Mel 谱：Mel 谱后接 AmplitudeToDB。"""
+
+    config: LogMelConfig
 
     descriptor = ComponentDescriptor(
         id="log_mel",
@@ -179,6 +183,8 @@ class LogMelRepresentation(_SpectralRepresentationBase):
 
 class MFCCRepresentation(_SpectralRepresentationBase):
     """MFCC：Mel 参数转换逻辑封装在组件内部。"""
+
+    config: MFCCConfig
 
     descriptor = ComponentDescriptor(
         id="mfcc",

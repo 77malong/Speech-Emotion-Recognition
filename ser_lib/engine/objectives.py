@@ -13,6 +13,8 @@ from ser_lib.config.training import LossConfig, SamplingConfig
 
 
 class ClassificationLoss(nn.Module):
+    class_weights: torch.Tensor | None
+
     def __init__(self, config: LossConfig, num_classes: int) -> None:
         super().__init__()
         if config.class_weights is not None and len(config.class_weights) != num_classes:
@@ -102,7 +104,7 @@ def build_weighted_sampler(
         raise ValueError("replacement=False 时 num_samples 不能超过训练样本数")
     generator = torch.Generator().manual_seed(seed)
     return WeightedRandomSampler(
-        sample_weights,
+        sample_weights.tolist(),
         num_samples=sample_count,
         replacement=config.replacement,
         generator=generator,

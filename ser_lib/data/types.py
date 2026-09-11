@@ -477,10 +477,12 @@ def validate_sample_contract(sample: SERSample, specs: Mapping[str, TensorSpec])
                 component="pipeline",
                 stage="contract_validation",
             )
-        if length != sample.inputs[key].shape[spec.time_axis]:
+        time_axis = spec.time_axis
+        assert time_axis is not None
+        if length != sample.inputs[key].shape[time_axis]:
             raise RepresentationError(
                 f"样本 '{sample.uid}' lengths['{key}']={length} 与时间轴长度 "
-                f"{sample.inputs[key].shape[spec.time_axis]} 不一致",
+                f"{sample.inputs[key].shape[time_axis]} 不一致",
                 uid=sample.uid,
                 component="pipeline",
                 stage="contract_validation",

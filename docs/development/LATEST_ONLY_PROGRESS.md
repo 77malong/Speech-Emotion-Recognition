@@ -26,4 +26,12 @@
 
 ## 未完成阶段与下一步
 
-Stage 3～12 尚未完成；不得从前两个阶段推断 latest-only API 已生效。下一步先清理严格 mypy 基线，再将迁移调用方与当前格式加载器一起收敛，以保持阶段提交可导入、可测试。最终提交的跨平台 CI 尚未验收。
+Stage 3～12 尚未完成；不得从前两个阶段推断 latest-only API 已生效。下一步将迁移调用方与当前格式加载器一起收敛，以保持阶段提交可导入、可测试。最终提交的跨平台 CI 尚未验收。
+
+## 验收前置修复：严格类型检查基线
+
+已清除基线 46 个类型错误：显式声明 Tensor buffer 和谱配置类型；Transformer 使用具名配置属性代替动态 setattr；优化器显式传递参数；外部字典经过实际 schema 验证；回调通过 partial 绑定上下文；收紧时间轴、语言默认值和 transform 注册表类型。没有关闭 mypy 规则或添加忽略错误指令。
+
+更新 CI：Ruff 检查全仓；mypy 移除 `--follow-imports=skip`，与计划命令一致。未改动 Python/OS/HF 版本矩阵。
+
+验证：`mypy ser_lib` 为 111 source files 无错误；全仓 Ruff 通过；502 passed，1 个既有 GradScaler 警告；sdist/wheel 构建通过；安装 wheel 后 CPU 单 epoch smoke 通过（8 samples、2 optimizer steps）。Stage 1/2 记录保留当时基线结果，当前本机类型门禁已恢复为通过。

@@ -127,6 +127,9 @@ class _ZeroCrossingRate(_FrameFeature):
 class _StftFeature(_FrameFeature):
     """基于 STFT 幅度谱的帧级特征公共基类。"""
 
+    _window: torch.Tensor
+    _freqs: torch.Tensor
+
     def __init__(self, sample_rate: int, n_fft: int, hop_length: int) -> None:
         super().__init__()
         self.sample_rate = sample_rate

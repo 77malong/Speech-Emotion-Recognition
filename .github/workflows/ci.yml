@@ -122,9 +122,9 @@ jobs:
       - name: Check dependency consistency
         run: python -m pip check
       - name: Ruff
-        run: python -m ruff check ser_lib tests data benchmarks
+        run: python -m ruff check .
       - name: Type-check library
-        run: python -m mypy --follow-imports=skip ser_lib
+        run: python -m mypy ser_lib
       - name: Coverage by package
         env:
           HF_HUB_OFFLINE: "1"

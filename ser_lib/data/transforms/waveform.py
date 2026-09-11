@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio.transforms as T
+from pydantic import BaseModel
 
 from ser_lib.config.transforms import (
     GaussianNoiseConfig,
@@ -131,7 +132,9 @@ class TimeStretch(nn.Module):
         )
 
 
-WAVEFORM_TRANSFORM_SPECS = {
+WAVEFORM_TRANSFORM_SPECS: dict[
+    str, tuple[type[nn.Module], type[BaseModel], ComponentDescriptor]
+] = {
     "normalize": (
         Normalize,
         NormalizeConfig,

@@ -64,8 +64,15 @@ class TransformerBaseline(SERModel):
             activation=activation,
             norm_first=norm_first,
         )
-        for key, value in config.model_dump().items():
-            setattr(self, key, value)
+        self.feature_dim = config.feature_dim
+        self.num_classes = config.num_classes
+        self.d_model = config.d_model
+        self.num_heads = config.num_heads
+        self.num_layers = config.num_layers
+        self.feedforward_dim = config.feedforward_dim
+        self.dropout = config.dropout
+        self.activation = config.activation
+        self.norm_first = config.norm_first
         self.input_projection = nn.Linear(self.feature_dim, self.d_model)
         layer = nn.TransformerEncoderLayer(
             d_model=self.d_model,

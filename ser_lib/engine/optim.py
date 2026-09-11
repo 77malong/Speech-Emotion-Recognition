@@ -23,18 +23,20 @@ def build_optimizer(
     parameters,
     config: OptimizerConfig,
 ) -> torch.optim.Optimizer:
-    common = {"lr": config.learning_rate, "weight_decay": config.weight_decay}
     if isinstance(config, AdamWConfig):
         return torch.optim.AdamW(
-            parameters, **common, betas=(config.beta1, config.beta2), eps=config.eps
+            parameters, lr=config.learning_rate, weight_decay=config.weight_decay,
+            betas=(config.beta1, config.beta2), eps=config.eps
         )
     if isinstance(config, AdamConfig):
         return torch.optim.Adam(
-            parameters, **common, betas=(config.beta1, config.beta2), eps=config.eps
+            parameters, lr=config.learning_rate, weight_decay=config.weight_decay,
+            betas=(config.beta1, config.beta2), eps=config.eps
         )
     if isinstance(config, SGDConfig):
         return torch.optim.SGD(
-            parameters, **common, momentum=config.momentum, nesterov=config.nesterov
+            parameters, lr=config.learning_rate, weight_decay=config.weight_decay,
+            momentum=config.momentum, nesterov=config.nesterov
         )
     raise TypeError(f"不支持的优化器配置: {type(config)!r}")
 

@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Callable, Iterable, Sequence, Sized
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -733,13 +734,10 @@ class Trainer:
                         validation_batches,
                         num_classes=num_classes,
                         device=self.device,
-                        event_callback=(
-                            lambda event, current_epoch=epoch,
-                            current_total=validation_total_batches: self._emit_validation_event(
-                                event,
-                                epoch=current_epoch,
-                                total_batches=current_total,
-                            )
+                        event_callback=partial(
+                            self._emit_validation_event,
+                            epoch=epoch,
+                            total_batches=validation_total_batches,
                         ),
                         cancellation=self.cancellation,
                         loss_fn=self.loss_fn,

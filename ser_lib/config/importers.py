@@ -63,8 +63,12 @@ class EmotionTalkImportConfig(StrictConfig):
     speaker_splits: dict[str, list[str]] | None = None
 
 
+def _default_esd_languages() -> list[Literal["zh", "en"]]:
+    return ["zh", "en"]
+
+
 class EsdImportConfig(StrictConfig):
-    languages: list[Literal["zh", "en"]] = Field(default_factory=lambda: ["zh", "en"])
+    languages: list[Literal["zh", "en"]] = Field(default_factory=_default_esd_languages)
     encoding: str = "utf-8-sig"
     label_mapping: dict[str, int] | None = None
     speaker_splits: dict[str, list[str]] | None = None
