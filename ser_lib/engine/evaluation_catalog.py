@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ser_lib.engine.evaluation_runs import EvaluationRunInfo, load_evaluation_run_info
+from ser_lib.engine.evaluation_records import EvaluationRecord, load_evaluation_record
 from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 _EVALUATION_RECORD_NAME = "evaluation.json"
@@ -31,7 +31,7 @@ class EvaluationRunCatalog:
     """评估历史列表；扫描时不读取 metrics/predictions/artifact。"""
 
     root: str
-    runs: tuple[EvaluationRunInfo, ...]
+    runs: tuple[EvaluationRecord, ...]
     failures: tuple[EvaluationRunScanFailure, ...]
 
     @property
@@ -60,7 +60,7 @@ def scan_evaluation_runs(
     if not root_path.is_dir():
         raise NotADirectoryError(f"评估运行根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
-    runs: list[EvaluationRunInfo] = []
+    runs: list[EvaluationRecord] = []
     failures: list[EvaluationRunScanFailure] = []
     total = len(candidates)
 
@@ -68,7 +68,7 @@ def scan_evaluation_runs(
         if cancellation is not None:
             cancellation.raise_if_cancelled()
         try:
-            runs.append(load_evaluation_run_info(directory))
+            runs.append(load_evaluation_record(directory))
         except Exception as exc:
             if fail_fast:
                 raise

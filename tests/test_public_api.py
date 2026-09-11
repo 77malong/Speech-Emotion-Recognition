@@ -83,6 +83,11 @@ def test_canonical_domain_types_have_intentional_public_paths():
     assert config.TorchModelAdapterConfig.__module__ == "ser_lib.config.model"
     assert config.TorchTensorSpecConfig.__module__ == "ser_lib.config.model"
     assert engine.CompatibilityReport.__module__ == "ser_lib.engine.compatibility"
+    assert engine.TrainingMetadata.__module__ == "ser_lib.engine.lineage"
+    assert engine.TrainingRecord.__module__ == "ser_lib.engine.training_records"
+    assert engine.TrainingHistory.__module__ == "ser_lib.engine.training_history"
+    assert engine.EvaluationMetadata.__module__ == "ser_lib.engine.evaluation_records"
+    assert engine.EvaluationRecord.__module__ == "ser_lib.engine.evaluation_records"
     assert config.StrictConfig.__module__ == "ser_lib.config.base"
     assert not hasattr(foundation, "SchemaMigrationError")
     assert foundation.RegistryError.__module__ == "ser_lib.foundation.errors.base"
@@ -109,6 +114,16 @@ def test_application_wrappers_and_old_root_shortcuts_are_absent():
         "PresetStatus",
         "list_experiment_presets",
         "get_experiment_preset",
+        "TrainingRunInfo",
+        "TrainingRunMetadata",
+        "write_training_run_info",
+        "load_training_run_info",
+        "TrainingHistoryInfo",
+        "EvaluationRunMetadata",
+        "EvaluationRunInfo",
+        "build_evaluation_run_metadata",
+        "write_evaluation_run_info",
+        "load_evaluation_run_info",
     }
     for module in (ser_lib, data, engine, artifacts):
         assert retired.isdisjoint(module.__all__), module.__name__
@@ -127,7 +142,11 @@ def test_application_wrappers_and_old_root_shortcuts_are_absent():
         "inspect_compatibility",
         "ExperimentValidationResult",
         "validate_experiment",
-        "TrainingRunMetadata",
+        "TrainingMetadata",
+        "TrainingRecord",
+        "TrainingHistory",
+        "EvaluationMetadata",
+        "EvaluationRecord",
         "RuntimeCapabilities",
         "get_runtime_capabilities",
         "RuntimeMetrics",
@@ -159,6 +178,8 @@ def test_retired_internal_namespaces_are_not_importable():
         "ser_lib.services",
         "ser_lib.catalog",
         "ser_lib.models.pretrained",
+        "ser_lib.engine.runs",
+        "ser_lib.engine.evaluation_runs",
     ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(module_name)

@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from ser_lib.engine.evaluation_runs import EvaluationRunInfo
+from ser_lib.engine.evaluation_records import EvaluationRecord
 from ser_lib.engine.evaluator import ClassMetrics, PredictionRecord
 from ser_lib.foundation.events import CancellationCheck
 
@@ -190,7 +190,7 @@ def inspect_evaluation_report(directory: Path | str) -> EvaluationReportInfo:
 
 
 def inspect_evaluation_prediction_file(
-    run: EvaluationRunInfo,
+    run: EvaluationRecord,
 ) -> EvaluationPredictionFileInfo:
     """按 ``evaluation.json`` 声明的文件名做 stat，不打开 prediction 内容。"""
     if run.predictions_file is None:

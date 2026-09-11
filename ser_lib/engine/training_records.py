@@ -1,4 +1,4 @@
-"""训练运行记录的原子持久化与轻量 Catalog 扫描。"""
+"""训练记录的原子持久化与轻量 Catalog 扫描。"""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ser_lib.engine.lineage import TrainingRunMetadata
+from ser_lib.engine.lineage import TrainingMetadata
 from ser_lib.engine.training import TrainingResult, TrainingStatus
 from ser_lib.foundation.events import CancellationCheck, EventCallback, ProgressEvent
 
 _RUN_RECORD_NAME = "run.json"
 
 
-class _RunRecordModel(BaseModel):
+class _TrainingRecordModel(BaseModel):
     """run.json 的严格磁盘 schema；额外字段会被拒绝。"""
 
     model_config = ConfigDict(extra="forbid")
@@ -54,8 +54,8 @@ class _RunRecordModel(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
-class TrainingRunInfo:
-    """轻量、JSON-safe 的训练运行记录。"""
+class TrainingRecord:
+    """严格、JSON-safe 的训练终态记录。"""
 
     run_id: str
     directory: str
@@ -81,7 +81,7 @@ class TrainingRunInfo:
     stop_reason: str | None
 
     def to_dict(self) -> dict[str, Any]:
-        return _RunRecordModel(
+        return _TrainingRecordModel(
 
             **asdict(self),
         ).model_dump(mode="json")
@@ -90,11 +90,11 @@ class TrainingRunInfo:
     def from_training(
         cls,
         directory: Path | str,
-        metadata: TrainingRunMetadata,
+        metadata: TrainingMetadata,
         result: TrainingResult,
-    ) -> "TrainingRunInfo":
+    ) -> "TrainingRecord":
         if metadata.run_id != result.run_id:
-            raise ValueError("TrainingRunMetadata.run_id 与 TrainingResult.run_id 不一致")
+            raise ValueError("TrainingMetadata.run_id 与 TrainingResult.run_id 不一致")
         return cls(
             run_id=result.run_id,
             directory=Path(directory).as_posix(),
@@ -130,11 +130,11 @@ class TrainingRunInfo:
         value: dict[str, Any],
         *,
         directory: Path | str | None = None,
-    ) -> "TrainingRunInfo":
+    ) -> "TrainingRecord":
         payload = dict(value)
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
-        record = _RunRecordModel.model_validate(payload)
+        record = _TrainingRecordModel.model_validate(payload)
         fields = record.model_dump()
         return cls(**fields)
 
@@ -156,7 +156,7 @@ class TrainingRunScanFailure:
 @dataclass(frozen=True, slots=True)
 class TrainingRunCatalog:
     root: str
-    runs: tuple[TrainingRunInfo, ...]
+    runs: tuple[TrainingRecord, ...]
     failures: tuple[TrainingRunScanFailure, ...]
 
     @property
@@ -172,20 +172,20 @@ class TrainingRunCatalog:
         }
 
 
-def write_training_run_info(
+def write_training_record(
     directory: Path | str,
-    metadata: TrainingRunMetadata,
+    metadata: TrainingMetadata,
     result: TrainingResult,
 ) -> Path:
     """把终态训练记录原子写入 ``run.json``。"""
     target_dir = Path(directory)
     target_dir.mkdir(parents=True, exist_ok=True)
-    info = TrainingRunInfo.from_training(target_dir, metadata, result)
+    record = TrainingRecord.from_training(target_dir, metadata, result)
     target = target_dir / _RUN_RECORD_NAME
     temporary = target_dir / f".{_RUN_RECORD_NAME}.tmp"
     try:
         temporary.write_text(
-            json.dumps(info.to_dict(), ensure_ascii=False, indent=2),
+            json.dumps(record.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         temporary.replace(target)
@@ -195,7 +195,7 @@ def write_training_run_info(
     return target
 
 
-def load_training_run_info(path: Path | str) -> TrainingRunInfo:
+def load_training_record(path: Path | str) -> TrainingRecord:
     """读取一个 run 目录或其 ``run.json``。目录字段始终以实际位置为准。"""
     source = Path(path)
     record_path = source / _RUN_RECORD_NAME if source.is_dir() else source
@@ -204,7 +204,7 @@ def load_training_run_info(path: Path | str) -> TrainingRunInfo:
     raw = json.loads(record_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError("run.json 顶层必须是映射")
-    return TrainingRunInfo.from_dict(raw, directory=record_path.parent)
+    return TrainingRecord.from_dict(raw, directory=record_path.parent)
 
 
 def scan_training_runs(
@@ -220,7 +220,7 @@ def scan_training_runs(
     if not root_path.is_dir():
         raise NotADirectoryError(f"训练运行根目录不存在或不是目录: {root_path}")
     candidates = _candidate_directories(root_path, recursive=recursive)
-    runs: list[TrainingRunInfo] = []
+    runs: list[TrainingRecord] = []
     failures: list[TrainingRunScanFailure] = []
     total = len(candidates)
 
@@ -228,7 +228,7 @@ def scan_training_runs(
         if cancellation is not None:
             cancellation.raise_if_cancelled()
         try:
-            runs.append(load_training_run_info(directory))
+            runs.append(load_training_record(directory))
         except Exception as exc:
             if fail_fast:
                 raise
@@ -277,10 +277,10 @@ def _candidate_directories(root: Path, *, recursive: bool) -> list[Path]:
 
 
 __all__ = [
-    "TrainingRunInfo",
+    "TrainingRecord",
     "TrainingRunScanFailure",
     "TrainingRunCatalog",
-    "write_training_run_info",
-    "load_training_run_info",
+    "write_training_record",
+    "load_training_record",
     "scan_training_runs",
 ]

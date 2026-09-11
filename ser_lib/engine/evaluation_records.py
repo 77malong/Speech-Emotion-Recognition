@@ -1,4 +1,4 @@
-"""评估运行的稳定 lineage、终态记录与原子持久化。"""
+"""评估 lineage、终态记录与原子持久化。"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ _AGGREGATE_METRICS = (
 )
 
 
-class _EvaluationRunRecordModel(BaseModel):
+class _EvaluationRecordModel(BaseModel):
     """``evaluation.json`` 的严格磁盘 schema。"""
 
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -79,7 +79,7 @@ class _EvaluationRunRecordModel(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_timeline_and_metrics(self) -> "_EvaluationRunRecordModel":
+    def _validate_timeline_and_metrics(self) -> "_EvaluationRecordModel":
         if self.started_at < self.created_at:
             raise ValueError("started_at 不能早于 created_at")
         if self.finished_at < self.started_at:
@@ -94,7 +94,7 @@ class _EvaluationRunRecordModel(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluationRunMetadata:
+class EvaluationMetadata:
     """评估开始前即可创建并用于事件上下文的稳定 lineage。"""
 
     evaluation_id: str
@@ -143,8 +143,8 @@ class EvaluationRunMetadata:
 
 
 @dataclass(frozen=True, slots=True)
-class EvaluationRunInfo:
-    """历史列表/详情可直接消费的评估终态记录。"""
+class EvaluationRecord:
+    """严格、JSON-safe 的评估终态记录。"""
 
     evaluation_id: str
     directory: str
@@ -166,7 +166,7 @@ class EvaluationRunInfo:
     predictions_file: str | None
 
     def to_dict(self) -> dict[str, Any]:
-        return _EvaluationRunRecordModel(
+        return _EvaluationRecordModel(
 
             **asdict(self),
         ).model_dump(mode="json")
@@ -175,13 +175,13 @@ class EvaluationRunInfo:
     def from_evaluation(
         cls,
         directory: Path | str,
-        metadata: EvaluationRunMetadata,
+        metadata: EvaluationMetadata,
         result: EvaluationResult,
         *,
         started_at: datetime,
         finished_at: datetime,
         predictions_file: str | None = "predictions.jsonl",
-    ) -> "EvaluationRunInfo":
+    ) -> "EvaluationRecord":
         metrics = {
             name: float(getattr(result, name))
             for name in _AGGREGATE_METRICS
@@ -213,16 +213,16 @@ class EvaluationRunInfo:
         value: Mapping[str, Any],
         *,
         directory: Path | str | None = None,
-    ) -> "EvaluationRunInfo":
+    ) -> "EvaluationRecord":
         payload = dict(value)
         if directory is not None:
             payload["directory"] = Path(directory).as_posix()
-        record = _EvaluationRunRecordModel.model_validate(payload)
+        record = _EvaluationRecordModel.model_validate(payload)
         fields = record.model_dump()
         return cls(**fields)
 
 
-def build_evaluation_run_metadata(
+def build_evaluation_metadata(
     *,
     source_artifact: Path | str,
     dataset_id: str,
@@ -234,9 +234,9 @@ def build_evaluation_run_metadata(
     dataset_fingerprint: str | None = None,
     evaluation_id: str | None = None,
     created_at: datetime | None = None,
-) -> EvaluationRunMetadata:
+) -> EvaluationMetadata:
     """构造评估 lineage；默认使用当前库版本，不执行隐藏 I/O。"""
-    return EvaluationRunMetadata(
+    return EvaluationMetadata(
         evaluation_id=evaluation_id or f"eval_{uuid4().hex}",
         created_at=created_at or datetime.now(timezone.utc),
         source_artifact=Path(source_artifact).as_posix(),
@@ -250,9 +250,9 @@ def build_evaluation_run_metadata(
     )
 
 
-def write_evaluation_run_info(
+def write_evaluation_record(
     directory: Path | str,
-    metadata: EvaluationRunMetadata,
+    metadata: EvaluationMetadata,
     result: EvaluationResult,
     *,
     started_at: datetime,
@@ -262,7 +262,7 @@ def write_evaluation_run_info(
     """把终态评估记录原子写入 ``evaluation.json``。"""
     target_dir = Path(directory)
     target_dir.mkdir(parents=True, exist_ok=True)
-    info = EvaluationRunInfo.from_evaluation(
+    record = EvaluationRecord.from_evaluation(
         target_dir,
         metadata,
         result,
@@ -274,7 +274,7 @@ def write_evaluation_run_info(
     temporary = target_dir / f".{_EVALUATION_RECORD_NAME}.tmp"
     try:
         temporary.write_text(
-            json.dumps(info.to_dict(), ensure_ascii=False, indent=2),
+            json.dumps(record.to_dict(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         temporary.replace(target)
@@ -284,7 +284,7 @@ def write_evaluation_run_info(
     return target
 
 
-def load_evaluation_run_info(path: Path | str) -> EvaluationRunInfo:
+def load_evaluation_record(path: Path | str) -> EvaluationRecord:
     """读取 evaluation 目录或 ``evaluation.json``；目录以实际位置为准。"""
     source = Path(path)
     record_path = source / _EVALUATION_RECORD_NAME if source.is_dir() else source
@@ -293,13 +293,13 @@ def load_evaluation_run_info(path: Path | str) -> EvaluationRunInfo:
     raw = json.loads(record_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError("evaluation.json 顶层必须是映射")
-    return EvaluationRunInfo.from_dict(raw, directory=record_path.parent)
+    return EvaluationRecord.from_dict(raw, directory=record_path.parent)
 
 
 __all__ = [
-    "EvaluationRunMetadata",
-    "EvaluationRunInfo",
-    "build_evaluation_run_metadata",
-    "write_evaluation_run_info",
-    "load_evaluation_run_info",
+    "EvaluationMetadata",
+    "EvaluationRecord",
+    "build_evaluation_metadata",
+    "write_evaluation_record",
+    "load_evaluation_record",
 ]

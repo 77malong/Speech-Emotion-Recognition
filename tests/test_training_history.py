@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ser_lib.engine import TrainingHistoryInfo, load_training_history
+from ser_lib.engine import TrainingHistory, load_training_history
 
 
 def _epoch(epoch: int, *, validation: dict[str, float] | None = None) -> dict:
@@ -33,7 +33,7 @@ def test_training_history_inspection_returns_json_safe_curve_data(tmp_path: Path
 
     history = load_training_history(run)
 
-    assert isinstance(history, TrainingHistoryInfo)
+    assert isinstance(history, TrainingHistory)
     assert history.directory == run.as_posix()
     assert history.history_file == (run / "history.json").as_posix()
     assert history.epoch_count == 2

@@ -16,7 +16,7 @@ from ser_lib.engine import (
     ModelConfig,
     Trainer,
     TrainerConfig,
-    TrainingRunMetadata,
+    TrainingMetadata,
 )
 from ser_lib.engine.lineage import artifact_provenance_from_training_run
 from ser_lib.models import CNNBaseline
@@ -103,7 +103,7 @@ def test_trainer_from_experiment_builds_json_safe_lineage_without_dataset_io(tmp
 
     metadata = trainer.run_metadata
 
-    assert isinstance(metadata, TrainingRunMetadata)
+    assert isinstance(metadata, TrainingMetadata)
     assert metadata.run_id == "lineage-run"
     assert metadata.dataset_id == "lineage-dataset"
     assert metadata.dataset_fingerprint == fingerprint

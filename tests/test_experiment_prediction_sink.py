@@ -76,7 +76,7 @@ def test_evaluate_artifact_forwards_streaming_sink_without_retaining_predictions
     )
     monkeypatch.setattr(
         experiment,
-        "build_evaluation_run_metadata",
+        "build_evaluation_metadata",
         lambda **kwargs: SimpleNamespace(evaluation_id="eval-1"),
     )
     monkeypatch.setattr(experiment, "_loader", lambda *args, **kwargs: ["batch"])
@@ -99,12 +99,12 @@ def test_evaluate_artifact_forwards_streaming_sink_without_retaining_predictions
     monkeypatch.setattr(experiment, "evaluate", fake_evaluate)
     monkeypatch.setattr(
         experiment,
-        "write_evaluation_run_info",
+        "write_evaluation_record",
         lambda output_dir, *args, **kwargs: output_dir / "evaluation-run.json",
     )
     monkeypatch.setattr(
         experiment,
-        "load_evaluation_run_info",
+        "load_evaluation_record",
         lambda path: SimpleNamespace(
             evaluation_id="eval-1",
             source_artifact=(tmp_path / "artifact").as_posix(),

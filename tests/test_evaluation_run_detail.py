@@ -8,10 +8,10 @@ import pytest
 from pydantic import ValidationError
 
 from ser_lib.engine import (
-    EvaluationRunInfo,
+    EvaluationRecord,
     inspect_evaluation_prediction_file,
     inspect_evaluation_report,
-    load_evaluation_run_info,
+    load_evaluation_record,
 )
 
 
@@ -67,7 +67,7 @@ def _metrics_report() -> dict:
 
 def _write_run(directory: Path, *, predictions_file: str | None = "predictions.jsonl") -> None:
     now = datetime(2026, 9, 9, 2, 30, tzinfo=timezone.utc)
-    info = EvaluationRunInfo(
+    info = EvaluationRecord(
         evaluation_id="eval-detail-demo",
         directory=directory.as_posix(),
         created_at=now,
@@ -110,7 +110,7 @@ def test_evaluation_metadata_report_and_prediction_stat_are_independent(tmp_path
 
     monkeypatch.setattr(Path, "read_text", guarded_read_text)
 
-    run = load_evaluation_run_info(directory)
+    run = load_evaluation_record(directory)
     report = inspect_evaluation_report(directory)
     prediction_file = inspect_evaluation_prediction_file(run)
 
@@ -127,7 +127,7 @@ def test_prediction_stat_remains_available_when_metrics_are_missing(tmp_path: Pa
     predictions = directory / "predictions.jsonl"
     predictions.write_bytes(b"opaque-predictions")
 
-    run = load_evaluation_run_info(directory)
+    run = load_evaluation_record(directory)
     prediction_file = inspect_evaluation_prediction_file(run)
 
     assert prediction_file.exists is True
@@ -140,7 +140,7 @@ def test_prediction_stat_reports_missing_file(tmp_path: Path):
     directory = tmp_path / "evaluation"
     _write_run(directory)
 
-    run = load_evaluation_run_info(directory)
+    run = load_evaluation_record(directory)
     prediction_file = inspect_evaluation_prediction_file(run)
 
     assert prediction_file.exists is False
@@ -151,7 +151,7 @@ def test_prediction_stat_allows_run_without_prediction_sink(tmp_path: Path):
     directory = tmp_path / "evaluation"
     _write_run(directory, predictions_file=None)
 
-    run = load_evaluation_run_info(directory)
+    run = load_evaluation_record(directory)
     prediction_file = inspect_evaluation_prediction_file(run)
 
     assert prediction_file.path is None

@@ -15,7 +15,7 @@ from ser_lib.artifacts import (
 )
 from ser_lib.data import DatasetManifest
 from ser_lib.engine import (
-    TrainingRunMetadata,
+    TrainingMetadata,
     build_experiment_components,
     evaluate_artifact as run_artifact_evaluation,
     load_checkpoint,
@@ -37,11 +37,11 @@ def _labels(meta_labels: dict[int, dict[str, Any]]) -> dict[int, str]:
 
 
 def _artifact_provenance(
-    source_run: TrainingRunMetadata,
+    source_run: TrainingMetadata,
     *,
     metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """把已解析的公开 lineage DTO 转成 artifact metadata，不扩大 engine API。"""
+    """把已解析的训练 lineage 转成 artifact metadata，不扩大 engine API。"""
     resolved = dict(metadata or {})
     resolved.setdefault("source_run_id", source_run.run_id)
     if source_run.dataset_id is not None:
@@ -169,7 +169,7 @@ def export_checkpoint_artifact(
     if isinstance(checkpoint_metadata, Mapping):
         raw_run_metadata = checkpoint_metadata.get("run_metadata")
         if isinstance(raw_run_metadata, Mapping):
-            source_run = TrainingRunMetadata.from_dict(raw_run_metadata)
+            source_run = TrainingMetadata.from_dict(raw_run_metadata)
     metadata: dict[str, Any] = {"checkpoint_epoch": payload.get("epoch")}
     if source_run is not None:
         metadata = _artifact_provenance(source_run, metadata=metadata)

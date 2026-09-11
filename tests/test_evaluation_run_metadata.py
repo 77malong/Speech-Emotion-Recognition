@@ -12,10 +12,10 @@ from ser_lib._version import __version__
 from ser_lib.engine import (
     ClassMetrics,
     EvaluationResult,
-    EvaluationRunInfo,
-    build_evaluation_run_metadata,
-    load_evaluation_run_info,
-    write_evaluation_run_info,
+    EvaluationRecord,
+    build_evaluation_metadata,
+    load_evaluation_record,
+    write_evaluation_record,
 )
 
 
@@ -43,7 +43,7 @@ def _result() -> EvaluationResult:
 
 
 def _metadata(created_at: datetime):
-    return build_evaluation_run_metadata(
+    return build_evaluation_metadata(
         source_artifact="artifacts/demo",
         source_run_id="run_source",
         dataset_id="demo-data",
@@ -63,7 +63,7 @@ def test_evaluation_run_record_round_trip_and_directory_relocation(tmp_path: Pat
     finished = started + timedelta(seconds=2.5)
     directory = tmp_path / "evaluation"
 
-    path = write_evaluation_run_info(
+    path = write_evaluation_record(
         directory,
         _metadata(created),
         _result(),
@@ -73,8 +73,8 @@ def test_evaluation_run_record_round_trip_and_directory_relocation(tmp_path: Pat
     assert path == directory / "evaluation.json"
     assert not (directory / ".evaluation.json.tmp").exists()
 
-    loaded = load_evaluation_run_info(directory)
-    assert isinstance(loaded, EvaluationRunInfo)
+    loaded = load_evaluation_record(directory)
+    assert isinstance(loaded, EvaluationRecord)
     assert loaded.evaluation_id == "eval_demo"
     assert loaded.source_run_id == "run_source"
     assert loaded.dataset_id == "demo-data"
@@ -90,14 +90,14 @@ def test_evaluation_run_record_round_trip_and_directory_relocation(tmp_path: Pat
 
     moved = tmp_path / "moved"
     directory.rename(moved)
-    relocated = load_evaluation_run_info(moved)
+    relocated = load_evaluation_record(moved)
     assert relocated.directory == moved.as_posix()
     assert relocated.evaluation_id == loaded.evaluation_id
 
 
 def test_evaluation_metadata_defaults_library_version_and_run_can_be_saved(tmp_path: Path):
     created = datetime.now(timezone.utc)
-    metadata = build_evaluation_run_metadata(
+    metadata = build_evaluation_metadata(
         source_artifact=tmp_path / "artifact",
         source_run_id="run_123",
         dataset_id="dataset",
@@ -112,21 +112,21 @@ def test_evaluation_metadata_defaults_library_version_and_run_can_be_saved(tmp_p
 
     started = created + timedelta(milliseconds=1)
     finished = started + timedelta(milliseconds=5)
-    path = write_evaluation_run_info(
+    path = write_evaluation_record(
         tmp_path / "evaluation",
         metadata,
         _result(),
         started_at=started,
         finished_at=finished,
     )
-    saved = load_evaluation_run_info(path)
-    assert load_evaluation_run_info(tmp_path / "evaluation") == saved
+    saved = load_evaluation_record(path)
+    assert load_evaluation_record(tmp_path / "evaluation") == saved
 
 
 def test_evaluation_run_record_rejects_invalid_timeline_and_schema(tmp_path: Path):
     created = datetime(2026, 9, 9, 1, 0, tzinfo=timezone.utc)
     with pytest.raises(ValidationError, match="finished_at"):
-        write_evaluation_run_info(
+        write_evaluation_record(
             tmp_path / "bad-time",
             _metadata(created),
             _result(),
@@ -136,7 +136,7 @@ def test_evaluation_run_record_rejects_invalid_timeline_and_schema(tmp_path: Pat
 
     directory = tmp_path / "invalid"
     directory.mkdir()
-    payload = EvaluationRunInfo.from_evaluation(
+    payload = EvaluationRecord.from_evaluation(
         directory,
         _metadata(created),
         _result(),
@@ -146,13 +146,13 @@ def test_evaluation_run_record_rejects_invalid_timeline_and_schema(tmp_path: Pat
     payload["unexpected"] = True
     (directory / "evaluation.json").write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValidationError):
-        load_evaluation_run_info(directory)
+        load_evaluation_record(directory)
 
 
 def test_evaluation_run_metadata_rejects_blank_optional_lineage():
     created = datetime.now(timezone.utc)
     with pytest.raises(ValueError, match="source_run_id"):
-        build_evaluation_run_metadata(
+        build_evaluation_metadata(
             source_artifact="artifact",
             source_run_id=" ",
             dataset_id="dataset",

@@ -8,12 +8,11 @@ from typing import Any, Mapping
 
 
 @dataclass(frozen=True, slots=True)
-class TrainingRunMetadata:
+class TrainingMetadata:
     """一次训练运行的稳定、JSON-safe lineage 描述。
 
     该对象只保存调用方已经知道的信息；它不会自行读取 manifest、扫描数据集或
-    计算 fingerprint。这样构造 Trainer 不会引入隐藏 I/O，也不会让 Web 创建任务
-    时出现不可预测的阻塞。
+    计算 fingerprint，因此构造 Trainer 不会引入隐藏 I/O。
     """
 
     run_id: str
@@ -59,14 +58,14 @@ class TrainingRunMetadata:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "TrainingRunMetadata":
+    def from_dict(cls, value: Mapping[str, Any]) -> "TrainingMetadata":
         created_at = value.get("created_at")
         if not isinstance(created_at, str):
-            raise ValueError("TrainingRunMetadata.created_at 必须是 ISO 8601 字符串")
+            raise ValueError("TrainingMetadata.created_at 必须是 ISO 8601 字符串")
         parsed_created_at = datetime.fromisoformat(created_at)
         config = value.get("config")
         if not isinstance(config, Mapping):
-            raise ValueError("TrainingRunMetadata.config 必须是映射")
+            raise ValueError("TrainingMetadata.config 必须是映射")
         return cls(
             run_id=str(value.get("run_id") or ""),
             created_at=parsed_created_at,
@@ -87,11 +86,11 @@ class TrainingRunMetadata:
             library_version=str(value.get("library_version") or ""),
         )
 
-    def with_run_id(self, run_id: str) -> "TrainingRunMetadata":
+    def with_run_id(self, run_id: str) -> "TrainingMetadata":
         return replace(self, run_id=run_id)
 
 
-def build_training_run_metadata(
+def build_training_metadata(
     *,
     run_id: str,
     model_id: str,
@@ -102,9 +101,9 @@ def build_training_run_metadata(
     dataset_id: str | None = None,
     dataset_fingerprint: str | None = None,
     created_at: datetime | None = None,
-) -> TrainingRunMetadata:
-    """构造 lineage DTO；不执行任何文件系统或数据集探测。"""
-    return TrainingRunMetadata(
+) -> TrainingMetadata:
+    """构造训练 lineage；不执行任何文件系统或数据集探测。"""
+    return TrainingMetadata(
         run_id=run_id,
         created_at=created_at or datetime.now(timezone.utc),
         dataset_id=dataset_id,
@@ -118,14 +117,14 @@ def build_training_run_metadata(
 
 
 def artifact_provenance_from_training_run(
-    source_run: TrainingRunMetadata,
+    source_run: TrainingMetadata,
     *,
     metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把训练 lineage 转成 artifact 可接收的通用 metadata。
 
     artifacts 层只接收 JSON-safe provenance 映射，不反向依赖 engine 类型；调用方
-    若已显式提供同名 metadata，则保持调用方值优先，与旧 ArtifactService 行为一致。
+    若已显式提供同名 metadata，则保持调用方值优先。
     """
     resolved = dict(metadata or {})
     resolved.setdefault("source_run_id", source_run.run_id)
@@ -137,7 +136,7 @@ def artifact_provenance_from_training_run(
 
 
 __all__ = [
-    "TrainingRunMetadata",
-    "build_training_run_metadata",
+    "TrainingMetadata",
+    "build_training_metadata",
     "artifact_provenance_from_training_run",
 ]

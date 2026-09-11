@@ -21,7 +21,7 @@ from ser_lib.data.types import SERBatch, move_batch_to_device
 from ser_lib.config.experiment import ExperimentConfig
 from ser_lib.config.training import ObservabilityConfig, TrainerConfig
 from ser_lib.engine.eta import EtaEstimator
-from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
+from ser_lib.engine.lineage import TrainingMetadata, build_training_metadata
 from ser_lib.foundation.events import CheckpointEvent
 from ser_lib.engine.optim import (
     AdamWConfig,
@@ -109,8 +109,8 @@ def _resume_experiment_signature(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _validate_run_resume_compatibility(
-    current: TrainingRunMetadata,
-    saved: TrainingRunMetadata,
+    current: TrainingMetadata,
+    saved: TrainingMetadata,
 ) -> None:
     if current.model_id != saved.model_id:
         raise ValueError("checkpoint lineage 的 model_id 与当前实验不一致")
@@ -136,7 +136,7 @@ def _validate_run_resume_compatibility(
 
 
 class Trainer:
-    run_metadata: TrainingRunMetadata | None
+    run_metadata: TrainingMetadata | None
 
     def __init__(
         self,
@@ -150,7 +150,7 @@ class Trainer:
         cancellation: CancellationCheck | None = None,
         observability: ObservabilityConfig | None = None,
         run_id: str | None = None,
-        run_metadata: TrainingRunMetadata | None = None,
+        run_metadata: TrainingMetadata | None = None,
     ) -> None:
         self.model = model
         self.config = config or TrainerConfig()
@@ -295,7 +295,7 @@ class Trainer:
             observability=observability,
             run_id=run_id,
         )
-        trainer.run_metadata = build_training_run_metadata(
+        trainer.run_metadata = build_training_metadata(
             run_id=trainer.run_id,
             dataset_id=dataset_id if dataset_id is not None else experiment.data.dataset_id,
             dataset_fingerprint=dataset_fingerprint,
@@ -1071,13 +1071,13 @@ class Trainer:
 
         checkpoint_path = Path(path)
         current_run_metadata = self.run_metadata
-        saved_run_metadata: TrainingRunMetadata | None = None
+        saved_run_metadata: TrainingMetadata | None = None
 
         def validate_metadata(metadata: dict[str, Any]) -> None:
             nonlocal saved_run_metadata
             raw_lineage = metadata.get("run_metadata")
             if isinstance(raw_lineage, Mapping):
-                saved_run_metadata = TrainingRunMetadata.from_dict(raw_lineage)
+                saved_run_metadata = TrainingMetadata.from_dict(raw_lineage)
                 if current_run_metadata is not None:
                     _validate_run_resume_compatibility(
                         current_run_metadata,

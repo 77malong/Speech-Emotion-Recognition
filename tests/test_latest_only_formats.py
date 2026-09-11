@@ -136,15 +136,15 @@ def test_training_and_evaluation_write_current_records(
     current_experiment_config, current_artifact, tmp_path
 ):
     from ser_lib.engine import evaluate_artifact, train_experiment
-    from ser_lib.engine.runs import TrainingRunInfo
-    from ser_lib.engine.evaluation_runs import EvaluationRunInfo
+    from ser_lib.engine.training_records import TrainingRecord
+    from ser_lib.engine.evaluation_records import EvaluationRecord
 
     train_experiment(current_experiment_config)
     output = tmp_path / "evaluation"
     evaluate_artifact(current_artifact, split="train", output=output)
     for path, record in [
-        (current_experiment_config.output_dir / "run.json", TrainingRunInfo),
-        (output / "evaluation.json", EvaluationRunInfo),
+        (current_experiment_config.output_dir / "run.json", TrainingRecord),
+        (output / "evaluation.json", EvaluationRecord),
     ]:
         raw = json.loads(Path(path).read_text())
         assert "schema_version" not in raw

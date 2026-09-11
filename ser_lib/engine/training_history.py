@@ -1,4 +1,4 @@
-"""已完成训练的 history.json 严格读取与曲线 DTO。"""
+"""已完成训练的 history.json 严格读取与曲线记录。"""
 
 from __future__ import annotations
 
@@ -43,8 +43,8 @@ class _EpochResultModel(BaseModel):
 
 
 @dataclass(frozen=True, slots=True)
-class TrainingHistoryInfo:
-    """Web 训练曲线页可直接消费的完整 epoch 历史。"""
+class TrainingHistory:
+    """完整、严格校验的 epoch 训练历史。"""
 
     directory: str
     history_file: str
@@ -63,7 +63,7 @@ class TrainingHistoryInfo:
         }
 
 
-def load_training_history(path: Path | str) -> TrainingHistoryInfo:
+def load_training_history(path: Path | str) -> TrainingHistory:
     """读取 run 目录或其 ``history.json``；不读取 checkpoint / metrics.jsonl。"""
     source = Path(path)
     history_path = source / _HISTORY_FILE_NAME if source.is_dir() else source
@@ -76,7 +76,7 @@ def load_training_history(path: Path | str) -> TrainingHistoryInfo:
     epochs = [item.epoch for item in parsed]
     if epochs != sorted(epochs) or len(epochs) != len(set(epochs)):
         raise ValueError("history.json epoch 必须严格递增且不能重复")
-    return TrainingHistoryInfo(
+    return TrainingHistory(
         directory=history_path.parent.as_posix(),
         history_file=history_path.as_posix(),
         epochs=tuple(
@@ -93,4 +93,4 @@ def load_training_history(path: Path | str) -> TrainingHistoryInfo:
     )
 
 
-__all__ = ["TrainingHistoryInfo", "load_training_history"]
+__all__ = ["TrainingHistory", "load_training_history"]

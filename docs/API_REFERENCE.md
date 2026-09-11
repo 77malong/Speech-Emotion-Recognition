@@ -60,35 +60,35 @@ runtime = get_runtime_metrics("cpu")
 
 ## Training run resources
 
-训练详情不再由一个 `TrainingRunDetail` 聚合。调用方按需求读取真实资源：
+训练记录、history 与 checkpoint 分别由各自领域 API 读取：
 
 ```python
 from ser_lib.engine import (
     load_training_history,
-    load_training_run_info,
+    load_training_record,
     scan_checkpoints,
 )
 
-run = load_training_run_info("runs/demo")
+run = load_training_record("runs/demo")
 history = load_training_history("runs/demo")
 checkpoints = scan_checkpoints("runs/demo/checkpoints")
 ```
 
-`load_training_run_info` 只读取 `run.json`，`load_training_history` 只读取 `history.json`，
+`load_training_record` 只读取 `run.json`，`load_training_history` 只读取 `history.json`，
 `scan_checkpoints` 只做 checkpoint 文件扫描/stat，不调用 `torch.load()`。缺失或损坏资源以各自真实异常显式返回，不由详情 wrapper 吞掉后转换为展示 Diagnostic。
 
 ## Evaluation run resources
 
-评估 metadata、report 和 prediction 文件信息也分别读取：
+评估 record、report 和 prediction 文件信息也分别读取：
 
 ```python
 from ser_lib.engine import (
     inspect_evaluation_prediction_file,
     inspect_evaluation_report,
-    load_evaluation_run_info,
+    load_evaluation_record,
 )
 
-run = load_evaluation_run_info("runs/eval-demo")
+run = load_evaluation_record("runs/eval-demo")
 report = inspect_evaluation_report("runs/eval-demo")
 prediction_file = inspect_evaluation_prediction_file(run)
 ```

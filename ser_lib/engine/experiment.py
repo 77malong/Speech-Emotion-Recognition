@@ -26,16 +26,16 @@ from ser_lib.engine.evaluator import (
     evaluate,
     write_evaluation_report,
 )
-from ser_lib.engine.evaluation_runs import (
-    EvaluationRunInfo,
-    build_evaluation_run_metadata,
-    load_evaluation_run_info,
-    write_evaluation_run_info,
+from ser_lib.engine.evaluation_records import (
+    EvaluationRecord,
+    build_evaluation_metadata,
+    load_evaluation_record,
+    write_evaluation_record,
 )
-from ser_lib.engine.runs import (
-    TrainingRunInfo,
-    load_training_run_info,
-    write_training_run_info,
+from ser_lib.engine.training_records import (
+    TrainingRecord,
+    load_training_record,
+    write_training_record,
 )
 from ser_lib.engine.objectives import build_weighted_sampler
 from ser_lib.engine.training import Trainer, TrainingResult
@@ -76,7 +76,7 @@ class _LoaderComponents(Protocol):
 class TrainingExperimentResult:
     output_dir: Path
     training: TrainingResult
-    run: TrainingRunInfo
+    run: TrainingRecord
     run_record: Path
     metrics_log: Path
     history_path: Path
@@ -113,16 +113,11 @@ class TrainingExperimentResult:
 class EvaluationExperimentResult:
     output_dir: Path
     evaluation: EvaluationResult
-    run: EvaluationRunInfo
+    run: EvaluationRecord
     run_record: Path
     metrics_path: Path
     predictions_path: Path | None
     metric_unit: str = "sample"
-
-    @property
-    def evaluation_record(self) -> Path:
-        """0.2.x compatibility alias for the persisted evaluation run record."""
-        return self.run_record
 
     def to_dict(self) -> dict[str, object]:
         evaluation = self.evaluation.to_dict()
@@ -444,18 +439,18 @@ def train_experiment(
     history_path = resolved.output_dir / "history.json"
     _write_training_history(history_path, training_result)
     if trainer.run_metadata is None:
-        raise RuntimeError("Trainer.from_experiment 未生成 TrainingRunMetadata")
-    run_record = write_training_run_info(
+        raise RuntimeError("Trainer.from_experiment 未生成 TrainingMetadata")
+    run_record = write_training_record(
         resolved.output_dir,
         trainer.run_metadata,
         training_result,
     )
-    run_info = load_training_run_info(run_record)
+    record = load_training_record(run_record)
 
     return TrainingExperimentResult(
         output_dir=resolved.output_dir,
         training=training_result,
-        run=run_info,
+        run=record,
         run_record=run_record,
         metrics_log=metrics_log,
         history_path=history_path,
@@ -494,7 +489,7 @@ def evaluate_artifact(
     ):
         raise ValueError("artifact metadata.source_run_id 必须是非空字符串")
     source_run_id = cast(str | None, raw_source_run_id)
-    run_metadata = build_evaluation_run_metadata(
+    run_metadata = build_evaluation_metadata(
         source_artifact=artifact_path,
         source_run_id=source_run_id,
         dataset_id=manifest.meta.dataset_id,
@@ -527,18 +522,18 @@ def evaluate_artifact(
     if retain_predictions:
         write_evaluation_report(output_dir, result)
     _write_evaluation_summary(output_dir, result, metric_unit=metric_unit)
-    evaluation_record = write_evaluation_run_info(
+    evaluation_record = write_evaluation_record(
         output_dir,
         run_metadata,
         result,
         started_at=started_at,
         finished_at=finished_at,
     )
-    run_info = load_evaluation_run_info(evaluation_record)
+    record = load_evaluation_record(evaluation_record)
     return EvaluationExperimentResult(
         output_dir=output_dir,
         evaluation=result,
-        run=run_info,
+        run=record,
         run_record=evaluation_record,
         metrics_path=output_dir / "metrics.json",
         predictions_path=(output_dir / "predictions.jsonl") if retain_predictions else None,

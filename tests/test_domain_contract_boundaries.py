@@ -95,6 +95,18 @@ def test_engine_config_is_retired_and_experiment_owners_are_canonical():
     assert engine.build_experiment_components.__module__ == "ser_lib.engine.experiment"
 
 
+def test_record_modules_and_types_have_current_owners():
+    assert not (_SER_LIB / "engine" / "runs.py").exists()
+    assert not (_SER_LIB / "engine" / "evaluation_runs.py").exists()
+    assert (_SER_LIB / "engine" / "training_records.py").is_file()
+    assert (_SER_LIB / "engine" / "evaluation_records.py").is_file()
+    assert engine.TrainingMetadata.__module__ == "ser_lib.engine.lineage"
+    assert engine.TrainingRecord.__module__ == "ser_lib.engine.training_records"
+    assert engine.TrainingHistory.__module__ == "ser_lib.engine.training_history"
+    assert engine.EvaluationMetadata.__module__ == "ser_lib.engine.evaluation_records"
+    assert engine.EvaluationRecord.__module__ == "ser_lib.engine.evaluation_records"
+
+
 def test_retired_trainer_modules_are_absent():
     assert not (_SER_LIB / "engine" / "trainer.py").exists()
     assert not (_SER_LIB / "engine" / "_trainer_core.py").exists()

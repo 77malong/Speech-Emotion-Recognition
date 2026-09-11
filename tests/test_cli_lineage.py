@@ -132,7 +132,7 @@ def test_engine_experiment_api_persists_training_and_evaluation_lineage(tmp_path
         output=evaluation_dir,
     )
     evaluated = evaluation.to_dict()
-    evaluation_record = evaluation.evaluation_record
+    evaluation_record = evaluation.run_record
     assert evaluation_record.is_file()
     saved_evaluation = json.loads(evaluation_record.read_text(encoding="utf-8"))
     assert evaluated["evaluation_id"].startswith("eval_")

@@ -16,10 +16,10 @@ from ser_lib.engine import (
     ModelConfig,
     Trainer,
     TrainerConfig,
-    TrainingRunInfo,
-    load_training_run_info,
+    TrainingRecord,
+    load_training_record,
     scan_training_runs,
-    write_training_run_info,
+    write_training_record,
 )
 from ser_lib.foundation.errors import OperationCancelled
 from ser_lib.foundation.events import CancellationToken, ProgressEvent
@@ -83,12 +83,12 @@ def _completed_run(tmp_path: Path):
     return trainer, result
 
 
-def _save_run(directory: Path, trainer: Trainer, result) -> TrainingRunInfo:
+def _save_run(directory: Path, trainer: Trainer, result) -> TrainingRecord:
     metadata = trainer.run_metadata
     if metadata is None:
-        raise ValueError("Trainer 没有 TrainingRunMetadata，无法保存训练运行记录")
-    path = write_training_run_info(directory, metadata, result)
-    return load_training_run_info(path)
+        raise ValueError("Trainer 没有 TrainingMetadata，无法保存训练运行记录")
+    path = write_training_record(directory, metadata, result)
+    return load_training_record(path)
 
 
 def test_direct_api_persists_and_inspects_run_record(tmp_path: Path):
@@ -97,7 +97,7 @@ def test_direct_api_persists_and_inspects_run_record(tmp_path: Path):
 
     info = _save_run(run_dir, trainer, result)
 
-    assert isinstance(info, TrainingRunInfo)
+    assert isinstance(info, TrainingRecord)
     assert info.run_id == "run-catalog-demo"
     assert info.dataset_id == "manifest-demo"
     assert info.dataset_fingerprint == "d" * 64
@@ -110,8 +110,8 @@ def test_direct_api_persists_and_inspects_run_record(tmp_path: Path):
     assert (run_dir / "run.json").is_file()
     json.dumps(info.to_dict())
 
-    by_directory = load_training_run_info(run_dir)
-    by_file = load_training_run_info(run_dir / "run.json")
+    by_directory = load_training_record(run_dir)
+    by_file = load_training_record(run_dir / "run.json")
     assert by_directory == by_file == info
 
 
@@ -122,7 +122,7 @@ def test_run_record_tracks_actual_directory_after_move(tmp_path: Path):
     moved = tmp_path / "runs" / "moved"
     original.rename(moved)
 
-    loaded = load_training_run_info(moved)
+    loaded = load_training_record(moved)
 
     assert loaded.directory == moved.as_posix()
     assert loaded.run_id == "run-catalog-demo"
@@ -188,25 +188,25 @@ def test_run_record_validation_rejects_corruption(tmp_path: Path):
 
     payload["schema_version"] = 2
     with pytest.raises(ValidationError):
-        TrainingRunInfo.from_dict(payload)
+        TrainingRecord.from_dict(payload)
 
     payload = info.to_dict()
     payload["created_at"] = "2026-09-09T00:00:00"
     with pytest.raises(ValidationError, match="时区"):
-        TrainingRunInfo.from_dict(payload)
+        TrainingRecord.from_dict(payload)
 
     payload = info.to_dict()
     payload["unexpected"] = True
     with pytest.raises(ValidationError):
-        TrainingRunInfo.from_dict(payload)
+        TrainingRecord.from_dict(payload)
 
     list_record = tmp_path / "list.json"
     list_record.write_text("[]", encoding="utf-8")
     with pytest.raises(ValueError, match="顶层"):
-        load_training_run_info(list_record)
+        load_training_record(list_record)
 
     with pytest.raises(FileNotFoundError):
-        load_training_run_info(tmp_path / "missing.json")
+        load_training_record(tmp_path / "missing.json")
 
 
 def test_run_record_rejects_mismatched_ids_and_untracked_trainer(tmp_path: Path):
@@ -215,7 +215,7 @@ def test_run_record_rejects_mismatched_ids_and_untracked_trainer(tmp_path: Path)
     assert metadata is not None
 
     with pytest.raises(ValueError, match="run_id"):
-        TrainingRunInfo.from_training(
+        TrainingRecord.from_training(
             tmp_path / "run",
             metadata,
             replace(result, run_id="different-run"),
@@ -223,5 +223,5 @@ def test_run_record_rejects_mismatched_ids_and_untracked_trainer(tmp_path: Path)
 
     direct = Trainer(_model(), TrainerConfig(epochs=1))
     direct_result = direct.fit([_batch()])
-    with pytest.raises(ValueError, match="TrainingRunMetadata"):
+    with pytest.raises(ValueError, match="TrainingMetadata"):
         _save_run(tmp_path / "direct", direct, direct_result)

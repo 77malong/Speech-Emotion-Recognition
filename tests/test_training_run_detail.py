@@ -9,16 +9,16 @@ import torch
 from pydantic import ValidationError
 
 from ser_lib.engine import (
-    TrainingRunInfo,
+    TrainingRecord,
     load_training_history,
-    load_training_run_info,
+    load_training_record,
     scan_checkpoints,
 )
 
 
-def _write_run(run_dir: Path, checkpoint_dir: Path) -> TrainingRunInfo:
+def _write_run(run_dir: Path, checkpoint_dir: Path) -> TrainingRecord:
     now = datetime(2026, 9, 9, 2, 0, tzinfo=timezone.utc)
-    info = TrainingRunInfo(
+    info = TrainingRecord(
         run_id="run-detail-demo",
         directory=run_dir.as_posix(),
         status="completed",
@@ -97,7 +97,7 @@ def test_run_history_and_checkpoint_scan_are_independent_lightweight_sources(
 
     monkeypatch.setattr(torch, "load", fail_torch_load)
 
-    run = load_training_run_info(run_dir)
+    run = load_training_record(run_dir)
     history = load_training_history(run_dir)
     checkpoints = scan_checkpoints(checkpoint_dir)
 
@@ -115,7 +115,7 @@ def test_missing_history_and_checkpoint_directory_are_explicit_errors(tmp_path: 
     checkpoint_dir = tmp_path / "missing-checkpoints"
     _write_run(run_dir, checkpoint_dir)
 
-    assert load_training_run_info(run_dir).run_id == "run-detail-demo"
+    assert load_training_record(run_dir).run_id == "run-detail-demo"
     with pytest.raises(FileNotFoundError, match="history.json"):
         load_training_history(run_dir)
     with pytest.raises(NotADirectoryError, match="checkpoint"):
@@ -131,7 +131,7 @@ def test_run_and_history_use_actual_directory_after_move(tmp_path: Path):
     moved = tmp_path / "moved"
     original.rename(moved)
 
-    run = load_training_run_info(moved)
+    run = load_training_record(moved)
     history = load_training_history(moved)
 
     assert run.directory == moved.as_posix()

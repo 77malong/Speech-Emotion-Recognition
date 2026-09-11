@@ -84,3 +84,12 @@ artifact 固定 weights.safetensors，移除 weights_format、pickle 开关及 l
 运行时组件构建统一归入 `ser_lib/engine/experiment.py`：原有内部 `_DataComponents` 收敛为正式 `ExperimentComponents`，`build_experiment_components` 保留公开默认 `train=True` 行为，并继续执行 seed、模型参数规范化、pipeline 构建与静态 compatibility 预检。engine 公共入口继续转发配置类型，但不再依赖 engine.config。
 
 边界测试显式确认 `engine/config.py` 不存在，并校验 ExperimentConfig、ExperimentComponents 与 build_experiment_components 的唯一规范归属。Stage 8 的 CI 验收由该提交触发的 GitHub Actions 结果确认。
+
+
+## Stage 9：训练/评估记录命名收敛
+
+将 `engine/runs.py` 重命名为 `engine/training_records.py`，将训练终态类型和读写 API 收敛为 `TrainingRecord`、`write_training_record`、`load_training_record`。训练 lineage 类型同步由 `TrainingRunMetadata` 收敛为 `TrainingMetadata`，构造函数改为 `build_training_metadata`；checkpoint 中现有 `run_metadata` 持久化字段保持不变，不引入格式迁移。
+
+将 `engine/evaluation_runs.py` 重命名为 `engine/evaluation_records.py`，类型和读写 API 收敛为 `EvaluationMetadata`、`EvaluationRecord`、`build_evaluation_metadata`、`write_evaluation_record`、`load_evaluation_record`。训练 history 的 `TrainingHistoryInfo` 同步改为 `TrainingHistory`，删除 Web/DTO 导向注释。显式的 0.2.x `evaluation_record` compatibility property 被移除，统一使用 `run_record`。
+
+本阶段只调整 Python 模块与 API 命名；`run.json`、`evaluation.json` 及 checkpoint 当前磁盘结构保持不变。training/evaluation catalog 暂时保留并迁移到新的 record 类型，其去留留给后续 catalog 审计阶段。

@@ -32,12 +32,12 @@ from ser_lib.engine.evaluation_reports import (
     inspect_evaluation_report,
     iter_evaluation_predictions,
 )
-from ser_lib.engine.evaluation_runs import (
-    EvaluationRunInfo,
-    EvaluationRunMetadata,
-    build_evaluation_run_metadata,
-    load_evaluation_run_info,
-    write_evaluation_run_info,
+from ser_lib.engine.evaluation_records import (
+    EvaluationRecord,
+    EvaluationMetadata,
+    build_evaluation_metadata,
+    load_evaluation_record,
+    write_evaluation_record,
 )
 from ser_lib.engine.evaluator import (
     ClassMetrics,
@@ -56,7 +56,7 @@ from ser_lib.engine.experiment import (
     evaluate_artifact,
     train_experiment,
 )
-from ser_lib.engine.lineage import TrainingRunMetadata, build_training_run_metadata
+from ser_lib.engine.lineage import TrainingMetadata, build_training_metadata
 from ser_lib.engine.optim import (
     AdamConfig,
     AdamWConfig,
@@ -74,15 +74,15 @@ from ser_lib.engine.objectives import (
     SamplingConfig,
     build_weighted_sampler,
 )
-from ser_lib.engine.runs import (
+from ser_lib.engine.training_records import (
     TrainingRunCatalog,
-    TrainingRunInfo,
+    TrainingRecord,
     TrainingRunScanFailure,
-    load_training_run_info,
+    load_training_record,
     scan_training_runs,
-    write_training_run_info,
+    write_training_record,
 )
-from ser_lib.engine.training_history import TrainingHistoryInfo, load_training_history
+from ser_lib.engine.training_history import TrainingHistory, load_training_history
 from ser_lib.engine.training import (
     EpochResult,
     Trainer,
@@ -100,15 +100,15 @@ __all__ = [
     "ExperimentValidationResult", "validate_experiment",
     "TrainingExperimentResult", "EvaluationExperimentResult",
     "train_experiment", "evaluate_artifact",
-    "TrainingRunMetadata", "build_training_run_metadata",
-    "TrainingRunInfo",
-    "TrainingRunScanFailure", "TrainingRunCatalog", "write_training_run_info",
-    "load_training_run_info", "scan_training_runs",
-    "TrainingHistoryInfo", "load_training_history",
-    "EvaluationRunMetadata", "EvaluationRunInfo",
+    "TrainingMetadata", "build_training_metadata",
+    "TrainingRecord",
+    "TrainingRunScanFailure", "TrainingRunCatalog", "write_training_record",
+    "load_training_record", "scan_training_runs",
+    "TrainingHistory", "load_training_history",
+    "EvaluationMetadata", "EvaluationRecord",
     "EvaluationPredictionFileInfo", "inspect_evaluation_prediction_file",
-    "build_evaluation_run_metadata", "write_evaluation_run_info",
-    "load_evaluation_run_info", "EvaluationRunScanFailure", "EvaluationRunCatalog",
+    "build_evaluation_metadata", "write_evaluation_record",
+    "load_evaluation_record", "EvaluationRunScanFailure", "EvaluationRunCatalog",
     "scan_evaluation_runs",
     "AdamWConfig", "AdamConfig", "SGDConfig",
     "StepSchedulerConfig", "CosineSchedulerConfig",
