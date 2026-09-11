@@ -8,10 +8,10 @@ import torch
 
 from ser_lib.data.audio import AudioLoader, AudioLoaderConfig
 from ser_lib.data.collate import SERCollator
-from ser_lib.data.config import BatchingConfig
+from ser_lib.data.config import BatchingConfig, ComponentConfig
 from ser_lib.data.dataset import SERDataset
-from ser_lib.data.errors import AudioNotFoundError, InvalidAudioSegmentError
-from ser_lib.data.pipeline import SamplePipeline
+from ser_lib.data.errors import AudioNotFoundError, InvalidAudioSegmentError, RegistryError
+from ser_lib.data.pipeline import SamplePipeline, _build_waveform_transforms
 from ser_lib.data.representations.spectral import MFCCRepresentation
 from ser_lib.data.representations.waveform import RawWaveform
 from ser_lib.data.types import AudioRecord
@@ -98,3 +98,20 @@ def test_default_mfcc_representation_builds_and_extracts_features(tmp_path: Path
 
     assert output.inputs["features"].shape[0] == 40
     assert output.lengths["features"] == output.inputs["features"].shape[1]
+
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"n_steps": 25},
+        {"sample_rate": 16000, "n_steps": 25},
+    ],
+)
+def test_pitch_shift_injected_and_explicit_params_share_schema_validation(params):
+    with pytest.raises(RegistryError, match="参数校验失败"):
+        _build_waveform_transforms(
+            [ComponentConfig(type="pitch_shift", params=params, probability=1.0)],
+            sample_rate=16000,
+            allow_random=True,
+        )
