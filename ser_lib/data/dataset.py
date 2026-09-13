@@ -49,7 +49,7 @@ class SERDataset(Dataset[SERSample]):
         self.audio_loader = audio_loader
         self.pipeline = pipeline
         self.base_dir = Path(base_dir) if base_dir is not None else None
-        self.pipeline.validate_contract = strict
+        self.strict = strict
 
     def __len__(self) -> int:
         return len(self._records)
@@ -57,7 +57,7 @@ class SERDataset(Dataset[SERSample]):
     def __getitem__(self, index: int) -> SERSample:
         record = self._records[index]
         audio = self.audio_loader.load(record, base_dir=self.base_dir)
-        return self.pipeline(audio, record)
+        return self.pipeline(audio, record, validate_contract=self.strict)
 
     @property
     def records(self) -> tuple[AudioRecord, ...]:

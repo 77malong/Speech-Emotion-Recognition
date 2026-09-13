@@ -189,6 +189,8 @@ class StreamingEmotionRecognizer:
         self._smoothed: torch.Tensor | None = None
         self._closed = False
         self._flushed = False
+        self._resampler_finalized = False
+        self._pending_results: list[StreamingPrediction] = []
 
     @property
     def buffered_samples(self) -> int:
@@ -211,9 +213,14 @@ class StreamingEmotionRecognizer:
     def push_pcm(
         self, pcm: torch.Tensor | Sequence[float]
     ) -> list[StreamingPrediction]:
+        """提交 PCM；预测失败后用空 chunk 重试，已完成结果会一并交付。
+
+        一次失败的调用可能已经接收了 PCM，不能重送同一 chunk。
+        flush 失败后应重试 flush；reset/close 明确丢弃待交付结果。
+        """
         if self._closed:
             raise RuntimeError("流式会话已关闭")
-        if self._flushed:
+        if self._flushed or self._resampler_finalized:
             raise RuntimeError("流式会话已 flush；请 reset 后再输入")
         samples = torch.as_tensor(pcm, dtype=torch.float32)
         if samples.dim() == 2:
@@ -232,32 +239,38 @@ class StreamingEmotionRecognizer:
         converted = self._resampler.push(samples.contiguous())
         if converted.numel():
             self._buffer = torch.cat((self._buffer, converted))
-        return self._drain()
+        self._drain()
+        return self._take_results()
 
     def flush(self, *, pad_final: bool = False) -> list[StreamingPrediction]:
         if self._closed or self._flushed:
             return []
-        self._flushed = True
-        tail = self._resampler.push(torch.empty(0), final=True)
-        if tail.numel():
-            self._buffer = torch.cat((self._buffer, tail))
-        results = self._drain()
+        if not self._resampler_finalized:
+            tail = self._resampler.push(torch.empty(0), final=True)
+            if tail.numel():
+                self._buffer = torch.cat((self._buffer, tail))
+            self._resampler_finalized = True
+        self._drain()
         if pad_final and self._buffer.numel():
             self._buffer = torch.nn.functional.pad(
                 self._buffer, (0, self.window_samples - self._buffer.numel())
             )
-            results.extend(self._drain())
+            self._drain()
             self._buffer = torch.empty(0, dtype=torch.float32)
+        self._flushed = True
+        return self._take_results()
+
+    def _take_results(self) -> list[StreamingPrediction]:
+        results = self._pending_results
+        self._pending_results = []
         return results
 
-    def _drain(self) -> list[StreamingPrediction]:
-        results = []
+    def _drain(self) -> None:
         while self._buffer.numel() >= self.window_samples:
             window = self._buffer[: self.window_samples]
-            results.append(self._predict_window(window))
+            self._pending_results.append(self._predict_window(window))
             self._buffer = self._buffer[self.hop_samples :]
             self._consumed += self.hop_samples
-        return results
 
     def _predict_window(self, window: torch.Tensor) -> StreamingPrediction:
         rms = float(window.square().mean().sqrt())
@@ -308,10 +321,13 @@ class StreamingEmotionRecognizer:
         self._sequence = 0
         self._smoothed = None
         self._flushed = False
+        self._resampler_finalized = False
+        self._pending_results = []
 
     def close(self) -> None:
         self._buffer = torch.empty(0, dtype=torch.float32)
         self._smoothed = None
+        self._pending_results = []
         self._closed = True
 
 

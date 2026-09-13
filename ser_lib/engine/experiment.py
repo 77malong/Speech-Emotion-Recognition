@@ -23,6 +23,7 @@ from ser_lib.config.experiment import ExperimentConfig, load_experiment_config
 from ser_lib.engine.evaluator import (
     EvaluationResult,
     PredictionSink,
+    JsonlPredictionSink,
     evaluate,
     write_evaluation_report,
 )
@@ -426,6 +427,8 @@ def train_experiment(
         existing_record = resolved.output_dir / "run.json"
         if existing_record.exists():
             existing_run = load_training_record(existing_record)
+            if (existing_run.last_epoch or 0) > trainer.last_completed_epoch:
+                raise ValueError("回溯续训必须使用新的 output_dir，不能覆盖未来历史")
             if existing_run.run_id != trainer.run_id:
                 raise ValueError("续训输出目录属于不同 run，不能合并训练历史")
         elif (resolved.output_dir / "history.json").exists():
@@ -520,6 +523,10 @@ def evaluate_artifact(
         workers=workers,
     )
 
+    local_sink = (
+        isinstance(prediction_sink, JsonlPredictionSink)
+        and prediction_sink.path.resolve() == (output_dir / "predictions.jsonl").resolve()
+    )
     started_at = datetime.now(timezone.utc)
     result = evaluate(
         loaded.model,
@@ -532,8 +539,13 @@ def evaluate_artifact(
         retain_predictions=retain_predictions,
     )
     finished_at = datetime.now(timezone.utc)
-    if retain_predictions:
+    if retain_predictions and not local_sink:
         write_evaluation_report(output_dir, result)
+    elif not local_sink:
+        (output_dir / "predictions.jsonl").unlink(missing_ok=True)
+    if local_sink:
+        assert isinstance(prediction_sink, JsonlPredictionSink)
+        prediction_sink.flush()
     _write_evaluation_summary(output_dir, result, metric_unit=metric_unit)
     evaluation_record = write_evaluation_record(
         output_dir,
@@ -541,6 +553,7 @@ def evaluate_artifact(
         result,
         started_at=started_at,
         finished_at=finished_at,
+        predictions_file="predictions.jsonl" if retain_predictions or local_sink else None,
     )
     record = load_evaluation_record(evaluation_record)
     return EvaluationExperimentResult(
@@ -549,7 +562,7 @@ def evaluate_artifact(
         run=record,
         run_record=evaluation_record,
         metrics_path=output_dir / "metrics.json",
-        predictions_path=(output_dir / "predictions.jsonl") if retain_predictions else None,
+        predictions_path=(output_dir / "predictions.jsonl") if retain_predictions or local_sink else None,
         metric_unit=metric_unit,
     )
 

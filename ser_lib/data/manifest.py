@@ -337,7 +337,7 @@ class DatasetManifest:
     def write(self, yaml_path: Path | None = None) -> None:
         yaml_path = Path(yaml_path or self.meta.yaml_path)
         meta = self.meta
-        by_split: dict[str, list[AudioRecord]] = {}
+        by_split: dict[str, list[AudioRecord]] = {name: [] for name in meta.splits}
         unassigned: list[AudioRecord] = []
         for record in self.records:
             split = self.record_splits.get(record.uid)
@@ -346,6 +346,8 @@ class DatasetManifest:
             else:
                 by_split.setdefault(split, []).append(record)
 
+        if unassigned and "unassigned" in by_split:
+            raise ManifestError("未分配记录与已有 unassigned split 冲突，拒绝覆盖", path=yaml_path)
         original_parent = meta.yaml_path.parent.resolve()
         planned_paths: dict[str, Path] = {}
         for split_name in by_split:

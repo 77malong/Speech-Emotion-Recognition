@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -31,6 +31,7 @@ class _EvaluationMetricsModel(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    metric_unit: Literal["sample", "window"] = "sample"
     loss: float
     accuracy: float = Field(ge=0.0, le=1.0)
     war: float = Field(ge=0.0, le=1.0)
@@ -104,10 +105,12 @@ class EvaluationReportInfo:
     per_class: tuple[ClassMetrics, ...]
     predictions_file: str | None
     predictions_bytes: int | None
+    metric_unit: Literal["sample", "window"] = "sample"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "directory": self.directory,
+            "metric_unit": self.metric_unit,
             "loss": self.loss,
             "accuracy": self.accuracy,
             "war": self.war,
@@ -186,6 +189,7 @@ def inspect_evaluation_report(directory: Path | str) -> EvaluationReportInfo:
         ),
         predictions_file=predictions_file,
         predictions_bytes=predictions_bytes,
+        metric_unit=metrics.metric_unit,
     )
 
 

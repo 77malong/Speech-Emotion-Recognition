@@ -64,7 +64,8 @@ class SamplePipeline(nn.Module):
         """输出形状契约（与 representation 一致）。"""
         return self.representation.output_specs
 
-    def forward(self, audio: AudioData, record: AudioRecord) -> SERSample:
+    def forward(self, audio: AudioData, record: AudioRecord, *,
+                validate_contract: bool | None = None) -> SERSample:
         waveform = audio.waveform
         if self.waveform_transforms is not None:
             try:
@@ -113,7 +114,7 @@ class SamplePipeline(nn.Module):
                     lengths[key] = int(tensor.shape[spec.time_axis])
             output = RepresentationOutput(inputs=new_inputs, lengths=lengths)
 
-        if self.validate_contract:
+        if self.validate_contract if validate_contract is None else validate_contract:
             validate_representation_output(output, self.representation.output_specs)
 
         metadata = dict(record.metadata)
@@ -129,8 +130,9 @@ class SamplePipeline(nn.Module):
         )
 
     # nn.Module __call__ 会转发参数；这里显式声明类型签名
-    def __call__(self, audio: AudioData, record: AudioRecord) -> SERSample:  # noqa: F811
-        return super().__call__(audio, record)
+    def __call__(self, audio: AudioData, record: AudioRecord, *,
+                 validate_contract: bool | None = None) -> SERSample:  # noqa: F811
+        return super().__call__(audio, record, validate_contract=validate_contract)
 
 
 # =====================================================================

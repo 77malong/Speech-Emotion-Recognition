@@ -339,6 +339,8 @@ def evaluate(
             labels_tensor = batch.labels
             assert labels_tensor is not None
             output = model(batch)
+            if not torch.isfinite(output.logits).all():
+                raise FloatingPointError("模型 logits 包含 NaN/Inf")
             if output.logits.shape != (labels_tensor.shape[0], num_classes):
                 raise ValueError(
                     f"模型 logits 期望 [B,{num_classes}]，实际 {tuple(output.logits.shape)}"

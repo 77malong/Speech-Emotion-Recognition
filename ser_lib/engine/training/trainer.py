@@ -466,6 +466,8 @@ class Trainer:
                 enabled=self.config.amp,
             ):
                 output = self.model(batch)
+                if not torch.isfinite(output.logits).all():
+                    raise FloatingPointError("模型 logits 包含 NaN/Inf")
                 loss = (
                     self.loss_fn(output.logits, labels)
                     if self.loss_fn is not None
