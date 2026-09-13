@@ -1,5 +1,8 @@
 # Stage 06 — Data / Models / Engine 契约归位与依赖边界整理
 
+> **1.0 归档说明（2026-09-13）**：本文是 SER-lib 1.0 形成过程中的历史记录，状态、路径、缺陷与“下一步”只对文中注明的历史基线负责。当前 1.0 规范请从 [文档索引](../README.md) 或仓库 `docs/README.md` 进入；当前发布状态见 `CHANGELOG.md`。原始正文保留用于审计追溯。
+
+
 ## 目标
 
 修正当前跨领域类型归属和 helper 依赖，使 data、models、engine、inference 之间的静态依赖方向符合核心库边界，为后续删除页面包装和 Service 做准备。

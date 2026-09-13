@@ -1,5 +1,8 @@
 # Stage 07 — Trainer / Evaluation / Experiment API 收紧
 
+> **1.0 归档说明（2026-09-13）**：本文是 SER-lib 1.0 形成过程中的历史记录，状态、路径、缺陷与“下一步”只对文中注明的历史基线负责。当前 1.0 规范请从 [文档索引](../README.md) 或仓库 `docs/README.md` 进入；当前发布状态见 `CHANGELOG.md`。原始正文保留用于审计追溯。
+
+
 ## 目标
 
 把可复用实验编排从 CLI/Service 包装中提升为真正的 engine API，并让 `Trainer.fit()` 直接返回完整训练结果，减少调用方依赖 `last_result` 或 Service facade 的情况。

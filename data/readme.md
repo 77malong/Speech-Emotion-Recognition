@@ -1,94 +1,85 @@
 # 数据集与导入流程
 
-`data/` 只用于存放用户自行准备的原始语料或本地数据卷。仓库不再维护独立的数据处理脚本体系，也不再使用 `DatasetProcessor` / `CasiaProcessor` 一类离线 Processor。
+data/ 用于用户自行准备的原始语料或本地数据卷。SER-lib 1.0 不下载、不打包、不重新分发
+第三方语料。
 
-所有外部语料统一通过 `ser_lib.data.importers` 转换为标准 `DatasetManifest`。应用层可使用 `ser dataset ...` CLI，也可直接调用 importer 领域 API。
+所有外部数据统一通过 importer 转换为标准 DatasetManifest；训练只读取标准
+dataset.yaml + JSONL split，不再维护“每个数据集一套 Dataset 类”的离线 Processor 体系。
 
-## 统一工作流
+## 统一 CLI
 
-先预览，不写盘：
+预览：
 
-```bash
+~~~bash
 ser dataset scan --importer <importer-id> --source <raw-data> --json
-```
+~~~
 
-确认后导入：
+导入：
 
-```bash
-ser dataset import --importer <importer-id> --source <raw-data> \
-  --destination data/<dataset>-standard
-```
+~~~bash
+ser dataset import --importer <importer-id> --source <raw-data>   --destination data/<dataset>-standard --json
+~~~
 
-校验标准数据集：
+验证：
 
-```bash
-ser dataset validate data/<dataset>-standard/dataset.yaml --check-files
+~~~bash
+ser dataset validate data/<dataset>-standard/dataset.yaml --check-files --json
 ser dataset stats data/<dataset>-standard/dataset.yaml --probe-audio --json
-```
+~~~
 
-训练配置只引用标准 `dataset.yaml`，不再依赖数据处理脚本生成的专用 Dataset 类或额外 pipeline 配置。
+convert 在最终替换目标前完成结构校验；失败不应静默破坏已有标准数据集。
 
-## 已内置 Importer
+## 内置 importer
 
-当前统一 Importer 包括：
+- folder
+- csv
+- jsonl
+- casia
+- ravdess
+- csemotions
+- esd
+- crema_d
+- emotiontalk
 
-- `folder`：按目录结构导入通用音频集合；
-- `csv`：从 CSV 元数据导入；
-- `jsonl`：从 JSONL 元数据导入；
-- `casia`：CASIA；
-- `ravdess`：RAVDESS；
-- `crema_d`：CREMA-D；
-- `esd`：Emotional Speech Dataset；
-- `csemotions`：CSEMOTIONS；
-- `emotiontalk`：BAAI EmotionTalk。
+Importer 负责扫描、标签/说话人解析、split 和 manifest 生成；音频解码、Representation、
+batching 和模型 compatibility 由统一数据管线负责。
 
-Importer 负责扫描、标签/说话人解析和标准 manifest 生成；音频解码、Representation、batching 与模型兼容性由 `ser_lib.data` 新流水线统一处理。
+## CASIA 示例
 
-## CASIA
-
-CASIA 不再使用 `python data/casia_process.py`。需要标准的说话人独立 train/val/test 划分时使用：
-
-```bash
-python scripts/prepare_casia.py \
-  --source data/CASIA \
-  --destination data/casia-standard
+~~~bash
+python scripts/prepare_casia.py   --source data/CASIA   --destination data/casia-standard
 
 ser dataset validate data/casia-standard/dataset.yaml --check-files
 ser train configs/casia_cnn_logmel.yaml --batch-size 32
-```
+~~~
 
-`prepare_casia.py` 先使用 `CasiaImporter` 扫描原始目录，再按说话人进行互斥划分。四说话人数据使用 2/1/1 划分；说话人数量不足 4 时拒绝生成伪独立评估集。
+prepare_casia.py 使用 CasiaImporter 并生成说话人互斥划分。也可直接使用统一 importer：
 
-如果不需要脚本提供的固定 speaker split，也可以直接调用统一 importer：
-
-```bash
+~~~bash
 ser dataset scan --importer casia --source data/CASIA --json
-ser dataset import --importer casia --source data/CASIA \
-  --destination data/casia-standard-flat
-```
+ser dataset import --importer casia --source data/CASIA   --destination data/casia-standard
+~~~
 
 ## Python API
 
-```python
+~~~python
 from pathlib import Path
-
 from ser_lib.data.importers import CasiaImporter
 
 importer = CasiaImporter()
 source = Path("data/CASIA")
 preview = importer.scan(source, {})
 if preview.ok:
-    manifest = importer.convert(
-        source,
-        Path("data/casia-standard"),
-        {},
-    )
-```
+    manifest = importer.convert(source, Path("data/casia-standard"), {})
+~~~
 
-底层数据加载统一使用：
+底层加载统一使用 ser_lib.data 中的 DatasetManifest、SERDataset、build_components 和
+build_collator。
 
-```python
-from ser_lib.data import DatasetManifest, SERDataset, build_components, build_collator
-```
+新增数据集应实现 DatasetImporter 协议并注册到统一 registry，不要重新引入 Processor
+基类或特征类型专用 Dataset。
 
-不要在 `data/` 下新增新的 Processor 基类或每数据集一套独立流水线。新增数据集应实现 `ser_lib.data.importers.DatasetImporter` 协议并注册到统一 Registry。
+## 许可
+
+数据许可与代码许可相互独立。请以实际取得数据副本附带的官方条款为准；发布模型时在模型卡
+记录训练数据和使用限制。参考 [THIRD_PARTY_LICENSES.md](../THIRD_PARTY_LICENSES.md)。

@@ -1,5 +1,8 @@
 # SER-lib latest-only 基础库重构修改计划
 
+> **1.0 归档说明（2026-09-13）**：本文是 SER-lib 1.0 形成过程中的历史记录，状态、路径、缺陷与“下一步”只对文中注明的历史基线负责。当前 1.0 规范请从 [文档索引](../README.md) 或仓库 `docs/README.md` 进入；当前发布状态见 `CHANGELOG.md`。原始正文保留用于审计追溯。
+
+
 > 目标分支：`refactor/ser-lib-core-boundary-12-stage`
 >
 > 规划基线：`86f021218ca00b0f86607a59a338b30aab2869f0`

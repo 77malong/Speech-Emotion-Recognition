@@ -1,46 +1,74 @@
 # 标准数据格式
 
-数据集由一个 `dataset.yaml` 和一个或多个 JSONL split 构成：
+SER-lib 1.0 的标准数据集由一个 `dataset.yaml` 和零个或多个 JSONL split 文件组成。
 
-```yaml
+~~~yaml
 dataset_id: demo
 root: ./audio
 splits:
   train: train.jsonl
+  val: val.jsonl
+  test: test.jsonl
 labels:
   0: {en: neutral, zh: 平静}
   1: {en: happy, zh: 高兴}
-```
+~~~
 
-每行 JSONL 至少包含唯一 `uid` 与 `audio_path`；训练数据还应包含从 0 开始的
-连续整数 `label`。可选字段包括 `start_ms`、`end_ms`、`speaker_id`、
-`sample_rate_hint` 和 `metadata`。
+空 split 声明会被保留；未分配到任何 split 的记录也有独立语义，不会与名为
+`unassigned` 的真实 split 冲突。
 
-路径解析不依赖当前工作目录：split 相对 `dataset.yaml`，音频相对 `root`。
-当前 dataset 结构严格校验；未知字段和已废弃的版本字段会被直接拒绝。
-Waveform、Mel、MFCC 等差异属于 Representation，不属于 Dataset 类型。
+## JSONL record
 
-```bash
-ser dataset validate path/to/dataset.yaml --check-files --json
-ser dataset stats path/to/dataset.yaml --probe-audio --json
-```
+每行至少需要：
 
-## 数据集导入器
+- `uid`：数据集内唯一 ID
+- `audio_path`：相对 dataset root 或绝对音频路径
 
-`ser dataset scan` 只预览并报告问题，`ser dataset import` 在扫描无错误后写入标准
-manifest。内置 importer 如下：
+训练记录通常还包含从 0 开始连续编号的整数 `label`。可选字段包括：
 
-| ID | 输入 | 默认划分重点 |
-|---|---|---|
-| `folder` | 标签目录中的音频 | 可配置比例 |
-| `csv` / `jsonl` | 外部表格或逐行记录 | 保留来源 split |
-| `casia` | CASIA 说话人/情感目录 | 说话人独立 |
-| `ravdess` | 官方七段文件名 | 解析演员、强度和语音/歌曲通道 |
-| `csemotions` | metadata CSV + `wav_data` | 性别平衡、说话人独立 |
-| `esd` | 20 位说话人目录与转写 | 语言分层、说话人独立 |
-| `crema_d` | `AudioWAV` + 人口统计 CSV | 性别分层、演员独立 |
-| `emotiontalk` | 逐句 JSON/WAV | 说话人独立或官方对话划分 |
+- `start_ms` / `end_ms`
+- `speaker_id`
+- `sample_rate_hint`
+- `metadata`
 
-专用目录结构、标签语义、许可提醒和命令示例见
-[`data/README.md`](../data/README.md)。Importer 默认只引用原始音频，不复制、移动或
-重新分发数据。自定义 split 必须覆盖全部说话人且不得重复。
+路径解析不依赖当前工作目录：split 文件相对 dataset.yaml，音频相对 root。
+
+## 严格校验
+
+当前结构禁止未知字段和已经退役的版本字段。Manifest 的 write/load 保留 split 归属、
+空 split 和未分配记录；同名输出文件冲突会在写入前被拒绝。
+
+~~~bash
+ser dataset validate data/standard/dataset.yaml --check-files --json
+ser dataset stats data/standard/dataset.yaml --probe-audio --json
+~~~
+
+## Importer
+
+~~~bash
+ser dataset scan --importer folder --source path/to/audio --json
+ser dataset import --importer folder --source path/to/audio   --destination data/standard
+~~~
+
+内置 importer：
+
+| ID | 输入 |
+|---|---|
+| `folder` | 按目录/文件规则组织的音频 |
+| `csv` | CSV 元数据 |
+| `jsonl` | JSONL 元数据 |
+| `casia` | CASIA |
+| `ravdess` | RAVDESS |
+| `csemotions` | CSEMOTIONS |
+| `esd` | Emotional Speech Dataset |
+| `crema_d` | CREMA-D |
+| `emotiontalk` | BAAI EmotionTalk |
+
+Importer 的转换阶段使用临时输出和校验边界，失败不能静默破坏已有标准数据集。
+
+## Data / Representation 分工
+
+Dataset 不根据模型或特征类型分叉。Waveform、Mel、MFCC 等由 Representation 负责，
+输出 TensorSpec；SERDataset 只组合 AudioLoader、Pipeline 和 record。
+
+数据集专用命令和许可说明见 [data/readme.md](../data/readme.md)。

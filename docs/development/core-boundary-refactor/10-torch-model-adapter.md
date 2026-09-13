@@ -1,5 +1,8 @@
 # Stage 10 — 通用 PyTorch Model Adapter
 
+> **1.0 归档说明（2026-09-13）**：本文是 SER-lib 1.0 形成过程中的历史记录，状态、路径、缺陷与“下一步”只对文中注明的历史基线负责。当前 1.0 规范请从 [文档索引](../README.md) 或仓库 `docs/README.md` 进入；当前发布状态见 `CHANGELOG.md`。原始正文保留用于审计追溯。
+
+
 ## 目标
 
 让普通 `torch.nn.Module` 在不继承 SER-lib 内部模型基类的前提下，通过显式 adapter/registry contract 接入训练、评估、推理、checkpoint 与 artifact 闭环，同时不破坏 state_dict 和可重建性。

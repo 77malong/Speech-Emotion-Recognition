@@ -1,5 +1,8 @@
 # Stage 08 — 退役七个 Service Facade
 
+> **1.0 归档说明（2026-09-13）**：本文是 SER-lib 1.0 形成过程中的历史记录，状态、路径、缺陷与“下一步”只对文中注明的历史基线负责。当前 1.0 规范请从 [文档索引](../README.md) 或仓库 `docs/README.md` 进入；当前发布状态见 `CHANGELOG.md`。原始正文保留用于审计追溯。
+
+
 ## 目标
 
 在底层正式 API 已经具备等价能力后，彻底移除 `ser_lib/services`，让 Python 用户、CLI 和未来上层应用直接依赖 data/models/engine/inference/artifacts 的领域 API，而不是维护一层应用包装。

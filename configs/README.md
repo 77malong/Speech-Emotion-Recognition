@@ -1,33 +1,45 @@
 # 实验配置模板
 
-配置只接受当前结构，不含 schema_version 或 format_version；未知字段和已废弃字段会被直接拒绝。
+本目录提供 SER-lib 1.0 可直接校验的 ExperimentConfig 示例。配置只接受当前严格结构，
+不包含 schema_version/format_version；未知字段会被拒绝。
 
-这些配置展示 `ExperimentConfig` 的完整结构。默认假设已经通过 `ser dataset import`
-在 `data/standard/dataset.yaml` 创建了六分类数据集；使用前必须根据自己的 manifest
-修改 `data.manifest`、`data.labels` 和模型的 `num_classes`。
+## 通用模板
 
-```bash
+~~~bash
 ser train configs/cnn_logmel.yaml --split train --batch-size 16
 ser train configs/gru_mfcc.yaml --split train --batch-size 16
 ser train configs/transformer_logmel.yaml --split train --batch-size 16
-ser train configs/csemotions_cnn_logmel.yaml --split train --batch-size 32
-ser train configs/esd_cnn_logmel.yaml --split train --batch-size 32
-ser train configs/crema_d_cnn_logmel.yaml --split train --batch-size 32
-ser train configs/emotiontalk_cnn_logmel.yaml --split train --batch-size 32
-```
+~~~
 
-配置中的相对路径始终相对于配置文件自身，而不是当前工作目录。CNN 与 Transformer
-模板使用 64 维 Log-Mel，GRU 模板使用 40 维 MFCC；表示的维度必须与模型的
-`feature_dim` 完全一致。
+这些模板默认引用标准 dataset.yaml。使用前必须根据自己的数据同步检查：
 
-`csemotions_cnn_logmel.yaml` 是本地 CSEMOTIONS 专用配置，需先运行
-`ser dataset import --importer csemotions ...` 生成标准 manifest。
+- data.manifest
+- data.labels
+- model.params.num_classes
+- representation 输出 feature_dim 与模型输入维度
+- trainer.device / batch size / checkpoint_dir
 
-`esd_cnn_logmel.yaml` 是中英双语 ESD 五分类配置，需先运行
-`ser dataset import --importer esd ...` 生成语言分层、说话人独立的标准 manifest。
+相对路径始终相对于配置文件自身，而不是当前 shell 工作目录。
 
-`crema_d_cnn_logmel.yaml` 使用 CREMA-D 文件名中的六类表演情感标签，需先运行
-`ser dataset import --importer crema_d ...` 生成性别分层、演员互斥的标准 manifest。
+## 数据集专用模板
 
-`emotiontalk_cnn_logmel.yaml` 是中文 EmotionTalk 七分类配置。由于标签不均衡，默认
-组合 focal loss 与 WeightedRandomSampler；需先通过 `emotiontalk` importer 生成 manifest。
+~~~bash
+ser train configs/casia_cnn_logmel.yaml --batch-size 32
+ser train configs/csemotions_cnn_logmel.yaml --batch-size 32
+ser train configs/esd_cnn_logmel.yaml --batch-size 32
+ser train configs/crema_d_cnn_logmel.yaml --batch-size 32
+ser train configs/emotiontalk_cnn_logmel.yaml --batch-size 32
+~~~
+
+对应数据必须先用 importer 转换为标准 manifest。专用配置中的 label mapping 是训练语义的一部分；
+artifact 导出会与 checkpoint lineage 和 manifest 再次比对，不能随意交换 label ID 含义。
+
+EmotionTalk 示例默认展示 focal loss + WeightedRandomSampler 组合，用于处理类别不均衡；
+这不是所有数据集的默认建议。
+
+## 模型卡
+
+CASIA、CSEMOTIONS、ESD、CREMA-D、EmotionTalk 同时提供 model_card YAML 示例。
+正式发布 artifact 时应根据真实训练数据、指标、许可和限制修改，不能直接把示例当作真实声明。
+
+完整训练说明见 [docs/TRAINING_AND_CLI.md](../docs/TRAINING_AND_CLI.md)。
