@@ -155,7 +155,7 @@ for (module, name), node in sorted(unique.items()):
 
 target = root / 'docs/MAIN_PUBLIC_INTERFACES.md'
 base = target.read_text(encoding='utf-8').split('<!-- GENERATED API DICTIONARY -->')[0]
-target.write_text(base + '<!-- GENERATED API DICTIONARY -->\n\n' + ''.join(parts), encoding='utf-8')
+target.write_text((base + '<!-- GENERATED API DICTIONARY -->\n\n' + ''.join(parts)).rstrip() + '\n', encoding='utf-8')
 # Coverage and local link validation are documentation-only checks.
 text = target.read_text(encoding='utf-8')
 for key in unique:

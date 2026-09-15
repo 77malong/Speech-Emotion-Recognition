@@ -8905,4 +8905,3 @@ get_runtime_capabilities() -> RuntimeCapabilities
 ```
 
 返回 JSON-safe 的 Python/PyTorch 与本机可选设备信息。
-
