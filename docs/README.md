@@ -11,6 +11,7 @@ docs/development 下的计划、阶段日志和审查报告保留用于审计追
 | [标准数据格式](DATA_FORMAT.md) | dataset.yaml、JSONL、split、importer |
 | [训练与 CLI](TRAINING_AND_CLI.md) | train/resume/evaluate/predict/artifact 与运行产物 |
 | [公共 API](API_REFERENCE.md) | 1.x 公开 Python API 与领域边界 |
+| [main 对外接口使用手册](MAIN_PUBLIC_INTERFACES.md) | 全量接口、输入输出、配置字段、使用示例与 CLI 参数 |
 | [模型扩展](MODEL_DEVELOPMENT.md) | SERModel、ModelSpec、registry、测试要求 |
 | [Artifact 与安全](ARTIFACTS_AND_SECURITY.md) | checkpoint 与 artifact 的信任边界 |
 | [教程状态](TUTORIAL_STATUS.md) | tutorials/00–07 当前可执行状态 |
