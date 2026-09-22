@@ -92,6 +92,35 @@ checkpoints = scan_checkpoints("runs/demo/checkpoints")
 TrainingRecord、history 和 checkpoint 是独立资源。扫描 checkpoint 只做目录/stat，
 不会隐式反序列化权重。
 
+### Training observability and cancellation
+
+`train_experiment()` 现在与 `Trainer.from_experiment()` 使用同一套事件、取消和可观测性 hook，
+并保持原有调用方式完全兼容。
+
+~~~python
+from ser_lib.config import ObservabilityConfig
+from ser_lib.engine import train_experiment
+from ser_lib.foundation.events import CancellationToken
+
+token = CancellationToken()
+events = []
+
+result = train_experiment(
+    config,
+    event_callback=events.append,
+    cancellation=token,
+    observability=ObservabilityConfig(
+        progress_interval_batches=1,
+        metric_interval_batches=10,
+    ),
+)
+~~~
+
+默认 `progress_interval_batches=1`，因此训练阶段每个 batch 都可以产生
+`ProgressEvent(stage="train_batch")`，并携带 batch/epoch 上下文、running loss/accuracy、
+learning rate、吞吐和 ETA；实时 `MetricEvent` 的频率由 `metric_interval_batches` 独立控制。
+这些 hook 仍是同步 fail-fast 语义；宿主若希望遥测失败不影响训练，应自行包装 callback。
+
 ## Evaluation resources
 
 ~~~python
