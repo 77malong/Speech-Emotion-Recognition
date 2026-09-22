@@ -20,6 +20,7 @@ from ser_lib.data.manifest import DatasetManifest
 from ser_lib.data.pipeline import SamplePipeline, build_components
 from ser_lib.engine.compatibility import validate_compatibility
 from ser_lib.config.experiment import ExperimentConfig, load_experiment_config
+from ser_lib.config.training import ObservabilityConfig
 from ser_lib.engine.evaluator import (
     EvaluationResult,
     PredictionSink,
@@ -40,7 +41,7 @@ from ser_lib.engine.training_records import (
 )
 from ser_lib.engine.objectives import build_weighted_sampler
 from ser_lib.engine.training import Trainer, TrainingResult
-from ser_lib.foundation.events import EventContext
+from ser_lib.foundation.events import CancellationCheck, EventCallback, EventContext
 from ser_lib.models.base import SERModel
 from ser_lib.models.registry import model_registry
 
@@ -372,6 +373,9 @@ def train_experiment(
     batch_size: int = 16,
     workers: int = 0,
     resume: Path | str | None = None,
+    event_callback: EventCallback | None = None,
+    cancellation: CancellationCheck | None = None,
+    observability: ObservabilityConfig | None = None,
 ) -> TrainingExperimentResult:
     resolved = _resolve_experiment_config(config)
     if resolved.trainer.checkpoint_dir is None:
@@ -401,6 +405,9 @@ def train_experiment(
     trainer = Trainer.from_experiment(
         components.model,
         resolved,
+        event_callback=event_callback,
+        cancellation=cancellation,
+        observability=observability,
         dataset_id=manifest.meta.dataset_id,
         dataset_fingerprint=dataset_fingerprint.digest,
     )

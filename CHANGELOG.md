@@ -3,6 +3,13 @@
 本项目从 1.0.0 起按语义化版本维护公开 Python API 与 CLI。历史开发分支中的 0.x
 版本用于架构收敛，没有作为稳定兼容基线发布。
 
+## [Unreleased]
+
+### Added
+
+- `train_experiment()` 新增向后兼容的 `event_callback`、`cancellation` 与
+  `observability` keyword-only 参数，复用 Trainer 现有 batch 级进度/指标事件和取消能力。
+
 ## [1.0.0] - 2026-09-13
 
 ### Release status

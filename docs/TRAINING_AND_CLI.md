@@ -114,6 +114,11 @@ MCC、Cohen's kappa、逐类指标和混淆矩阵。
 核心代码负责在 finally/rollback 边界恢复自己临时改变的状态。若宿主希望遥测失败不影响
 训练，应在宿主层包装 callback。
 
+高层 `train_experiment()` 与 `Trainer.from_experiment()` 使用同一事件/取消/可观测性协议，
+可直接传入 `event_callback`、`cancellation` 与 `observability`。默认
+`progress_interval_batches=1`，因此训练阶段每个 batch 都可产生
+`ProgressEvent(stage="train_batch")`；`metric_interval_batches` 独立控制实时指标事件频率。
+
 ## 工程验收说明
 
 仓库曾用真实 EmotionTalk 数据完成 3 epoch GPU 工程验收，验证混合采样率、单双声道、
